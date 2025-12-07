@@ -216,6 +216,14 @@ def init_database():
         channels TEXT, color TEXT DEFAULT '#8b5cf6', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )''')
 
+    c.execute('''CREATE TABLE IF NOT EXISTS fixtures (
+        fixture_id TEXT PRIMARY KEY, name TEXT NOT NULL, type TEXT DEFAULT 'generic',
+        manufacturer TEXT, model TEXT, universe INTEGER DEFAULT 1,
+        start_channel INTEGER NOT NULL, channel_count INTEGER DEFAULT 1,
+        channel_map TEXT, color TEXT DEFAULT '#8b5cf6', notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )''')
+
     conn.commit()
 
     # Add synced_to_nodes column if missing (migration)
@@ -1009,6 +1017,120 @@ class ContentManager:
         socketio.emit('chases_update', {'chases': self.get_chases()})
         return {'success': True}
 
+    # ─────────────────────────────────────────────────────────
+    # Fixtures
+    # ─────────────────────────────────────────────────────────
+    def create_fixture(self, data):
+        """Create or update a fixture definition"""
+        fixture_id = data.get('fixture_id', f"fixture_{int(time.time())}")
+
+        # Default channel map based on type
+        default_map = self._get_default_channel_map(data.get('type', 'generic'), data.get('channel_count', 1))
+        channel_map = data.get('channel_map', default_map)
+
+        conn = get_db()
+        c = conn.cursor()
+        c.execute('''INSERT OR REPLACE INTO fixtures (fixture_id, name, type, manufacturer, model,
+            universe, start_channel, channel_count, channel_map, color, notes, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+            (fixture_id, data.get('name', 'Untitled Fixture'), data.get('type', 'generic'),
+             data.get('manufacturer', ''), data.get('model', ''),
+             data.get('universe', 1), data.get('start_channel', 1), data.get('channel_count', 1),
+             json.dumps(channel_map), data.get('color', '#8b5cf6'),
+             data.get('notes', ''), datetime.now().isoformat()))
+        conn.commit()
+        conn.close()
+
+        socketio.emit('fixtures_update', {'fixtures': self.get_fixtures()})
+        return {'success': True, 'fixture_id': fixture_id}
+
+    def _get_default_channel_map(self, fixture_type, channel_count):
+        """Generate default channel names based on fixture type"""
+        maps = {
+            'rgb': ['Red', 'Green', 'Blue'],
+            'rgbw': ['Red', 'Green', 'Blue', 'White'],
+            'rgba': ['Red', 'Green', 'Blue', 'Amber'],
+            'rgbwa': ['Red', 'Green', 'Blue', 'White', 'Amber'],
+            'dimmer': ['Intensity'],
+            'moving_head': ['Pan', 'Pan Fine', 'Tilt', 'Tilt Fine', 'Speed', 'Dimmer', 'Strobe', 'Color', 'Gobo', 'Prism'],
+            'par': ['Red', 'Green', 'Blue', 'White', 'Dimmer', 'Strobe'],
+            'wash': ['Red', 'Green', 'Blue', 'White', 'Dimmer', 'Pan', 'Tilt'],
+        }
+        default = maps.get(fixture_type.lower(), [])
+        # Pad with generic channel names if needed
+        while len(default) < channel_count:
+            default.append(f'Channel {len(default) + 1}')
+        return default[:channel_count]
+
+    def get_fixtures(self, universe=None):
+        """Get all fixtures, optionally filtered by universe"""
+        conn = get_db()
+        c = conn.cursor()
+        if universe:
+            c.execute('SELECT * FROM fixtures WHERE universe = ? ORDER BY start_channel', (universe,))
+        else:
+            c.execute('SELECT * FROM fixtures ORDER BY universe, start_channel')
+        rows = c.fetchall()
+        conn.close()
+        fixtures = []
+        for row in rows:
+            fixture = dict(row)
+            fixture['channel_map'] = json.loads(fixture['channel_map']) if fixture['channel_map'] else []
+            # Calculate end channel
+            fixture['end_channel'] = fixture['start_channel'] + fixture['channel_count'] - 1
+            fixtures.append(fixture)
+        return fixtures
+
+    def get_fixture(self, fixture_id):
+        """Get single fixture by ID"""
+        conn = get_db()
+        c = conn.cursor()
+        c.execute('SELECT * FROM fixtures WHERE fixture_id = ?', (fixture_id,))
+        row = c.fetchone()
+        conn.close()
+        if row:
+            fixture = dict(row)
+            fixture['channel_map'] = json.loads(fixture['channel_map']) if fixture['channel_map'] else []
+            fixture['end_channel'] = fixture['start_channel'] + fixture['channel_count'] - 1
+            return fixture
+        return None
+
+    def update_fixture(self, fixture_id, data):
+        """Update an existing fixture"""
+        existing = self.get_fixture(fixture_id)
+        if not existing:
+            return {'success': False, 'error': 'Fixture not found'}
+
+        # Merge with existing data
+        merged = {**existing, **data}
+        merged['fixture_id'] = fixture_id
+        return self.create_fixture(merged)
+
+    def delete_fixture(self, fixture_id):
+        """Delete a fixture"""
+        conn = get_db()
+        c = conn.cursor()
+        c.execute('DELETE FROM fixtures WHERE fixture_id = ?', (fixture_id,))
+        conn.commit()
+        conn.close()
+        socketio.emit('fixtures_update', {'fixtures': self.get_fixtures()})
+        return {'success': True}
+
+    def get_fixtures_for_channels(self, universe, channels):
+        """Find which fixtures cover the given channels"""
+        fixtures = self.get_fixtures(universe)
+        affected = []
+        channel_nums = [int(c) for c in channels.keys()]
+
+        for fixture in fixtures:
+            start = fixture['start_channel']
+            end = fixture['end_channel']
+            for ch in channel_nums:
+                if start <= ch <= end:
+                    affected.append(fixture)
+                    break
+        return affected
+
 content_manager = ContentManager()
 
 # ============================================================
@@ -1260,6 +1382,47 @@ def delete_chase(chase_id):
 @app.route('/api/chases/<chase_id>/play', methods=['POST'])
 def play_chase(chase_id):
     return jsonify(content_manager.play_chase(chase_id))
+
+# ─────────────────────────────────────────────────────────
+# Fixture Routes
+# ─────────────────────────────────────────────────────────
+@app.route('/api/fixtures', methods=['GET'])
+def get_fixtures():
+    return jsonify(content_manager.get_fixtures())
+
+@app.route('/api/fixtures', methods=['POST'])
+def create_fixture():
+    return jsonify(content_manager.create_fixture(request.get_json()))
+
+@app.route('/api/fixtures/<fixture_id>', methods=['GET'])
+def get_fixture(fixture_id):
+    fixture = content_manager.get_fixture(fixture_id)
+    return jsonify(fixture) if fixture else (jsonify({'error': 'Fixture not found'}), 404)
+
+@app.route('/api/fixtures/<fixture_id>', methods=['PUT'])
+def update_fixture(fixture_id):
+    result = content_manager.update_fixture(fixture_id, request.get_json())
+    if result.get('error'):
+        return jsonify(result), 404
+    return jsonify(result)
+
+@app.route('/api/fixtures/<fixture_id>', methods=['DELETE'])
+def delete_fixture(fixture_id):
+    return jsonify(content_manager.delete_fixture(fixture_id))
+
+@app.route('/api/fixtures/universe/<int:universe>', methods=['GET'])
+def get_fixtures_by_universe(universe):
+    fixtures = content_manager.get_fixtures()
+    filtered = [f for f in fixtures if f.get('universe') == universe]
+    return jsonify(filtered)
+
+@app.route('/api/fixtures/channels', methods=['POST'])
+def get_fixtures_for_channels():
+    """Get fixtures that cover specific channel ranges"""
+    data = request.get_json() or {}
+    universe = data.get('universe', 1)
+    channels = data.get('channels', [])
+    return jsonify(content_manager.get_fixtures_for_channels(universe, channels))
 
 # ─────────────────────────────────────────────────────────
 # Playback Routes
