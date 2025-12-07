@@ -22,15 +22,22 @@ from flask_cors import CORS
 from flask_socketio import SocketIO, emit
 
 # ============================================================
-# Configuration
+# Configuration - Dynamic paths based on user home directory
 # ============================================================
 API_PORT = 8891
 DISCOVERY_PORT = 9999
 WIFI_COMMAND_PORT = 8888
-DATABASE = "/home/ramzt/aether-core.db"
-SETTINGS_FILE = "/home/ramzt/aether-settings.json"
+
+# Dynamic paths - works for any user
+HOME_DIR = os.path.expanduser("~")
+DATABASE = os.path.join(HOME_DIR, "aether-core.db")
+SETTINGS_FILE = os.path.join(HOME_DIR, "aether-settings.json")
+
+# Serial port for hardwired node
 HARDWIRED_UART = "/dev/serial0"
 HARDWIRED_BAUD = 115200
+
+# Timing configuration
 STALE_TIMEOUT = 60
 CHUNK_SIZE = 5  # Max channels per UDP packet
 CHUNK_DELAY = 0.05  # Delay between chunks (50ms)
@@ -1049,6 +1056,65 @@ def health():
         'services': {'database': True, 'discovery': True,
                      'serial': node_manager._serial is not None and node_manager._serial.is_open}
     })
+
+@app.route('/api/system/stats', methods=['GET'])
+def system_stats():
+    """Get system statistics (CPU, memory, temperature)"""
+    stats = {
+        'cpu_percent': None,
+        'memory_used': None,
+        'memory_total': None,
+        'cpu_temp': None,
+        'disk_used': None,
+        'disk_total': None,
+        'uptime': None
+    }
+
+    try:
+        # CPU usage - read from /proc/stat
+        with open('/proc/loadavg', 'r') as f:
+            load = f.read().split()
+            # Convert 1-min load average to approximate percentage (for 4 cores)
+            stats['cpu_percent'] = float(load[0]) * 25  # Rough approximation
+    except:
+        pass
+
+    try:
+        # Memory - read from /proc/meminfo
+        with open('/proc/meminfo', 'r') as f:
+            meminfo = {}
+            for line in f:
+                parts = line.split()
+                if len(parts) >= 2:
+                    meminfo[parts[0].rstrip(':')] = int(parts[1]) * 1024  # Convert KB to bytes
+            stats['memory_total'] = meminfo.get('MemTotal', 0)
+            stats['memory_used'] = stats['memory_total'] - meminfo.get('MemAvailable', 0)
+    except:
+        pass
+
+    try:
+        # CPU temperature - Raspberry Pi specific
+        with open('/sys/class/thermal/thermal_zone0/temp', 'r') as f:
+            stats['cpu_temp'] = int(f.read().strip()) / 1000.0
+    except:
+        pass
+
+    try:
+        # Disk usage
+        statvfs = os.statvfs('/')
+        stats['disk_total'] = statvfs.f_blocks * statvfs.f_frsize
+        stats['disk_used'] = (statvfs.f_blocks - statvfs.f_bfree) * statvfs.f_frsize
+    except:
+        pass
+
+    try:
+        # Uptime
+        with open('/proc/uptime', 'r') as f:
+            stats['uptime'] = float(f.read().split()[0])
+    except:
+        pass
+
+    return jsonify(stats)
 
 @app.route('/api/nodes', methods=['GET'])
 def get_nodes():
