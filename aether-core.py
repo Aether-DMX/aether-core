@@ -1538,6 +1538,9 @@ if __name__ == '__main__':
     threading.Thread(target=discovery_listener, daemon=True).start()
     threading.Thread(target=stale_checker, daemon=True).start()
 
+    # DMX state is loaded from disk automatically - ESPs hold their own state
+    # so we don't re-send on startup (that would cause a flash)
+
     print(f"✓ API server on port {API_PORT}")
     print(f"✓ Discovery on UDP {DISCOVERY_PORT}")
     print(f"✓ Serial: {HARDWIRED_UART}")
