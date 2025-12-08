@@ -32,6 +32,7 @@ WIFI_COMMAND_PORT = 8888
 HOME_DIR = os.path.expanduser("~")
 DATABASE = os.path.join(HOME_DIR, "aether-core.db")
 SETTINGS_FILE = os.path.join(HOME_DIR, "aether-settings.json")
+DMX_STATE_FILE = os.path.join(HOME_DIR, "aether-dmx-state.json")
 
 # Serial port for hardwired node
 HARDWIRED_UART = "/dev/serial0"
@@ -54,6 +55,44 @@ class DMXStateManager:
     def __init__(self):
         self.universes = {}  # {universe_num: [512 values]}
         self.lock = threading.Lock()
+        self._save_timer = None
+        self._load_state()
+
+    def _load_state(self):
+        """Load DMX state from disk on startup"""
+        try:
+            if os.path.exists(DMX_STATE_FILE):
+                with open(DMX_STATE_FILE, 'r') as f:
+                    saved = json.load(f)
+                    # Convert string keys back to integers
+                    for universe_str, channels in saved.get('universes', {}).items():
+                        universe = int(universe_str)
+                        self.universes[universe] = channels[:512]  # Ensure 512 max
+                        # Pad if needed
+                        while len(self.universes[universe]) < 512:
+                            self.universes[universe].append(0)
+                print(f"✓ Loaded DMX state: {len(self.universes)} universes")
+        except Exception as e:
+            print(f"⚠️ Could not load DMX state: {e}")
+
+    def _save_state(self):
+        """Save DMX state to disk (debounced)"""
+        try:
+            with self.lock:
+                data = {'universes': {str(k): v for k, v in self.universes.items()},
+                        'saved_at': datetime.now().isoformat()}
+            with open(DMX_STATE_FILE, 'w') as f:
+                json.dump(data, f)
+        except Exception as e:
+            print(f"⚠️ Could not save DMX state: {e}")
+
+    def _schedule_save(self):
+        """Debounce saves to avoid excessive disk writes"""
+        if self._save_timer:
+            self._save_timer.cancel()
+        self._save_timer = threading.Timer(1.0, self._save_state)
+        self._save_timer.daemon = True
+        self._save_timer.start()
 
     def get_universe(self, universe):
         """Get or create universe state array"""
@@ -84,6 +123,7 @@ class DMXStateManager:
             'universe': universe,
             'channels': self.universes[universe]
         })
+        self._schedule_save()
 
     def blackout(self, universe):
         """Set all channels to 0"""
@@ -93,6 +133,7 @@ class DMXStateManager:
             'universe': universe,
             'channels': self.universes[universe]
         })
+        self._schedule_save()
 
     def get_channels_for_esp(self, universe, up_to_channel):
         """Get channel array for sending to ESP32"""
