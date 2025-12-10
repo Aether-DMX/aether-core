@@ -185,7 +185,7 @@ DEFAULT_SETTINGS = {
     "theme": {"mode": "dark", "accentColor": "#3b82f6", "fontSize": "medium"},
     "background": {"type": "gradient", "gradient": "purple-blue", "bubbles": True, "bubbleCount": 15, "bubbleSpeed": 1.0},
     "ai": {"enabled": True, "model": "claude-3-sonnet", "contextLength": 4096, "temperature": 0.7},
-    "dmx": {"defaultFadeMs": 500, "refreshRate": 40, "maxUniverse": 4},
+    "dmx": {"defaultFadeMs": 500, "refreshRate": 40, "maxUniverse": 64},
     "security": {"pinEnabled": False, "sessionTimeout": 3600}
 }
 
@@ -917,19 +917,23 @@ class ContentManager:
             return scene
         return None
 
-    def play_scene(self, scene_id, fade_ms=None, use_local=True, target_channels=None):
+    def play_scene(self, scene_id, fade_ms=None, use_local=True, target_channels=None, universe=None):
         """Play a scene - either via local playback or direct channel control
 
         If target_channels is provided, only those channels are affected and
         other playback continues. If None, this is a full scene play which
         stops any running chase first (SSOT enforcement).
+
+        universe parameter allows playing the scene on any universe (overrides stored universe)
         """
         scene = self.get_scene(scene_id)
         if not scene:
             return {'success': False, 'error': 'Scene not found'}
 
-        universe = scene['universe']
+        # Use provided universe or fall back to scene's stored universe
+        universe = universe if universe is not None else scene['universe']
         fade = fade_ms if fade_ms is not None else scene.get('fade_ms', 500)
+        print(f"🎬 Playing scene '{scene['name']}' on universe {universe}")
 
         # SSOT: If playing full scene (no target channels), stop any running chase first
         if target_channels is None:
@@ -1044,18 +1048,22 @@ class ContentManager:
             return chase
         return None
 
-    def play_chase(self, chase_id, target_channels=None):
+    def play_chase(self, chase_id, target_channels=None, universe=None):
         """Start chase playback on all nodes
 
         SSOT: Only one scene OR chase can run at a time (per universe).
         If target_channels is provided, this is a targeted play which
         allows coexistence with other playback on different channels.
+
+        universe parameter allows playing the chase on any universe (overrides stored universe)
         """
         chase = self.get_chase(chase_id)
         if not chase:
             return {'success': False, 'error': 'Chase not found'}
 
-        universe = chase['universe']
+        # Use provided universe or fall back to chase's stored universe
+        universe = universe if universe is not None else chase['universe']
+        print(f"🎬 Playing chase '{chase['name']}' on universe {universe}")
 
         # SSOT: Stop any current playback if this is a full chase (not targeted)
         if target_channels is None:
@@ -1432,7 +1440,8 @@ def play_scene(scene_id):
         scene_id,
         fade_ms=data.get('fade_ms'),
         use_local=data.get('use_local', True),
-        target_channels=data.get('target_channels')
+        target_channels=data.get('target_channels'),
+        universe=data.get('universe')
     ))
 
 # ─────────────────────────────────────────────────────────
@@ -1460,7 +1469,8 @@ def play_chase(chase_id):
     data = request.get_json() or {}
     return jsonify(content_manager.play_chase(
         chase_id,
-        target_channels=data.get('target_channels')
+        target_channels=data.get('target_channels'),
+        universe=data.get('universe')
     ))
 
 # ─────────────────────────────────────────────────────────
