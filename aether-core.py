@@ -953,20 +953,9 @@ class ContentManager:
             channels_to_apply = {k: v for k, v in scene['channels'].items() if int(k) in target_set}
             print(f"🎯 Targeted play: {len(channels_to_apply)} of {len(scene['channels'])} channels")
 
-        if use_local and target_channels is None:
-            # Tell nodes to play locally stored scene (full scene only)
-            node_results = node_manager.play_scene_on_nodes(universe, scene_id, fade)
-
-            # Also send direct for hardwired node
-            nodes = node_manager.get_nodes_in_universe(universe)
-            for node in nodes:
-                if node.get('is_builtin') or node.get('type') == 'hardwired':
-                    local_channels = node_manager.translate_channels_for_node(node, channels_to_apply)
-                    node_manager.send_to_node(node, local_channels, fade)
-        else:
-            # Direct channel control (for targeted play or fallback)
-            result = self.set_channels(universe, channels_to_apply, fade)
-            node_results = result.get('results', [])
+        # Send to all nodes via set_channels (handles both hardwired UART and WiFi sACN/OLA)
+        result = self.set_channels(universe, channels_to_apply, fade)
+        node_results = result.get('results', [])
 
         # Update state and play count
         dmx_state.set_channels(universe, channels_to_apply)
