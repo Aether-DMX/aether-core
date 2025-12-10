@@ -917,35 +917,55 @@ class ContentManager:
             return scene
         return None
 
-    def play_scene(self, scene_id, fade_ms=None, use_local=True):
-        """Play a scene - either via local playback or direct channel control"""
+    def play_scene(self, scene_id, fade_ms=None, use_local=True, target_channels=None):
+        """Play a scene - either via local playback or direct channel control
+
+        If target_channels is provided, only those channels are affected and
+        other playback continues. If None, this is a full scene play which
+        stops any running chase first (SSOT enforcement).
+        """
         scene = self.get_scene(scene_id)
         if not scene:
             return {'success': False, 'error': 'Scene not found'}
-        
+
         universe = scene['universe']
         fade = fade_ms if fade_ms is not None else scene.get('fade_ms', 500)
+
+        # SSOT: If playing full scene (no target channels), stop any running chase first
+        if target_channels is None:
+            current = playback_manager.get_status(universe)
+            if current and current.get('type') == 'chase':
+                print(f"⏹️ Stopping chase before scene play (SSOT)")
+                node_manager.stop_playback_on_nodes(universe)
+
+        # Update playback state (only if full scene, not targeted)
+        if target_channels is None:
+            playback_manager.set_playing(universe, 'scene', scene_id)
         
-        # Update playback state
-        playback_manager.set_playing(universe, 'scene', scene_id)
-        
-        if use_local:
-            # Tell nodes to play locally stored scene
+        # Filter channels if targeting specific ones
+        channels_to_apply = scene['channels']
+        if target_channels:
+            target_set = set(target_channels)
+            channels_to_apply = {k: v for k, v in scene['channels'].items() if int(k) in target_set}
+            print(f"🎯 Targeted play: {len(channels_to_apply)} of {len(scene['channels'])} channels")
+
+        if use_local and target_channels is None:
+            # Tell nodes to play locally stored scene (full scene only)
             node_results = node_manager.play_scene_on_nodes(universe, scene_id, fade)
-            
+
             # Also send direct for hardwired node
             nodes = node_manager.get_nodes_in_universe(universe)
             for node in nodes:
                 if node.get('is_builtin') or node.get('type') == 'hardwired':
-                    local_channels = node_manager.translate_channels_for_node(node, scene['channels'])
+                    local_channels = node_manager.translate_channels_for_node(node, channels_to_apply)
                     node_manager.send_to_node(node, local_channels, fade)
         else:
-            # Direct channel control (fallback)
-            result = self.set_channels(universe, scene['channels'], fade)
+            # Direct channel control (for targeted play or fallback)
+            result = self.set_channels(universe, channels_to_apply, fade)
             node_results = result.get('results', [])
-        
+
         # Update state and play count
-        dmx_state.set_channels(universe, scene['channels'])
+        dmx_state.set_channels(universe, channels_to_apply)
         conn = get_db()
         c = conn.cursor()
         c.execute('UPDATE scenes SET play_count = play_count + 1 WHERE scene_id = ?', (scene_id,))
@@ -1024,23 +1044,33 @@ class ContentManager:
             return chase
         return None
 
-    def play_chase(self, chase_id):
-        """Start chase playback on all nodes"""
+    def play_chase(self, chase_id, target_channels=None):
+        """Start chase playback on all nodes
+
+        SSOT: Only one scene OR chase can run at a time (per universe).
+        If target_channels is provided, this is a targeted play which
+        allows coexistence with other playback on different channels.
+        """
         chase = self.get_chase(chase_id)
         if not chase:
             return {'success': False, 'error': 'Chase not found'}
-        
+
         universe = chase['universe']
-        
-        # Stop any current playback
-        playback_manager.stop(universe)
-        node_manager.stop_playback_on_nodes(universe)
-        time.sleep(0.1)
-        
+
+        # SSOT: Stop any current playback if this is a full chase (not targeted)
+        if target_channels is None:
+            current = playback_manager.get_status(universe)
+            if current:
+                print(f"⏹️ Stopping {current.get('type')} before chase play (SSOT)")
+            playback_manager.stop(universe)
+            node_manager.stop_playback_on_nodes(universe)
+            time.sleep(0.1)
+
         # Start chase on nodes
-        playback_manager.set_playing(universe, 'chase', chase_id)
+        if target_channels is None:
+            playback_manager.set_playing(universe, 'chase', chase_id)
         node_results = node_manager.play_chase_on_nodes(universe, chase_id)
-        
+
         return {'success': True, 'results': node_results}
 
     def stop_playback(self, universe=None):
@@ -1398,7 +1428,12 @@ def delete_scene(scene_id):
 @app.route('/api/scenes/<scene_id>/play', methods=['POST'])
 def play_scene(scene_id):
     data = request.get_json() or {}
-    return jsonify(content_manager.play_scene(scene_id, data.get('fade_ms'), data.get('use_local', True)))
+    return jsonify(content_manager.play_scene(
+        scene_id,
+        fade_ms=data.get('fade_ms'),
+        use_local=data.get('use_local', True),
+        target_channels=data.get('target_channels')
+    ))
 
 # ─────────────────────────────────────────────────────────
 # Chase Routes
@@ -1422,7 +1457,11 @@ def delete_chase(chase_id):
 
 @app.route('/api/chases/<chase_id>/play', methods=['POST'])
 def play_chase(chase_id):
-    return jsonify(content_manager.play_chase(chase_id))
+    data = request.get_json() or {}
+    return jsonify(content_manager.play_chase(
+        chase_id,
+        target_channels=data.get('target_channels')
+    ))
 
 # ─────────────────────────────────────────────────────────
 # Fixture Routes
