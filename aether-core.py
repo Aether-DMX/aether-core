@@ -1525,7 +1525,9 @@ def dmx_set():
 @app.route('/api/dmx/blackout', methods=['POST'])
 def dmx_blackout():
     data = request.get_json() or {}
-    return jsonify(content_manager.blackout(data.get('universe', 1), data.get('fade_ms', 1000)))
+    # If no universe specified, blackout ALL universes (pass None)
+    universe = data.get('universe')  # None = all universes
+    return jsonify(content_manager.blackout(universe, data.get('fade_ms', 1000)))
 
 @app.route('/api/dmx/universe/<int:universe>', methods=['GET'])
 def dmx_get_universe(universe):
