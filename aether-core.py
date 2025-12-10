@@ -179,6 +179,119 @@ class PlaybackManager:
 playback_manager = PlaybackManager()
 
 # ============================================================
+# Chase Playback Engine (streams steps via OLA/sACN)
+# ============================================================
+class ChaseEngine:
+    """Runs chases by streaming each step via OLA to all universes"""
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.running_chases = {}  # {chase_id: thread}
+        self.stop_flags = {}  # {chase_id: Event}
+
+    def start_chase(self, chase, universes):
+        """Start a chase on the given universes"""
+        chase_id = chase['chase_id']
+
+        # Stop if already running
+        self.stop_chase(chase_id)
+
+        # Create stop flag
+        stop_flag = threading.Event()
+        self.stop_flags[chase_id] = stop_flag
+
+        # Start chase thread
+        thread = threading.Thread(
+            target=self._run_chase,
+            args=(chase, universes, stop_flag),
+            daemon=True
+        )
+        self.running_chases[chase_id] = thread
+        thread.start()
+        print(f"🏃 Chase engine started: {chase['name']}", flush=True)
+
+    def stop_chase(self, chase_id=None):
+        """Stop a chase or all chases"""
+        with self.lock:
+            if chase_id:
+                if chase_id in self.stop_flags:
+                    self.stop_flags[chase_id].set()
+                    self.stop_flags.pop(chase_id, None)
+                    self.running_chases.pop(chase_id, None)
+            else:
+                # Stop all
+                for flag in self.stop_flags.values():
+                    flag.set()
+                self.stop_flags.clear()
+                self.running_chases.clear()
+
+    def stop_all(self):
+        """Stop all running chases"""
+        self.stop_chase(None)
+
+    def _run_chase(self, chase, universes, stop_flag):
+        """Chase playback loop - runs in background thread"""
+        chase_id = chase['chase_id']
+        steps = chase.get('steps', [])
+        bpm = chase.get('bpm', 120)
+        loop = chase.get('loop', True)
+
+        if not steps:
+            print(f"⚠️ Chase {chase['name']} has no steps", flush=True)
+            return
+
+        step_interval = 60.0 / bpm  # seconds per step
+        step_index = 0
+
+        print(f"🎬 Chase '{chase['name']}': {len(steps)} steps, {bpm} BPM, interval={step_interval:.2f}s", flush=True)
+
+        while not stop_flag.is_set():
+            step = steps[step_index]
+            channels = step.get('channels', {})
+
+            # Send step to all universes via OLA
+            for univ in universes:
+                self._send_step(univ, channels)
+
+            # Wait for next step
+            stop_flag.wait(step_interval)
+
+            # Advance step
+            step_index += 1
+            if step_index >= len(steps):
+                if loop:
+                    step_index = 0
+                else:
+                    break
+
+        print(f"⏹️ Chase '{chase['name']}' stopped", flush=True)
+
+    def _send_step(self, universe, channels):
+        """Send a single chase step via OLA"""
+        if not channels:
+            return
+
+        # Build full 512 channel array from current state
+        current = dmx_state.get_universe(universe)
+
+        # Apply step channels
+        for ch_str, value in channels.items():
+            ch = int(ch_str)
+            if 1 <= ch <= 512:
+                current[ch - 1] = int(value)
+
+        # Send via OLA
+        try:
+            data_str = ','.join(str(v) for v in current)
+            subprocess.run(
+                ['ola_set_dmx', '-u', str(universe), '-d', data_str],
+                capture_output=True, text=True, timeout=2
+            )
+        except Exception as e:
+            print(f"❌ Chase step OLA error: {e}", flush=True)
+
+chase_engine = ChaseEngine()
+
+# ============================================================
 # Settings Management
 # ============================================================
 DEFAULT_SETTINGS = {
@@ -827,32 +940,50 @@ node_manager = NodeManager()
 class ContentManager:
     def set_channels(self, universe, channels, fade_ms=0):
         """Set DMX channels - updates state and sends to nodes"""
+        import sys
+        print(f"🎛️ set_channels: universe={universe}, channels={len(channels)}, fade={fade_ms}", flush=True)
         dmx_state.set_channels(universe, channels)
         nodes = node_manager.get_nodes_in_universe(universe)
-        
+        print(f"📍 Found {len(nodes)} nodes in universe {universe}", flush=True)
+
         if not nodes:
-            print(f"⚠️ No online nodes in universe {universe}")
+            print(f"⚠️ No online nodes in universe {universe}", flush=True)
             return {'success': False, 'error': 'No nodes online'}
 
         results = []
         for node in nodes:
+            print(f"  → Processing node: {node['name']} ({node.get('type', 'unknown')})", flush=True)
             local_channels = node_manager.translate_channels_for_node(node, channels)
             if local_channels:
+                print(f"    Translated {len(local_channels)} channels for {node['name']}", flush=True)
                 success = node_manager.send_to_node(node, local_channels, fade_ms)
+                print(f"    Send result: {success}", flush=True)
                 results.append({'node': node['name'], 'success': success})
 
         return {'success': True, 'results': results}
 
-    def blackout(self, universe, fade_ms=1000):
-        """Blackout all channels in universe"""
-        dmx_state.blackout(universe)
-        playback_manager.stop(universe)
-        
-        nodes = node_manager.get_nodes_in_universe(universe)
+    def blackout(self, universe=None, fade_ms=1000):
+        """Blackout all channels - if universe is None, blackout ALL universes with online nodes"""
+        all_nodes = node_manager.get_all_nodes(include_offline=False)
+
+        if universe is not None:
+            # Single universe blackout
+            universes_to_blackout = [universe]
+        else:
+            # All universes with online nodes
+            universes_to_blackout = list(set(node.get('universe', 1) for node in all_nodes))
+
+        print(f"⬛ Blackout on universes: {sorted(universes_to_blackout)}", flush=True)
+
         results = []
-        for node in nodes:
-            success = node_manager.send_blackout(node, fade_ms)
-            results.append({'node': node['name'], 'success': success})
+        for univ in universes_to_blackout:
+            dmx_state.blackout(univ)
+            playback_manager.stop(univ)
+            nodes = node_manager.get_nodes_in_universe(univ)
+            for node in nodes:
+                success = node_manager.send_blackout(node, fade_ms)
+                results.append({'node': node['name'], 'success': success})
+
         return {'success': True, 'results': results}
 
     # ─────────────────────────────────────────────────────────
@@ -918,53 +1049,53 @@ class ContentManager:
         return None
 
     def play_scene(self, scene_id, fade_ms=None, use_local=True, target_channels=None, universe=None):
-        """Play a scene - either via local playback or direct channel control
-
-        If target_channels is provided, only those channels are affected and
-        other playback continues. If None, this is a full scene play which
-        stops any running chase first (SSOT enforcement).
-
-        universe parameter allows playing the scene on any universe (overrides stored universe)
-        """
+        """Play a scene - broadcasts to ALL online nodes across all universes"""
+        print(f"▶️ play_scene called: scene_id={scene_id}", flush=True)
         scene = self.get_scene(scene_id)
         if not scene:
             return {'success': False, 'error': 'Scene not found'}
 
-        # Use provided universe or fall back to scene's stored universe
-        universe = universe if universe is not None else scene['universe']
+        # Stop any running chases first (SSOT)
+        chase_engine.stop_all()
+
         fade = fade_ms if fade_ms is not None else scene.get('fade_ms', 500)
-        print(f"🎬 Playing scene '{scene['name']}' on universe {universe}")
 
-        # SSOT: If playing full scene (no target channels), stop any running chase first
-        if target_channels is None:
-            current = playback_manager.get_status(universe)
-            if current and current.get('type') == 'chase':
-                print(f"⏹️ Stopping chase before scene play (SSOT)")
-                node_manager.stop_playback_on_nodes(universe)
-
-        # Update playback state (only if full scene, not targeted)
-        if target_channels is None:
-            playback_manager.set_playing(universe, 'scene', scene_id)
-        
         # Filter channels if targeting specific ones
         channels_to_apply = scene['channels']
         if target_channels:
             target_set = set(target_channels)
             channels_to_apply = {k: v for k, v in scene['channels'].items() if int(k) in target_set}
-            print(f"🎯 Targeted play: {len(channels_to_apply)} of {len(scene['channels'])} channels")
+            print(f"🎯 Targeted play: {len(channels_to_apply)} of {len(scene['channels'])} channels", flush=True)
 
-        # Send to all nodes via set_channels (handles both hardwired UART and WiFi sACN/OLA)
-        result = self.set_channels(universe, channels_to_apply, fade)
-        node_results = result.get('results', [])
+        # Get ALL online nodes and their universes
+        all_nodes = node_manager.get_all_nodes(include_offline=False)
+        universes_with_nodes = set(node.get('universe', 1) for node in all_nodes)
+        print(f"🎬 Playing scene '{scene['name']}' on universes: {sorted(universes_with_nodes)}", flush=True)
 
-        # Update state and play count
-        dmx_state.set_channels(universe, channels_to_apply)
+        # Send to ALL universes that have online nodes
+        all_results = []
+        for univ in universes_with_nodes:
+            # SSOT: Stop any running chase on this universe
+            if target_channels is None:
+                current = playback_manager.get_status(univ)
+                if current and current.get('type') == 'chase':
+                    print(f"⏹️ Stopping chase on U{univ} before scene play", flush=True)
+                    node_manager.stop_playback_on_nodes(univ)
+                playback_manager.set_playing(univ, 'scene', scene_id)
+
+            result = self.set_channels(univ, channels_to_apply, fade)
+            all_results.extend(result.get('results', []))
+            dmx_state.set_channels(univ, channels_to_apply)
+
+        node_results = all_results
+
+        # Update play count
         conn = get_db()
         c = conn.cursor()
         c.execute('UPDATE scenes SET play_count = play_count + 1 WHERE scene_id = ?', (scene_id,))
         conn.commit()
         conn.close()
-        
+
         return {'success': True, 'results': node_results}
 
     def delete_scene(self, scene_id):
@@ -1038,40 +1169,38 @@ class ContentManager:
         return None
 
     def play_chase(self, chase_id, target_channels=None, universe=None):
-        """Start chase playback on all nodes
-
-        SSOT: Only one scene OR chase can run at a time (per universe).
-        If target_channels is provided, this is a targeted play which
-        allows coexistence with other playback on different channels.
-
-        universe parameter allows playing the chase on any universe (overrides stored universe)
-        """
+        """Start chase playback - streams steps via OLA to ALL online nodes"""
         chase = self.get_chase(chase_id)
         if not chase:
             return {'success': False, 'error': 'Chase not found'}
 
-        # Use provided universe or fall back to chase's stored universe
-        universe = universe if universe is not None else chase['universe']
-        print(f"🎬 Playing chase '{chase['name']}' on universe {universe}")
+        # Get ALL online nodes and their universes
+        all_nodes = node_manager.get_all_nodes(include_offline=False)
+        universes_with_nodes = list(set(node.get('universe', 1) for node in all_nodes))
+        print(f"🎬 Playing chase '{chase['name']}' on universes: {sorted(universes_with_nodes)}", flush=True)
 
-        # SSOT: Stop any current playback if this is a full chase (not targeted)
-        if target_channels is None:
-            current = playback_manager.get_status(universe)
+        # SSOT: Stop any current playback on all universes
+        for univ in universes_with_nodes:
+            current = playback_manager.get_status(univ)
             if current:
-                print(f"⏹️ Stopping {current.get('type')} before chase play (SSOT)")
-            playback_manager.stop(universe)
-            node_manager.stop_playback_on_nodes(universe)
-            time.sleep(0.1)
+                print(f"⏹️ Stopping {current.get('type')} on U{univ} before chase play", flush=True)
+            playback_manager.stop(univ)
 
-        # Start chase on nodes
-        if target_channels is None:
-            playback_manager.set_playing(universe, 'chase', chase_id)
-        node_results = node_manager.play_chase_on_nodes(universe, chase_id)
+        # Stop any running chases
+        chase_engine.stop_all()
 
-        return {'success': True, 'results': node_results}
+        # Set playback state for all universes
+        for univ in universes_with_nodes:
+            playback_manager.set_playing(univ, 'chase', chase_id)
+
+        # Start chase engine (streams steps via OLA)
+        chase_engine.start_chase(chase, universes_with_nodes)
+
+        return {'success': True, 'universes': universes_with_nodes}
 
     def stop_playback(self, universe=None):
         """Stop all playback"""
+        chase_engine.stop_all()  # Stop chase engine
         playback_manager.stop(universe)
         node_results = node_manager.stop_playback_on_nodes(universe)
         return {'success': True, 'results': node_results}
