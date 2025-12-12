@@ -266,30 +266,255 @@ class ChaseEngine:
         print(f"⏹️ Chase '{chase['name']}' stopped", flush=True)
 
     def _send_step(self, universe, channels):
-        """Send a single chase step via OLA"""
+        """Send a single chase step - routes through SSOT"""
         if not channels:
             return
-
-        # Build full 512 channel array from current state
-        current = dmx_state.get_universe(universe)
-
-        # Apply step channels
-        for ch_str, value in channels.items():
-            ch = int(ch_str)
-            if 1 <= ch <= 512:
-                current[ch - 1] = int(value)
-
-        # Send via OLA
-        try:
-            data_str = ','.join(str(v) for v in current)
-            subprocess.run(
-                ['ola_set_dmx', '-u', str(universe), '-d', data_str],
-                capture_output=True, text=True, timeout=2
-            )
-        except Exception as e:
-            print(f"❌ Chase step OLA error: {e}", flush=True)
+        # Use content_manager for SSOT - updates dmx_state AND sends to all nodes
+        content_manager.set_channels(universe, channels, fade_ms=0)
 
 chase_engine = ChaseEngine()
+# ============================================================
+# Schedule Runner
+# ============================================================
+class ScheduleRunner:
+    """Background scheduler that runs cron-based lighting events"""
+    
+    def __init__(self):
+        self.schedules = []
+        self.running = False
+        self.thread = None
+    
+    def start(self):
+        """Start the schedule runner background thread"""
+        if self.running:
+            return
+        self.running = True
+        self.update_schedules()
+        self.thread = threading.Thread(target=self._run_loop, daemon=True)
+        self.thread.start()
+        print("📅 Schedule runner started")
+    
+    def stop(self):
+        """Stop the schedule runner"""
+        self.running = False
+        print("📅 Schedule runner stopped")
+    
+    def update_schedules(self):
+        """Reload schedules from database"""
+        conn = get_db()
+        c = conn.cursor()
+        c.execute('SELECT * FROM schedules WHERE enabled = 1')
+        rows = c.fetchall()
+        conn.close()
+        self.schedules = []
+        for row in rows:
+            self.schedules.append({
+                'schedule_id': row[0], 'name': row[1], 'cron': row[2],
+                'action_type': row[3], 'action_id': row[4]
+            })
+        print(f"📅 Loaded {len(self.schedules)} active schedules")
+    
+    def _parse_cron(self, cron_str):
+        """Parse cron string and check if it matches current time"""
+        try:
+            parts = cron_str.split()
+            if len(parts) != 5:
+                return False
+            minute, hour, day, month, dow = parts
+            now = datetime.now()
+            
+            def match(val, current, max_val):
+                if val == '*':
+                    return True
+                if '/' in val:
+                    _, step = val.split('/')
+                    return current % int(step) == 0
+                if '-' in val:
+                    start, end = val.split('-')
+                    return int(start) <= current <= int(end)
+                if ',' in val:
+                    return current in [int(x) for x in val.split(',')]
+                return current == int(val)
+            
+            return (match(minute, now.minute, 59) and
+                    match(hour, now.hour, 23) and
+                    match(day, now.day, 31) and
+                    match(month, now.month, 12) and
+                    match(dow, now.weekday(), 6))
+        except Exception as e:
+            print(f"⚠️ Cron parse error: {e}")
+            return False
+    
+    def _run_loop(self):
+        """Background loop checking schedules every minute"""
+        last_check_minute = -1
+        while self.running:
+            now = datetime.now()
+            # Only check once per minute
+            if now.minute != last_check_minute:
+                last_check_minute = now.minute
+                for sched in self.schedules:
+                    if self._parse_cron(sched['cron']):
+                        print(f"⏰ Triggering schedule: {sched['name']}")
+                        self.run_schedule(sched['schedule_id'])
+            time.sleep(5)  # Check every 5 seconds for minute change
+    
+    def run_schedule(self, schedule_id):
+        """Execute a schedule's action"""
+        conn = get_db()
+        c = conn.cursor()
+        c.execute('SELECT * FROM schedules WHERE schedule_id = ?', (schedule_id,))
+        row = c.fetchone()
+        if not row:
+            conn.close()
+            return {'success': False, 'error': 'Schedule not found'}
+        
+        action_type = row[3]
+        action_id = row[4]
+        
+        # Update last_run
+        c.execute('UPDATE schedules SET last_run = ? WHERE schedule_id = ?',
+                  (datetime.now().isoformat(), schedule_id))
+        conn.commit()
+        conn.close()
+        
+        # Execute action
+        try:
+            if action_type == 'scene':
+                result = content_manager.play_scene(action_id)
+            elif action_type == 'chase':
+                result = content_manager.play_chase(action_id)
+            elif action_type == 'blackout':
+                result = content_manager.blackout()
+            else:
+                result = {'success': False, 'error': f'Unknown action type: {action_type}'}
+            print(f"📅 Schedule '{row[1]}' executed: {result.get('success', False)}")
+            return result
+        except Exception as e:
+            print(f"❌ Schedule error: {e}")
+            return {'success': False, 'error': str(e)}
+
+schedule_runner = ScheduleRunner()
+# ============================================================
+# Show Engine (Timeline Playback)
+# ============================================================
+class ShowEngine:
+    """Plays back timeline-based shows with timed events"""
+    
+    def __init__(self):
+        self.current_show = None
+        self.running = False
+        self.thread = None
+        self.stop_flag = threading.Event()
+    
+    def play_show(self, show_id, universe=1):
+        """Play a show timeline"""
+        conn = get_db()
+        c = conn.cursor()
+        c.execute('SELECT * FROM shows WHERE show_id = ?', (show_id,))
+        row = c.fetchone()
+        conn.close()
+        
+        if not row:
+            return {'success': False, 'error': 'Show not found'}
+        
+        timeline = json.loads(row[3]) if row[3] else []
+        if not timeline:
+            return {'success': False, 'error': 'Show has no timeline events'}
+        
+        # Stop any current show
+        self.stop()
+        
+        self.current_show = {
+            'show_id': show_id,
+            'name': row[1],
+            'timeline': timeline,
+            'universe': universe
+        }
+        self.running = True
+        self.stop_flag.clear()
+        
+        self.thread = threading.Thread(
+            target=self._run_timeline,
+            args=(timeline, universe),
+            daemon=True
+        )
+        self.thread.start()
+        
+        print(f"🎬 Playing show '{row[1]}' on universe {universe}")
+        return {'success': True, 'show_id': show_id, 'name': row[1]}
+    
+    def stop(self):
+        """Stop current show"""
+        if self.running:
+            self.stop_flag.set()
+            self.running = False
+            if self.current_show:
+                print(f"⏹️ Show '{self.current_show['name']}' stopped")
+            self.current_show = None
+    
+    def _run_timeline(self, timeline, universe):
+        """Execute timeline events in sequence"""
+        # Sort by time_ms
+        sorted_events = sorted(timeline, key=lambda x: x.get('time_ms', 0))
+        start_time = time.time() * 1000  # Convert to ms
+        
+        for event in sorted_events:
+            if self.stop_flag.is_set():
+                break
+            
+            # Wait until event time
+            event_time = event.get('time_ms', 0)
+            elapsed = (time.time() * 1000) - start_time
+            wait_time = (event_time - elapsed) / 1000  # Convert to seconds
+            
+            if wait_time > 0:
+                # Wait in small increments to check stop flag
+                while wait_time > 0 and not self.stop_flag.is_set():
+                    time.sleep(min(wait_time, 0.1))
+                    wait_time -= 0.1
+            
+            if self.stop_flag.is_set():
+                break
+            
+            # Execute the event
+            self._execute_event(event, universe)
+        
+        self.running = False
+        self.current_show = None
+        print("🎬 Show playback complete")
+    
+    def _execute_event(self, event, universe):
+        """Execute a single timeline event"""
+        event_type = event.get('type', 'scene')
+        
+        try:
+            if event_type == 'scene':
+                scene_id = event.get('scene_id')
+                fade_ms = event.get('fade_ms', 500)
+                content_manager.play_scene(scene_id, fade_ms=fade_ms, universe=universe)
+                print(f"  ▶️ Scene '{scene_id}' at {event.get('time_ms')}ms")
+            
+            elif event_type == 'chase':
+                chase_id = event.get('chase_id')
+                content_manager.play_chase(chase_id, universe=universe)
+                print(f"  ▶️ Chase '{chase_id}' at {event.get('time_ms')}ms")
+            
+            elif event_type == 'blackout':
+                fade_ms = event.get('fade_ms', 1000)
+                content_manager.blackout(universe=universe, fade_ms=fade_ms)
+                print(f"  ⬛ Blackout at {event.get('time_ms')}ms")
+            
+            elif event_type == 'channels':
+                channels = event.get('channels', {})
+                fade_ms = event.get('fade_ms', 0)
+                content_manager.set_channels(universe, channels, fade_ms)
+                print(f"  🎛️ Channels at {event.get('time_ms')}ms")
+            
+        except Exception as e:
+            print(f"  ❌ Event error: {e}")
+
+show_engine = ShowEngine()
 
 # ============================================================
 # Settings Management
@@ -1635,6 +1860,258 @@ def get_fixtures_for_channels():
     return jsonify(content_manager.get_fixtures_for_channels(universe, channels))
 
 # ─────────────────────────────────────────────────────────
+# Groups Routes
+# ─────────────────────────────────────────────────────────
+@app.route('/api/groups', methods=['GET'])
+def get_groups():
+    """Get all fixture groups"""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('SELECT * FROM groups ORDER BY name')
+    rows = c.fetchall()
+    conn.close()
+    groups = []
+    for row in rows:
+        groups.append({
+            'group_id': row[0], 'name': row[1], 'universe': row[2],
+            'channels': json.loads(row[3]) if row[3] else [],
+            'color': row[4], 'created_at': row[5]
+        })
+    return jsonify(groups)
+
+@app.route('/api/groups', methods=['POST'])
+def create_group():
+    """Create a fixture group"""
+    data = request.get_json()
+    group_id = data.get('group_id', f"group_{int(time.time())}")
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('''INSERT OR REPLACE INTO groups (group_id, name, universe, channels, color)
+        VALUES (?, ?, ?, ?, ?)''',
+        (group_id, data.get('name', 'New Group'), data.get('universe', 1),
+         json.dumps(data.get('channels', [])), data.get('color', '#8b5cf6')))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True, 'group_id': group_id})
+
+@app.route('/api/groups/<group_id>', methods=['GET'])
+def get_group(group_id):
+    """Get a single group"""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('SELECT * FROM groups WHERE group_id = ?', (group_id,))
+    row = c.fetchone()
+    conn.close()
+    if not row:
+        return jsonify({'error': 'Group not found'}), 404
+    return jsonify({
+        'group_id': row[0], 'name': row[1], 'universe': row[2],
+        'channels': json.loads(row[3]) if row[3] else [],
+        'color': row[4], 'created_at': row[5]
+    })
+
+@app.route('/api/groups/<group_id>', methods=['PUT'])
+def update_group(group_id):
+    """Update a group"""
+    data = request.get_json()
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('''UPDATE groups SET name=?, universe=?, channels=?, color=? WHERE group_id=?''',
+        (data.get('name'), data.get('universe', 1),
+         json.dumps(data.get('channels', [])), data.get('color', '#8b5cf6'), group_id))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+
+@app.route('/api/groups/<group_id>', methods=['DELETE'])
+def delete_group(group_id):
+    """Delete a group"""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('DELETE FROM groups WHERE group_id = ?', (group_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+
+# ─────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────
+# Shows Routes (Timeline Playback)
+# ─────────────────────────────────────────────────────────
+@app.route('/api/shows', methods=['GET'])
+def get_shows():
+    """Get all shows"""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('SELECT * FROM shows ORDER BY updated_at DESC')
+    rows = c.fetchall()
+    conn.close()
+    shows = []
+    for row in rows:
+        shows.append({
+            'show_id': row[0], 'name': row[1], 'description': row[2],
+            'timeline': json.loads(row[3]) if row[3] else [],
+            'duration_ms': row[4], 'created_at': row[5], 'updated_at': row[6]
+        })
+    return jsonify(shows)
+
+@app.route('/api/shows', methods=['POST'])
+def create_show():
+    """Create a show"""
+    data = request.get_json()
+    show_id = data.get('show_id', f"show_{int(time.time())}")
+    timeline = data.get('timeline', [])
+    # Calculate duration from timeline
+    duration_ms = max([e.get('time_ms', 0) for e in timeline]) if timeline else 0
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('''INSERT OR REPLACE INTO shows 
+        (show_id, name, description, timeline, duration_ms, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)''',
+        (show_id, data.get('name', 'New Show'), data.get('description', ''),
+         json.dumps(timeline), duration_ms, datetime.now().isoformat()))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True, 'show_id': show_id})
+
+@app.route('/api/shows/<show_id>', methods=['GET'])
+def get_show(show_id):
+    """Get a single show"""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('SELECT * FROM shows WHERE show_id = ?', (show_id,))
+    row = c.fetchone()
+    conn.close()
+    if not row:
+        return jsonify({'error': 'Show not found'}), 404
+    return jsonify({
+        'show_id': row[0], 'name': row[1], 'description': row[2],
+        'timeline': json.loads(row[3]) if row[3] else [],
+        'duration_ms': row[4], 'created_at': row[5], 'updated_at': row[6]
+    })
+
+@app.route('/api/shows/<show_id>', methods=['PUT'])
+def update_show(show_id):
+    """Update a show"""
+    data = request.get_json()
+    timeline = data.get('timeline', [])
+    duration_ms = max([e.get('time_ms', 0) for e in timeline]) if timeline else 0
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('''UPDATE shows SET name=?, description=?, timeline=?, duration_ms=?, updated_at=? 
+        WHERE show_id=?''',
+        (data.get('name'), data.get('description', ''), json.dumps(timeline),
+         duration_ms, datetime.now().isoformat(), show_id))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+
+@app.route('/api/shows/<show_id>', methods=['DELETE'])
+def delete_show(show_id):
+    """Delete a show"""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('DELETE FROM shows WHERE show_id = ?', (show_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+
+@app.route('/api/shows/<show_id>/play', methods=['POST'])
+def play_show(show_id):
+    """Play a show timeline"""
+    data = request.get_json() or {}
+    universe = data.get('universe', 1)
+    return jsonify(show_engine.play_show(show_id, universe))
+
+@app.route('/api/shows/stop', methods=['POST'])
+def stop_show():
+    """Stop current show"""
+    show_engine.stop()
+    return jsonify({'success': True})
+
+# Schedules Routes
+# ─────────────────────────────────────────────────────────
+@app.route('/api/schedules', methods=['GET'])
+def get_schedules():
+    """Get all schedules"""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('SELECT * FROM schedules ORDER BY name')
+    rows = c.fetchall()
+    conn.close()
+    schedules = []
+    for row in rows:
+        schedules.append({
+            'schedule_id': row[0], 'name': row[1], 'cron': row[2],
+            'action_type': row[3], 'action_id': row[4], 'enabled': bool(row[5]),
+            'last_run': row[6], 'next_run': row[7], 'created_at': row[8]
+        })
+    return jsonify(schedules)
+
+@app.route('/api/schedules', methods=['POST'])
+def create_schedule():
+    """Create a schedule"""
+    data = request.get_json()
+    schedule_id = data.get('schedule_id', f"sched_{int(time.time())}")
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('''INSERT OR REPLACE INTO schedules 
+        (schedule_id, name, cron, action_type, action_id, enabled)
+        VALUES (?, ?, ?, ?, ?, ?)''',
+        (schedule_id, data.get('name', 'New Schedule'), data.get('cron', '0 8 * * *'),
+         data.get('action_type', 'scene'), data.get('action_id'), data.get('enabled', True)))
+    conn.commit()
+    conn.close()
+    schedule_runner.update_schedules()
+    return jsonify({'success': True, 'schedule_id': schedule_id})
+
+@app.route('/api/schedules/<schedule_id>', methods=['GET'])
+def get_schedule(schedule_id):
+    """Get a single schedule"""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('SELECT * FROM schedules WHERE schedule_id = ?', (schedule_id,))
+    row = c.fetchone()
+    conn.close()
+    if not row:
+        return jsonify({'error': 'Schedule not found'}), 404
+    return jsonify({
+        'schedule_id': row[0], 'name': row[1], 'cron': row[2],
+        'action_type': row[3], 'action_id': row[4], 'enabled': bool(row[5]),
+        'last_run': row[6], 'next_run': row[7], 'created_at': row[8]
+    })
+
+@app.route('/api/schedules/<schedule_id>', methods=['PUT'])
+def update_schedule(schedule_id):
+    """Update a schedule"""
+    data = request.get_json()
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('''UPDATE schedules SET name=?, cron=?, action_type=?, action_id=?, enabled=? 
+        WHERE schedule_id=?''',
+        (data.get('name'), data.get('cron'), data.get('action_type'),
+         data.get('action_id'), data.get('enabled', True), schedule_id))
+    conn.commit()
+    conn.close()
+    schedule_runner.update_schedules()
+    return jsonify({'success': True})
+
+@app.route('/api/schedules/<schedule_id>', methods=['DELETE'])
+def delete_schedule(schedule_id):
+    """Delete a schedule"""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('DELETE FROM schedules WHERE schedule_id = ?', (schedule_id,))
+    conn.commit()
+    conn.close()
+    schedule_runner.update_schedules()
+    return jsonify({'success': True})
+
+@app.route('/api/schedules/<schedule_id>/trigger', methods=['POST'])
+def trigger_schedule(schedule_id):
+    """Manually trigger a schedule"""
+    return jsonify(schedule_runner.run_schedule(schedule_id))
+
 # Playback Routes
 # ─────────────────────────────────────────────────────────
 @app.route('/api/playback/status', methods=['GET'])
@@ -1706,6 +2183,7 @@ if __name__ == '__main__':
     init_database()
     threading.Thread(target=discovery_listener, daemon=True).start()
     threading.Thread(target=stale_checker, daemon=True).start()
+    schedule_runner.start()
 
     # Send blackout on startup to clear any held values on ESPs
     # ESPs use "hold last look" so they may have stale data from before reboot
