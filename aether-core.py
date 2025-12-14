@@ -457,7 +457,7 @@ class ShowEngine:
         
         self.thread = threading.Thread(
             target=self._run_timeline,
-            args=(timeline, universe),
+            args=(timeline, universe, True),
             daemon=True
         )
         self.thread.start()
@@ -474,37 +474,37 @@ class ShowEngine:
                 print(f"⏹️ Show '{self.current_show['name']}' stopped")
             self.current_show = None
     
-    def _run_timeline(self, timeline, universe):
-        """Execute timeline events in sequence"""
-        # Sort by time_ms
+    def _run_timeline(self, timeline, universe, loop=True):
+        """Execute timeline events in sequence, with optional looping"""
         sorted_events = sorted(timeline, key=lambda x: x.get('time_ms', 0))
-        start_time = time.time() * 1000  # Convert to ms
         
-        for event in sorted_events:
-            if self.stop_flag.is_set():
+        while self.running and not self.stop_flag.is_set():
+            start_time = time.time() * 1000  # Convert to ms
+            
+            for event in sorted_events:
+                if self.stop_flag.is_set():
+                    break
+                # Wait until event time
+                event_time = event.get('time_ms', 0)
+                elapsed = (time.time() * 1000) - start_time
+                wait_time = (event_time - elapsed) / 1000  # Convert to seconds
+                if wait_time > 0:
+                    # Wait in small increments to check stop flag
+                    while wait_time > 0 and not self.stop_flag.is_set():
+                        time.sleep(min(wait_time, 0.1))
+                        wait_time -= 0.1
+                if self.stop_flag.is_set():
+                    break
+                # Execute the event
+                self._execute_event(event, universe)
+            
+            if not loop or self.stop_flag.is_set():
                 break
-            
-            # Wait until event time
-            event_time = event.get('time_ms', 0)
-            elapsed = (time.time() * 1000) - start_time
-            wait_time = (event_time - elapsed) / 1000  # Convert to seconds
-            
-            if wait_time > 0:
-                # Wait in small increments to check stop flag
-                while wait_time > 0 and not self.stop_flag.is_set():
-                    time.sleep(min(wait_time, 0.1))
-                    wait_time -= 0.1
-            
-            if self.stop_flag.is_set():
-                break
-            
-            # Execute the event
-            self._execute_event(event, universe)
+            print("🔁 Show looping...")
         
         self.running = False
         self.current_show = None
-        print("🎬 Show playback complete")
-    
+        print("🎬 Show playback stopped")
     def _execute_event(self, event, universe):
         """Execute a single timeline event"""
         event_type = event.get('type', 'scene')
