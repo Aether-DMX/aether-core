@@ -718,7 +718,13 @@ class NodeManager:
         existing = c.fetchone()
         now = datetime.now().isoformat()
 
+        was_offline = False
         if existing:
+            # Check if node was offline before updating
+            c.execute('SELECT status FROM nodes WHERE node_id = ?', (node_id,))
+            row = c.fetchone()
+            was_offline = row and row[0] == 'offline'
+            
             c.execute('''UPDATE nodes SET hostname = COALESCE(?, hostname), mac = COALESCE(?, mac),
                 ip = COALESCE(?, ip), uptime = COALESCE(?, uptime), rssi = COALESCE(?, rssi),
                 fps = COALESCE(?, fps), firmware = COALESCE(?, firmware), status = 'online', last_seen = ?
@@ -733,9 +739,9 @@ class NodeManager:
                  data.get('channelCount', 512), 'online', False, now, now))
         conn.commit()
         conn.close()
-        # Re-send config to paired WiFi nodes on reconnect
+        # Re-send config to paired WiFi nodes ONLY on reconnect (was offline, now online)
         node = self.get_node(node_id)
-        if node and node.get('is_paired') and node.get('type') == 'wifi' and existing:
+        if node and node.get('is_paired') and node.get('type') == 'wifi' and existing and was_offline:
             print(f"🔄 Re-sending config to reconnected node {node_id}")
             self.send_config_to_node(node, {
                 'name': node.get('name'),
