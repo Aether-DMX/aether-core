@@ -620,7 +620,7 @@ def init_database():
     # Add built-in hardwired node
     c.execute('SELECT * FROM nodes WHERE node_id = ?', ('universe-1-builtin',))
     if not c.fetchone():
-        c.execute('''INSERT INTO nodes (node_id, name, hostname, mac, ip, universe, channel_start, channel_end,
+        c.execute('''INSERT INTO nodes (node_id, name, hostname, mac, ip, universe, channel_start, type, channel_end,
             mode, type, connection, firmware, status, is_builtin, is_paired, can_delete, first_seen)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
             ('universe-1-builtin', 'Universe 1 (Built-in)', 'aether-pi', 'UART', 'localhost', 1, 1, 512,
@@ -705,16 +705,25 @@ class NodeManager:
                 (data.get('hostname'), data.get('mac'), data.get('ip'), data.get('uptime'),
                  data.get('rssi'), data.get('fps'), data.get('version'), now, node_id))
         else:
-            c.execute('''INSERT INTO nodes (node_id, name, hostname, mac, ip, universe, channel_start,
-                channel_end, status, is_paired, first_seen, last_seen) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+            c.execute('''INSERT INTO nodes (node_id, name, hostname, mac, ip, universe, channel_start, type,
+                channel_end, status, is_paired, first_seen, last_seen) VALUES (?, ?, ?, ?, ?, ?, ?, 'wifi', ?, ?, ?, ?, ?)''',
                 (node_id, data.get('hostname', f'Node-{node_id[-4:]}'), data.get('hostname'),
                  data.get('mac'), data.get('ip'), data.get('universe', 1), data.get('startChannel', 1),
                  data.get('channelCount', 512), 'online', False, now, now))
-
         conn.commit()
         conn.close()
+        # Re-send config to paired WiFi nodes on reconnect
+        node = self.get_node(node_id)
+        if node and node.get('is_paired') and node.get('type') == 'wifi' and existing:
+            print(f"🔄 Re-sending config to reconnected node {node_id}")
+            self.send_config_to_node(node, {
+                'name': node.get('name'),
+                'universe': node.get('universe', 1),
+                'channel_start': node.get('channel_start', 1),
+                'channel_end': node.get('channel_end', 512)
+            })
         self.broadcast_status()
-        return self.get_node(node_id)
+        return node
 
     def pair_node(self, node_id, config):
         conn = get_db()
@@ -2185,23 +2194,6 @@ if __name__ == '__main__':
     threading.Thread(target=stale_checker, daemon=True).start()
     schedule_runner.start()
 
-    # Send blackout on startup to clear any held values on ESPs
-    # ESPs use "hold last look" so they may have stale data from before reboot
-    def startup_blackout():
-        import time
-        time.sleep(3)  # Wait for OLA and network to be ready
-        print("🔄 Sending startup blackout to all universes...")
-        for universe in [1, 2, 3]:
-            try:
-                subprocess.run(
-                    ['ola_set_dmx', '-u', str(universe), '-d', ','.join(['0'] * 512)],
-                    capture_output=True, timeout=2
-                )
-            except Exception as e:
-                print(f"  ⚠️ Blackout U{universe} failed: {e}")
-        print("✓ Startup blackout complete")
-
-    threading.Thread(target=startup_blackout, daemon=True).start()
 
     print(f"✓ API server on port {API_PORT}")
     print(f"✓ Discovery on UDP {DISCOVERY_PORT}")
