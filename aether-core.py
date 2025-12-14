@@ -59,33 +59,54 @@ class DMXStateManager:
         self._load_state()
 
     def _load_state(self):
-        """Load DMX state from disk on startup"""
+        """On startup: channels start at 0, but we remember what was playing"""
+        # Don't restore channel values - start fresh
+        # But save active playback info for resume prompt
         try:
             if os.path.exists(DMX_STATE_FILE):
                 with open(DMX_STATE_FILE, 'r') as f:
                     saved = json.load(f)
-                    # Convert string keys back to integers
-                    for universe_str, channels in saved.get('universes', {}).items():
-                        universe = int(universe_str)
-                        self.universes[universe] = channels[:512]  # Ensure 512 max
-                        # Pad if needed
-                        while len(self.universes[universe]) < 512:
-                            self.universes[universe].append(0)
-                print(f"✓ Loaded DMX state: {len(self.universes)} universes")
+                    # Store what was playing for resume prompt (but don't apply)
+                    self.last_session = saved.get('active_playback', None)
+                    if self.last_session:
+                        print(f"💾 Previous session had active playback: {self.last_session}")
+                    else:
+                        print("✓ DMX starting fresh (no previous playback)")
         except Exception as e:
-            print(f"⚠️ Could not load DMX state: {e}")
+            print(f"⚠️ Could not check previous session: {e}")
+            self.last_session = None
 
     def _save_state(self):
-        """Save DMX state to disk (debounced)"""
+        """Save DMX state and active playback info to disk"""
         try:
             with self.lock:
-                data = {'universes': {str(k): v for k, v in self.universes.items()},
-                        'saved_at': datetime.now().isoformat()}
+                # Get active playback from playback_manager
+                active_playback = None
+                try:
+                    status = playback_manager.get_status()
+                    if status:
+                        # Find any active scene or chase
+                        for univ, info in status.items():
+                            if info and info.get('type'):
+                                active_playback = {
+                                    'universe': univ,
+                                    'type': info.get('type'),
+                                    'id': info.get('id'),
+                                    'name': info.get('name')
+                                }
+                                break
+                except:
+                    pass
+                
+                data = {
+                    'universes': {str(k): v for k, v in self.universes.items()},
+                    'active_playback': active_playback,
+                    'saved_at': datetime.now().isoformat()
+                }
             with open(DMX_STATE_FILE, 'w') as f:
                 json.dump(data, f)
         except Exception as e:
             print(f"⚠️ Could not save DMX state: {e}")
-
     def _schedule_save(self):
         """Debounce saves to avoid excessive disk writes"""
         if self._save_timer:
@@ -798,9 +819,30 @@ class NodeManager:
         if node.get('type') == 'hardwired' or node.get('is_builtin'):
             return self.send_to_hardwired(channels_dict, fade_ms)
         else:
-            # WiFi nodes use OLA/sACN - send to their universe
-            universe = node.get('universe', 1)
-            return self.send_via_ola(universe, channels_dict)
+            # WiFi nodes - send UDP JSON command with fade support
+            ip = node.get('ip')
+            if not ip:
+                print(f"⚠️ No IP for WiFi node {node.get('name')}")
+                return False
+            
+            # Build command similar to hardwired
+            if not channels_dict:
+                return True
+            
+            # Convert to list format for ESP32
+            max_ch = max(int(k) for k in channels_dict.keys())
+            data = [0] * max_ch
+            for ch_str, value in channels_dict.items():
+                ch = int(ch_str)
+                if 1 <= ch <= max_ch:
+                    data[ch - 1] = int(value)
+            
+            esp_cmd = {"cmd": "scene", "ch": 1, "data": data}
+            if fade_ms > 0:
+                esp_cmd["fade"] = fade_ms
+            
+            print(f"📤 UDP -> {node.get('name')} ({ip}): {len(data)} channels, fade={fade_ms}ms")
+            return self.send_command_to_wifi(ip, esp_cmd)
 
     def send_to_hardwired(self, channels_dict, fade_ms=0):
         """Send command to hardwired ESP32 via UART"""
@@ -1609,6 +1651,46 @@ def health():
         'services': {'database': True, 'discovery': True,
                      'serial': node_manager._serial is not None and node_manager._serial.is_open}
     })
+
+@app.route('/api/session/resume', methods=['GET'])
+def get_resume_session():
+    """Check if there's a previous session to resume"""
+    last_session = getattr(dmx_state, 'last_session', None)
+    if last_session:
+        return jsonify({'has_session': True, 'playback': last_session})
+    return jsonify({'has_session': False, 'playback': None})
+
+@app.route('/api/session/resume', methods=['POST'])
+def resume_session():
+    """Resume the previous session's playback"""
+    last_session = getattr(dmx_state, 'last_session', None)
+    if not last_session:
+        return jsonify({'success': False, 'error': 'No session to resume'})
+    
+    playback_type = last_session.get('type')
+    playback_id = last_session.get('id')
+    universe = last_session.get('universe', 1)
+    
+    try:
+        if playback_type == 'scene':
+            result = content_manager.play_scene(playback_id, universe=universe)
+        elif playback_type == 'chase':
+            result = content_manager.play_chase(playback_id, universe=universe)
+        else:
+            return jsonify({'success': False, 'error': f'Unknown type: {playback_type}'})
+        
+        # Clear the last session after resuming
+        dmx_state.last_session = None
+        return jsonify({'success': True, 'resumed': last_session})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/session/dismiss', methods=['POST'])
+def dismiss_session():
+    """Dismiss the resume prompt without resuming"""
+    dmx_state.last_session = None
+    return jsonify({'success': True})
+
 
 @app.route('/api/system/stats', methods=['GET'])
 def system_stats():
