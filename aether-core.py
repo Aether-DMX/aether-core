@@ -427,6 +427,9 @@ class ShowEngine:
         self.running = False
         self.thread = None
         self.stop_flag = threading.Event()
+        self.pause_flag = threading.Event()
+        self.paused = False
+        self.tempo = 1.0
     
     def play_show(self, show_id, universe=1):
         """Play a show timeline"""
@@ -450,6 +453,7 @@ class ShowEngine:
             'show_id': show_id,
             'name': row[1],
             'timeline': timeline,
+            'distributed': row[6] if len(row) > 6 else False,
             'universe': universe
         }
         self.running = True
@@ -469,10 +473,41 @@ class ShowEngine:
         """Stop current show"""
         if self.running:
             self.stop_flag.set()
+            self.pause_flag.clear()
             self.running = False
+            self.paused = False
             if self.current_show:
                 print(f"⏹️ Show '{self.current_show['name']}' stopped")
             self.current_show = None
+
+    def stop_silent(self):
+        print(f"🛑 stop_silent called, running={self.running}", flush=True)
+        """Stop without blackout (for SSOT transitions)"""
+        if self.running:
+            self.stop_flag.set()
+            self.pause_flag.clear()
+            self.running = False
+            self.paused = False
+            self.current_show = None
+
+    def pause(self):
+        """Pause current show"""
+        if self.running and not self.paused:
+            self.pause_flag.set()
+            self.paused = True
+            print(f"⏸️ Show paused")
+
+    def resume(self):
+        """Resume paused show"""
+        if self.running and self.paused:
+            self.pause_flag.clear()
+            self.paused = False
+            print(f"▶️ Show resumed")
+
+    def set_tempo(self, tempo):
+        """Set playback tempo (0.25 to 4.0)"""
+        self.tempo = max(0.25, min(4.0, tempo))
+        print(f"⏩ Tempo set to {self.tempo}x")
     
     def _run_timeline(self, timeline, universe, loop=True):
         """Execute timeline events in sequence, with optional looping"""
@@ -489,14 +524,29 @@ class ShowEngine:
                 elapsed = (time.time() * 1000) - start_time
                 wait_time = (event_time - elapsed) / 1000  # Convert to seconds
                 if wait_time > 0:
-                    # Wait in small increments to check stop flag
+                    # Wait in small increments, checking stop/pause flags and applying tempo
                     while wait_time > 0 and not self.stop_flag.is_set():
-                        time.sleep(min(wait_time, 0.1))
+                        # Check pause
+                        while self.pause_flag.is_set() and not self.stop_flag.is_set():
+                            time.sleep(0.1)
+                        if self.stop_flag.is_set():
+                            break
+                        # Apply tempo to sleep time
+                        sleep_chunk = min(wait_time, 0.1) / self.tempo
+                        time.sleep(sleep_chunk)
                         wait_time -= 0.1
                 if self.stop_flag.is_set():
                     break
                 # Execute the event
-                self._execute_event(event, universe)
+                # Check if distributed mode - extract all scene IDs from timeline
+                distributed = self.current_show.get('distributed', False) if self.current_show else False
+                all_scenes = None
+                event_index = 0
+                if distributed:
+                    all_scenes = [e.get('scene_id') for e in sorted_events if e.get('type') == 'scene' and e.get('scene_id')]
+                    event_index = [i for i, e in enumerate(sorted_events) if e.get('type') == 'scene'].index(
+                        sorted_events.index(event)) if event.get('type') == 'scene' else 0
+                self._execute_event(event, universe, distributed, all_scenes, event_index)
             
             if not loop or self.stop_flag.is_set():
                 break
@@ -505,7 +555,7 @@ class ShowEngine:
         self.running = False
         self.current_show = None
         print("🎬 Show playback stopped")
-    def _execute_event(self, event, universe):
+    def _execute_event(self, event, universe, distributed=False, all_scenes=None, event_index=0):
         """Execute a single timeline event"""
         event_type = event.get('type', 'scene')
         
@@ -513,8 +563,25 @@ class ShowEngine:
             if event_type == 'scene':
                 scene_id = event.get('scene_id')
                 fade_ms = event.get('fade_ms', 500)
-                content_manager.play_scene(scene_id, fade_ms=fade_ms, universe=universe)
-                print(f"  ▶️ Scene '{scene_id}' at {event.get('time_ms')}ms")
+                
+                if distributed and all_scenes:
+                    # Get all online universes
+                    all_nodes = node_manager.get_all_nodes(include_offline=False)
+                    universes = sorted(set(node.get('universe', 1) for node in all_nodes))
+                    
+                    # Send offset scenes to each universe
+                    for i, univ in enumerate(universes):
+                        if self.stop_flag.is_set():
+                            return
+                        offset_index = (event_index + i) % len(all_scenes)
+                        offset_scene_id = all_scenes[offset_index]
+                        content_manager.play_scene(offset_scene_id, fade_ms=fade_ms, universe=univ, skip_ssot=True)
+                    print(f"  🌈 Distributed at {event.get('time_ms')}ms -> {len(universes)} universes")
+                else:
+                    if self.stop_flag.is_set():
+                        return
+                    content_manager.play_scene(scene_id, fade_ms=fade_ms, universe=universe, skip_ssot=True)
+                    print(f"  ▶️ Scene '{scene_id}' at {event.get('time_ms')}ms")
             
             elif event_type == 'chase':
                 chase_id = event.get('chase_id')
@@ -1330,15 +1397,20 @@ class ContentManager:
             return scene
         return None
 
-    def play_scene(self, scene_id, fade_ms=None, use_local=True, target_channels=None, universe=None):
+    def play_scene(self, scene_id, fade_ms=None, use_local=True, target_channels=None, universe=None, skip_ssot=False):
         """Play a scene - broadcasts to ALL online nodes across all universes"""
         print(f"▶️ play_scene called: scene_id={scene_id}", flush=True)
         scene = self.get_scene(scene_id)
         if not scene:
             return {'success': False, 'error': 'Scene not found'}
 
-        # Stop any running chases first (SSOT)
-        chase_engine.stop_all()
+        # Stop any running shows and chases first (SSOT) - skip if called from within a show
+        if not skip_ssot:
+            print(f"🛑 SSOT: Stopping shows/chases before scene play", flush=True)
+            try:
+                show_engine.stop_silent() if hasattr(show_engine, "stop_silent") else show_engine.stop()
+            except: pass
+            chase_engine.stop_all()
 
         fade = fade_ms if fade_ms is not None else scene.get('fade_ms', 500)
 
@@ -1349,9 +1421,15 @@ class ContentManager:
             channels_to_apply = {k: v for k, v in scene['channels'].items() if int(k) in target_set}
             print(f"🎯 Targeted play: {len(channels_to_apply)} of {len(scene['channels'])} channels", flush=True)
 
-        # Get ALL online nodes and their universes
+        # Get universes to target
         all_nodes = node_manager.get_all_nodes(include_offline=False)
-        universes_with_nodes = set(node.get('universe', 1) for node in all_nodes)
+        all_universes = set(node.get('universe', 1) for node in all_nodes)
+        
+        # If specific universe requested, only target that one
+        if universe is not None:
+            universes_with_nodes = {universe} if universe in all_universes else set()
+        else:
+            universes_with_nodes = all_universes
         print(f"🎬 Playing scene '{scene['name']}' on universes: {sorted(universes_with_nodes)}", flush=True)
 
         # Send to ALL universes that have online nodes
@@ -1468,6 +1546,10 @@ class ContentManager:
                 print(f"⏹️ Stopping {current.get('type')} on U{univ} before chase play", flush=True)
             playback_manager.stop(univ)
 
+        # Stop any running shows and chases
+        try:
+            show_engine.stop()
+        except: pass
         # Stop any running chases
         chase_engine.stop_all()
 
@@ -2048,7 +2130,7 @@ def get_shows():
         shows.append({
             'show_id': row[0], 'name': row[1], 'description': row[2],
             'timeline': json.loads(row[3]) if row[3] else [],
-            'duration_ms': row[4], 'created_at': row[5], 'updated_at': row[6]
+            'duration_ms': row[4], 'created_at': row[5], 'updated_at': row[6], 'distributed': row[7] if len(row) > 7 else 0
         })
     return jsonify(shows)
 
@@ -2084,7 +2166,7 @@ def get_show(show_id):
     return jsonify({
         'show_id': row[0], 'name': row[1], 'description': row[2],
         'timeline': json.loads(row[3]) if row[3] else [],
-        'duration_ms': row[4], 'created_at': row[5], 'updated_at': row[6]
+        'duration_ms': row[4], 'created_at': row[5], 'updated_at': row[6], 'distributed': row[7] if len(row) > 7 else 0
     })
 
 @app.route('/api/shows/<show_id>', methods=['PUT'])
