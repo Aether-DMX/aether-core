@@ -505,8 +505,8 @@ class ShowEngine:
             print(f"▶️ Show resumed")
 
     def set_tempo(self, tempo):
-        """Set playback tempo (0.25 to 4.0)"""
-        self.tempo = max(0.25, min(4.0, tempo))
+        """Set playback tempo (0.25 to 100.0)"""
+        self.tempo = max(0.25, min(100.0, tempo))
         print(f"⏩ Tempo set to {self.tempo}x")
     
     def _run_timeline(self, timeline, universe, loop=True):
@@ -2207,6 +2207,27 @@ def stop_show():
     """Stop current show"""
     show_engine.stop()
     return jsonify({'success': True})
+
+
+@app.route('/api/shows/pause', methods=['POST'])
+def pause_show():
+    """Pause current show"""
+    show_engine.pause()
+    return jsonify({'success': True, 'paused': True})
+
+@app.route('/api/shows/resume', methods=['POST'])
+def resume_show():
+    """Resume current show"""
+    show_engine.resume()
+    return jsonify({'success': True, 'paused': False})
+
+@app.route('/api/shows/tempo', methods=['POST'])
+def set_show_tempo():
+    """Set show tempo (0.25 to 4.0)"""
+    data = request.get_json() or {}
+    tempo = data.get('tempo', 1.0)
+    show_engine.set_tempo(tempo)
+    return jsonify({'success': True, 'tempo': show_engine.tempo})
 
 # Schedules Routes
 # ─────────────────────────────────────────────────────────
