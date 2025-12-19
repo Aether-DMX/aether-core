@@ -290,8 +290,20 @@ class ChaseEngine:
         """Send a single chase step - routes through SSOT"""
         if not channels:
             return
-        # Use content_manager for SSOT - updates dmx_state AND sends to all nodes
-        content_manager.set_channels(universe, channels, fade_ms=0)
+        parsed_channels = {}
+        for key, value in channels.items():
+            key_str = str(key)
+            if ':' in key_str:
+                parts = key_str.split(':')
+                ch_univ = int(parts[0])
+                ch_num = int(parts[1])
+                if ch_univ == universe:
+                    parsed_channels[ch_num] = value
+            else:
+                parsed_channels[int(key_str)] = value
+        if not parsed_channels:
+            return
+        content_manager.set_channels(universe, parsed_channels, fade_ms=0)
 
 chase_engine = ChaseEngine()
 # ============================================================
@@ -1287,6 +1299,12 @@ node_manager = NodeManager()
 # Content Manager
 # ============================================================
 class ContentManager:
+    def __init__(self):
+        """Initialize ContentManager with SSOT lock for thread-safe playback transitions"""
+        self.ssot_lock = threading.Lock()
+        self.current_playback = {"type": None, "id": None, "universe": None}
+        print("✓ ContentManager initialized with SSOT lock")
+
     def set_channels(self, universe, channels, fade_ms=0):
         """Set DMX channels - updates state and sends to nodes"""
         import sys
@@ -1404,13 +1422,18 @@ class ContentManager:
         if not scene:
             return {'success': False, 'error': 'Scene not found'}
 
-        # Stop any running shows and chases first (SSOT) - skip if called from within a show
+        # SSOT: Acquire lock and stop everything cleanly
         if not skip_ssot:
-            print(f"🛑 SSOT: Stopping shows/chases before scene play", flush=True)
-            try:
-                show_engine.stop_silent() if hasattr(show_engine, "stop_silent") else show_engine.stop()
-            except: pass
-            chase_engine.stop_all()
+            with self.ssot_lock:
+                print(f"🔒 SSOT Lock - stopping all before scene", flush=True)
+                try:
+                    show_engine.stop_silent() if hasattr(show_engine, "stop_silent") else show_engine.stop()
+                except Exception as e:
+                    print(f"⚠️ Show stop error: {e}", flush=True)
+                chase_engine.stop_all()
+                time.sleep(0.15)
+                self.current_playback = {'type': 'scene', 'id': scene_id, 'universe': universe}
+                print(f"✓ SSOT: Now playing scene '{scene_id}'", flush=True)
 
         fade = fade_ms if fade_ms is not None else scene.get('fade_ms', 500)
 
@@ -1539,19 +1562,20 @@ class ContentManager:
         universes_with_nodes = list(set(node.get('universe', 1) for node in all_nodes))
         print(f"🎬 Playing chase '{chase['name']}' on universes: {sorted(universes_with_nodes)}", flush=True)
 
-        # SSOT: Stop any current playback on all universes
-        for univ in universes_with_nodes:
-            current = playback_manager.get_status(univ)
-            if current:
-                print(f"⏹️ Stopping {current.get('type')} on U{univ} before chase play", flush=True)
-            playback_manager.stop(univ)
+        # SSOT: Acquire lock and stop everything cleanly
+        with self.ssot_lock:
+            print(f"🔒 SSOT Lock - stopping all before chase", flush=True)
+            try:
+                show_engine.stop()
+            except Exception as e:
+                print(f"⚠️ Show stop: {e}", flush=True)
+            chase_engine.stop_all()
+            for univ in universes_with_nodes:
+                playback_manager.stop(univ)
+            time.sleep(0.15)
+            self.current_playback = {'type': 'chase', 'id': chase_id, 'universe': universe}
+            print(f"✓ SSOT: Now playing chase '{chase_id}'", flush=True)
 
-        # Stop any running shows and chases
-        try:
-            show_engine.stop()
-        except: pass
-        # Stop any running chases
-        chase_engine.stop_all()
 
         # Set playback state for all universes
         for univ in universes_with_nodes:
