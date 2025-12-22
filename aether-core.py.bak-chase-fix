@@ -20,8 +20,6 @@ from datetime import datetime, timedelta
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit
-import ai_ssot
-import ai_ops_registry
 
 # ============================================================
 # Configuration - Dynamic paths based on user home directory
@@ -50,28 +48,12 @@ CORS(app, resources={r"/api/*": {"origins": "*"}})
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
 # ============================================================
-# Beta Debug Logging - Enable with AETHER_BETA_DEBUG=1
-# ============================================================
-BETA_DEBUG = os.environ.get('AETHER_BETA_DEBUG', '0') == '1'
-
-def beta_log(action_name, data):
-    """Structured debug logging for Beta 1 verification."""
-    if not BETA_DEBUG:
-        return
-    timestamp = datetime.now().isoformat()
-    log_entry = {"ts": timestamp, "action": action_name, **data}
-    print(f"🔍 BETA_DEBUG: {json.dumps(log_entry)}", flush=True)
-
-
-# ============================================================
 # DMX State - THE SINGLE SOURCE OF TRUTH FOR CHANNEL VALUES
 # ============================================================
 class DMXStateManager:
     """Manages DMX state for all universes - this is the SSOT for channel values"""
     def __init__(self):
         self.universes = {}  # {universe_num: [512 values]}
-        self.master_level = 100  # 0-100 percent
-        self.master_base = {}  # Captured state at 100%
         self.lock = threading.Lock()
         self._save_timer = None
         self._load_state()
@@ -308,20 +290,8 @@ class ChaseEngine:
         """Send a single chase step - routes through SSOT"""
         if not channels:
             return
-        parsed_channels = {}
-        for key, value in channels.items():
-            key_str = str(key)
-            if ':' in key_str:
-                parts = key_str.split(':')
-                ch_univ = int(parts[0])
-                ch_num = int(parts[1])
-                if ch_univ == universe:
-                    parsed_channels[ch_num] = value
-            else:
-                parsed_channels[int(key_str)] = value
-        if not parsed_channels:
-            return
-        content_manager.set_channels(universe, parsed_channels, fade_ms=0)
+        # Use content_manager for SSOT - updates dmx_state AND sends to all nodes
+        content_manager.set_channels(universe, channels, fade_ms=0)
 
 chase_engine = ChaseEngine()
 # ============================================================
@@ -735,20 +705,7 @@ def init_database():
     except:
         pass
 
-    
-    # Add node_id to fixtures (which Pulse node outputs this fixture)
-    try:
-        c.execute('ALTER TABLE fixtures ADD COLUMN node_id TEXT')
-        conn.commit()
-    except:
-        pass
     # Add built-in hardwired node
-    # Add fixture_ids to groups
-    try:
-        c.execute('ALTER TABLE groups ADD COLUMN fixture_ids TEXT')
-        conn.commit()
-    except:
-        pass
     c.execute('SELECT * FROM nodes WHERE node_id = ?', ('universe-1-builtin',))
     if not c.fetchone():
         c.execute('''INSERT INTO nodes (node_id, name, hostname, mac, ip, universe, channel_start, type, channel_end,
@@ -1361,24 +1318,15 @@ class ContentManager:
         return {'success': True, 'results': results}
 
     def blackout(self, universe=None, fade_ms=1000):
-        """Blackout all channels - if universe is None, blackout ALL universes"""
+        """Blackout all channels - if universe is None, blackout ALL universes with online nodes"""
         all_nodes = node_manager.get_all_nodes(include_offline=False)
-        all_universes_online = list(set(node.get('universe', 1) for node in all_nodes))
-        playback_before = dict(self.current_playback) if hasattr(self, 'current_playback') else {}
 
         if universe is not None:
+            # Single universe blackout
             universes_to_blackout = [universe]
         else:
-            universes_to_blackout = all_universes_online
-
-        beta_log("blackout", {
-            "requested_universe": universe,
-            "selected_universes_at_action_time": sorted(all_universes_online),
-            "expanded_target_universes": sorted(universes_to_blackout),
-            "dispatch_targets_final": sorted(universes_to_blackout),
-            "playback_state_before": playback_before,
-            "fade_ms": fade_ms
-        })
+            # All universes with online nodes
+            universes_to_blackout = list(set(node.get('universe', 1) for node in all_nodes))
 
         print(f"⬛ Blackout on universes: {sorted(universes_to_blackout)}", flush=True)
 
@@ -1391,16 +1339,7 @@ class ContentManager:
                 success = node_manager.send_blackout(node, fade_ms)
                 results.append({'node': node['name'], 'success': success})
 
-        if hasattr(self, 'current_playback'):
-            self.current_playback = {"type": None, "id": None, "universe": None}
-
-        beta_log("blackout_complete", {
-            "dispatch_targets_final": sorted(universes_to_blackout),
-            "playback_state_after": {"type": None, "id": None, "universe": None}
-        })
-
         return {'success': True, 'results': results}
-
 
     # ─────────────────────────────────────────────────────────
     # Scenes
@@ -1471,16 +1410,9 @@ class ContentManager:
         if not scene:
             return {'success': False, 'error': 'Scene not found'}
 
-        # Capture state before SSOT
-        playback_before = dict(self.current_playback)
-        all_nodes = node_manager.get_all_nodes(include_offline=False)
-        all_universes = set(node.get('universe', 1) for node in all_nodes)
-
         # SSOT: Acquire lock and stop everything cleanly
-        ssot_acquired = False
         if not skip_ssot:
             with self.ssot_lock:
-                ssot_acquired = True
                 print(f"🔒 SSOT Lock - stopping all before scene", flush=True)
                 try:
                     show_engine.stop_silent() if hasattr(show_engine, "stop_silent") else show_engine.stop()
@@ -1492,48 +1424,50 @@ class ContentManager:
                 print(f"✓ SSOT: Now playing scene '{scene_id}'", flush=True)
 
         fade = fade_ms if fade_ms is not None else scene.get('fade_ms', 500)
+
+        # Filter channels if targeting specific ones
         channels_to_apply = scene['channels']
         if target_channels:
             target_set = set(target_channels)
             channels_to_apply = {k: v for k, v in scene['channels'].items() if int(k) in target_set}
+            print(f"🎯 Targeted play: {len(channels_to_apply)} of {len(scene['channels'])} channels", flush=True)
 
+        # Get universes to target
+        all_nodes = node_manager.get_all_nodes(include_offline=False)
+        all_universes = set(node.get('universe', 1) for node in all_nodes)
+        
+        # If specific universe requested, only target that one
         if universe is not None:
             universes_with_nodes = {universe} if universe in all_universes else set()
         else:
             universes_with_nodes = all_universes
-
-        beta_log("play_scene", {
-            "requested_universe": universe,
-            "selected_universes_at_action_time": sorted(all_universes),
-            "expanded_target_universes": sorted(universes_with_nodes),
-            "dispatch_targets_final": sorted(universes_with_nodes),
-            "playback_state_before": playback_before,
-            "playback_state_after": dict(self.current_playback),
-            "ssot_lock_acquired": ssot_acquired,
-            "scene_id": scene_id
-        })
-
         print(f"🎬 Playing scene '{scene['name']}' on universes: {sorted(universes_with_nodes)}", flush=True)
 
+        # Send to ALL universes that have online nodes
         all_results = []
         for univ in universes_with_nodes:
+            # SSOT: Stop any running chase on this universe
             if target_channels is None:
                 current = playback_manager.get_status(univ)
                 if current and current.get('type') == 'chase':
                     print(f"⏹️ Stopping chase on U{univ} before scene play", flush=True)
                     node_manager.stop_playback_on_nodes(univ)
                 playback_manager.set_playing(univ, 'scene', scene_id)
+
             result = self.set_channels(univ, channels_to_apply, fade)
             all_results.extend(result.get('results', []))
             dmx_state.set_channels(univ, channels_to_apply)
 
+        node_results = all_results
+
+        # Update play count
         conn = get_db()
         c = conn.cursor()
         c.execute('UPDATE scenes SET play_count = play_count + 1 WHERE scene_id = ?', (scene_id,))
         conn.commit()
         conn.close()
 
-        return {'success': True, 'results': all_results}
+        return {'success': True, 'results': node_results}
 
     def delete_scene(self, scene_id):
         conn = get_db()
@@ -2011,59 +1945,6 @@ def dmx_blackout():
     universe = data.get('universe')  # None = all universes
     return jsonify(content_manager.blackout(universe, data.get('fade_ms', 1000)))
 
-
-@app.route('/api/dmx/master', methods=['POST'])
-def dmx_master():
-    """Master dimmer - scales all output proportionally"""
-    data = request.get_json() or {}
-    level = data.get('level', 100)
-    capture = data.get('capture', False)
-    
-    print(f"🎚️ Master dimmer: level={level}%, capture={capture}", flush=True)
-    
-    # Capture current state if requested or if we don't have a base yet
-    if capture or not dmx_state.master_base:
-        dmx_state.master_base = {}
-        captured_any = False
-        
-        for univ, channels in dmx_state.universes.items():
-            if any(v > 0 for v in channels):
-                dmx_state.master_base[univ] = list(channels)
-                total_val = sum(channels)
-                print(f"   📸 Captured universe {univ}: {total_val} total brightness", flush=True)
-                captured_any = True
-        
-        if not captured_any:
-            print("   ⚠️ No active channels to capture", flush=True)
-            return jsonify({'success': False, 'error': 'No active lighting to dim'})
-    
-    dmx_state.master_level = level
-    scale = level / 100.0
-    
-    for univ, base in dmx_state.master_base.items():
-        scaled = {}
-        for ch_idx, base_val in enumerate(base):
-            if base_val > 0:
-                scaled[ch_idx + 1] = int(base_val * scale)
-        
-        if scaled:
-            print(f"   🔧 Scaling universe {univ}: {len(scaled)} channels at {level}%", flush=True)
-            dmx_state.set_channels(univ, scaled)
-            nodes = node_manager.get_nodes_in_universe(univ)
-            for node in nodes:
-                local_ch = node_manager.translate_channels_for_node(node, scaled)
-                if local_ch:
-                    node_manager.send_to_node(node, local_ch, fade_ms=0)
-    
-    return jsonify({'success': True, 'level': level})
-
-@app.route('/api/dmx/master/reset', methods=['POST'])
-def dmx_master_reset():
-    dmx_state.master_base = {}
-    dmx_state.master_level = 100
-    return jsonify({'success': True})
-
-
 @app.route('/api/dmx/universe/<int:universe>', methods=['GET'])
 def dmx_get_universe(universe):
     return jsonify({'universe': universe, 'channels': dmx_state.get_universe(universe)})
@@ -2484,42 +2365,6 @@ def screen_context():
                                       'timestamp': datetime.now().isoformat()})
     return jsonify({'success': True})
 
-
-# ============================================================
-# AI SSOT Routes
-# ============================================================
-@app.route('/api/ai/preferences', methods=['GET'])
-def ai_get_prefs():
-    return jsonify(ai_ssot.get_all_preferences())
-
-@app.route('/api/ai/preferences/<key>', methods=['GET', 'POST'])
-def ai_pref(key):
-    if request.method == 'POST':
-        data = request.get_json()
-        ai_ssot.set_preference(key, data.get('value'))
-        return jsonify({'success': True})
-    return jsonify({'value': ai_ssot.get_preference(key)})
-
-@app.route('/api/ai/budget', methods=['GET'])
-def ai_budget():
-    return jsonify(ai_ssot.check_budget())
-
-@app.route('/api/ai/outcomes', methods=['GET', 'POST'])
-def ai_outcomes():
-    if request.method == 'POST':
-        d = request.get_json()
-        ai_ssot.record_outcome(d.get('cid'), d.get('intent'),
-            d.get('suggested'), d.get('user_scope'), d.get('action'), d.get('success'))
-        return jsonify({'success': True})
-    return jsonify({'outcomes': ai_ssot.get_outcomes(limit=50)})
-
-@app.route('/api/ai/audit', methods=['GET'])
-def ai_audit():
-    return jsonify({'log': ai_ssot.get_audit_log(limit=100)})
-
-@app.route('/api/ai/ops', methods=['GET'])
-def ai_ops():
-    return jsonify({'ops': ai_ops_registry.list_ops()})
 # ============================================================
 # WebSocket Events
 # ============================================================
@@ -2548,7 +2393,6 @@ if __name__ == '__main__':
     print("="*60)
 
     init_database()
-    ai_ssot.init_ai_db()
     threading.Thread(target=discovery_listener, daemon=True).start()
     threading.Thread(target=stale_checker, daemon=True).start()
     schedule_runner.start()
