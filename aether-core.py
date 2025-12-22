@@ -54,6 +54,8 @@ class DMXStateManager:
     """Manages DMX state for all universes - this is the SSOT for channel values"""
     def __init__(self):
         self.universes = {}  # {universe_num: [512 values]}
+        self.master_level = 100  # 0-100 percent
+        self.master_base = {}  # Captured state at 100%
         self.lock = threading.Lock()
         self._save_timer = None
         self._load_state()
@@ -1956,6 +1958,30 @@ def dmx_blackout():
     # If no universe specified, blackout ALL universes (pass None)
     universe = data.get('universe')  # None = all universes
     return jsonify(content_manager.blackout(universe, data.get('fade_ms', 1000)))
+
+
+@app.route('/api/dmx/master', methods=['POST'])
+def dmx_master():
+    data = request.get_json() or {}
+    level = data.get('level', 100)
+    capture = data.get('capture', False)
+    if capture or not dmx_state.master_base:
+        dmx_state.master_base = {}
+        for univ in dmx_state.universes:
+            dmx_state.master_base[univ] = list(dmx_state.universes[univ])
+    dmx_state.master_level = level
+    scale = level / 100.0
+    for univ, base in dmx_state.master_base.items():
+        scaled = {ch + 1: int(val * scale) for ch, val in enumerate(base) if val > 0}
+        content_manager.set_channels(univ, scaled, fade_ms=0)
+    return jsonify({'success': True, 'level': level})
+
+@app.route('/api/dmx/master/reset', methods=['POST'])
+def dmx_master_reset():
+    dmx_state.master_base = {}
+    dmx_state.master_level = 100
+    return jsonify({'success': True})
+
 
 @app.route('/api/dmx/universe/<int:universe>', methods=['GET'])
 def dmx_get_universe(universe):
