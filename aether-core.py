@@ -48,6 +48,20 @@ CORS(app, resources={r"/api/*": {"origins": "*"}})
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
 # ============================================================
+# Beta Debug Logging - Enable with AETHER_BETA_DEBUG=1
+# ============================================================
+BETA_DEBUG = os.environ.get('AETHER_BETA_DEBUG', '0') == '1'
+
+def beta_log(action_name, data):
+    """Structured debug logging for Beta 1 verification."""
+    if not BETA_DEBUG:
+        return
+    timestamp = datetime.now().isoformat()
+    log_entry = {"ts": timestamp, "action": action_name, **data}
+    print(f"🔍 BETA_DEBUG: {json.dumps(log_entry)}", flush=True)
+
+
+# ============================================================
 # DMX State - THE SINGLE SOURCE OF TRUTH FOR CHANNEL VALUES
 # ============================================================
 class DMXStateManager:
@@ -1332,15 +1346,24 @@ class ContentManager:
         return {'success': True, 'results': results}
 
     def blackout(self, universe=None, fade_ms=1000):
-        """Blackout all channels - if universe is None, blackout ALL universes with online nodes"""
+        """Blackout all channels - if universe is None, blackout ALL universes"""
         all_nodes = node_manager.get_all_nodes(include_offline=False)
+        all_universes_online = list(set(node.get('universe', 1) for node in all_nodes))
+        playback_before = dict(self.current_playback) if hasattr(self, 'current_playback') else {}
 
         if universe is not None:
-            # Single universe blackout
             universes_to_blackout = [universe]
         else:
-            # All universes with online nodes
-            universes_to_blackout = list(set(node.get('universe', 1) for node in all_nodes))
+            universes_to_blackout = all_universes_online
+
+        beta_log("blackout", {
+            "requested_universe": universe,
+            "selected_universes_at_action_time": sorted(all_universes_online),
+            "expanded_target_universes": sorted(universes_to_blackout),
+            "dispatch_targets_final": sorted(universes_to_blackout),
+            "playback_state_before": playback_before,
+            "fade_ms": fade_ms
+        })
 
         print(f"⬛ Blackout on universes: {sorted(universes_to_blackout)}", flush=True)
 
@@ -1353,7 +1376,16 @@ class ContentManager:
                 success = node_manager.send_blackout(node, fade_ms)
                 results.append({'node': node['name'], 'success': success})
 
+        if hasattr(self, 'current_playback'):
+            self.current_playback = {"type": None, "id": None, "universe": None}
+
+        beta_log("blackout_complete", {
+            "dispatch_targets_final": sorted(universes_to_blackout),
+            "playback_state_after": {"type": None, "id": None, "universe": None}
+        })
+
         return {'success': True, 'results': results}
+
 
     # ─────────────────────────────────────────────────────────
     # Scenes
@@ -1424,9 +1456,16 @@ class ContentManager:
         if not scene:
             return {'success': False, 'error': 'Scene not found'}
 
+        # Capture state before SSOT
+        playback_before = dict(self.current_playback)
+        all_nodes = node_manager.get_all_nodes(include_offline=False)
+        all_universes = set(node.get('universe', 1) for node in all_nodes)
+
         # SSOT: Acquire lock and stop everything cleanly
+        ssot_acquired = False
         if not skip_ssot:
             with self.ssot_lock:
+                ssot_acquired = True
                 print(f"🔒 SSOT Lock - stopping all before scene", flush=True)
                 try:
                     show_engine.stop_silent() if hasattr(show_engine, "stop_silent") else show_engine.stop()
@@ -1438,50 +1477,48 @@ class ContentManager:
                 print(f"✓ SSOT: Now playing scene '{scene_id}'", flush=True)
 
         fade = fade_ms if fade_ms is not None else scene.get('fade_ms', 500)
-
-        # Filter channels if targeting specific ones
         channels_to_apply = scene['channels']
         if target_channels:
             target_set = set(target_channels)
             channels_to_apply = {k: v for k, v in scene['channels'].items() if int(k) in target_set}
-            print(f"🎯 Targeted play: {len(channels_to_apply)} of {len(scene['channels'])} channels", flush=True)
 
-        # Get universes to target
-        all_nodes = node_manager.get_all_nodes(include_offline=False)
-        all_universes = set(node.get('universe', 1) for node in all_nodes)
-        
-        # If specific universe requested, only target that one
         if universe is not None:
             universes_with_nodes = {universe} if universe in all_universes else set()
         else:
             universes_with_nodes = all_universes
+
+        beta_log("play_scene", {
+            "requested_universe": universe,
+            "selected_universes_at_action_time": sorted(all_universes),
+            "expanded_target_universes": sorted(universes_with_nodes),
+            "dispatch_targets_final": sorted(universes_with_nodes),
+            "playback_state_before": playback_before,
+            "playback_state_after": dict(self.current_playback),
+            "ssot_lock_acquired": ssot_acquired,
+            "scene_id": scene_id
+        })
+
         print(f"🎬 Playing scene '{scene['name']}' on universes: {sorted(universes_with_nodes)}", flush=True)
 
-        # Send to ALL universes that have online nodes
         all_results = []
         for univ in universes_with_nodes:
-            # SSOT: Stop any running chase on this universe
             if target_channels is None:
                 current = playback_manager.get_status(univ)
                 if current and current.get('type') == 'chase':
                     print(f"⏹️ Stopping chase on U{univ} before scene play", flush=True)
                     node_manager.stop_playback_on_nodes(univ)
                 playback_manager.set_playing(univ, 'scene', scene_id)
-
             result = self.set_channels(univ, channels_to_apply, fade)
             all_results.extend(result.get('results', []))
             dmx_state.set_channels(univ, channels_to_apply)
 
-        node_results = all_results
-
-        # Update play count
         conn = get_db()
         c = conn.cursor()
         c.execute('UPDATE scenes SET play_count = play_count + 1 WHERE scene_id = ?', (scene_id,))
         conn.commit()
         conn.close()
 
-        return {'success': True, 'results': node_results}
+        return {'success': True, 'results': all_results}
 
     def delete_scene(self, scene_id):
         conn = get_db()
