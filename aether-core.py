@@ -733,7 +733,20 @@ def init_database():
     except:
         pass
 
+    
+    # Add node_id to fixtures (which Pulse node outputs this fixture)
+    try:
+        c.execute('ALTER TABLE fixtures ADD COLUMN node_id TEXT')
+        conn.commit()
+    except:
+        pass
     # Add built-in hardwired node
+    # Add fixture_ids to groups
+    try:
+        c.execute('ALTER TABLE groups ADD COLUMN fixture_ids TEXT')
+        conn.commit()
+    except:
+        pass
     c.execute('SELECT * FROM nodes WHERE node_id = ?', ('universe-1-builtin',))
     if not c.fetchone():
         c.execute('''INSERT INTO nodes (node_id, name, hostname, mac, ip, universe, channel_start, type, channel_end,
