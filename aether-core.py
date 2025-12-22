@@ -1999,18 +1999,47 @@ def dmx_blackout():
 
 @app.route('/api/dmx/master', methods=['POST'])
 def dmx_master():
+    """Master dimmer - scales all output proportionally"""
     data = request.get_json() or {}
     level = data.get('level', 100)
     capture = data.get('capture', False)
+    
+    print(f"🎚️ Master dimmer: level={level}%, capture={capture}", flush=True)
+    
+    # Capture current state if requested or if we don't have a base yet
     if capture or not dmx_state.master_base:
         dmx_state.master_base = {}
-        for univ in dmx_state.universes:
-            dmx_state.master_base[univ] = list(dmx_state.universes[univ])
+        captured_any = False
+        
+        for univ, channels in dmx_state.universes.items():
+            if any(v > 0 for v in channels):
+                dmx_state.master_base[univ] = list(channels)
+                total_val = sum(channels)
+                print(f"   📸 Captured universe {univ}: {total_val} total brightness", flush=True)
+                captured_any = True
+        
+        if not captured_any:
+            print("   ⚠️ No active channels to capture", flush=True)
+            return jsonify({'success': False, 'error': 'No active lighting to dim'})
+    
     dmx_state.master_level = level
     scale = level / 100.0
+    
     for univ, base in dmx_state.master_base.items():
-        scaled = {ch + 1: int(val * scale) for ch, val in enumerate(base) if val > 0}
-        content_manager.set_channels(univ, scaled, fade_ms=0)
+        scaled = {}
+        for ch_idx, base_val in enumerate(base):
+            if base_val > 0:
+                scaled[ch_idx + 1] = int(base_val * scale)
+        
+        if scaled:
+            print(f"   🔧 Scaling universe {univ}: {len(scaled)} channels at {level}%", flush=True)
+            dmx_state.set_channels(univ, scaled)
+            nodes = node_manager.get_nodes_in_universe(univ)
+            for node in nodes:
+                local_ch = node_manager.translate_channels_for_node(node, scaled)
+                if local_ch:
+                    node_manager.send_to_node(node, local_ch, fade_ms=0)
+    
     return jsonify({'success': True, 'level': level})
 
 @app.route('/api/dmx/master/reset', methods=['POST'])
