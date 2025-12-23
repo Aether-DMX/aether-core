@@ -932,8 +932,9 @@ class NodeManager:
     # ─────────────────────────────────────────────────────────
     def send_to_node(self, node, channels_dict, fade_ms=0):
         """Send DMX values to a node"""
+        universe = node.get("universe", 1)
         if node.get('type') == 'hardwired' or node.get('is_builtin'):
-            return self.send_to_hardwired(channels_dict, fade_ms)
+            return self.send_to_hardwired(universe, channels_dict, fade_ms)
         else:
             # WiFi nodes - send UDP JSON command with fade support
             ip = node.get('ip')
@@ -941,42 +942,39 @@ class NodeManager:
                 print(f"⚠️ No IP for WiFi node {node.get('name')}")
                 return False
             
-            # Build command similar to hardwired
-            if not channels_dict:
-                return True
-            
-            # Convert to list format for ESP32
-            max_ch = max(int(k) for k in channels_dict.keys())
-            data = [0] * max_ch
-            for ch_str, value in channels_dict.items():
-                ch = int(ch_str)
-                if 1 <= ch <= max_ch:
-                    data[ch - 1] = int(value)
-            
+            # Get full 512-channel universe from SSOT
+            data = dmx_state.get_universe(universe)
+
+            # Apply any new channel updates
+            if channels_dict:
+                for ch_str, value in channels_dict.items():
+                    ch = int(ch_str)
+                    if 1 <= ch <= 512:
+                        data[ch - 1] = int(value)
+
             esp_cmd = {"cmd": "scene", "ch": 1, "data": data}
             if fade_ms > 0:
                 esp_cmd["fade"] = fade_ms
-            
-            print(f"📤 UDP -> {node.get('name')} ({ip}): {len(data)} channels, fade={fade_ms}ms")
+
+            print(f"📤 UDP -> {node.get('name')} ({ip}): 512 channels (full frame), fade={fade_ms}ms")
             return self.send_command_to_wifi(ip, esp_cmd)
 
-    def send_to_hardwired(self, channels_dict, fade_ms=0):
-        """Send command to hardwired ESP32 via UART"""
+    def send_to_hardwired(self, universe, channels_dict, fade_ms=0):
+        """Send command to hardwired ESP32 via UART - always sends full 512-channel frame"""
         try:
             ser = self._get_serial()
             if ser is None:
                 return False
 
-            if not channels_dict:
-                return True
+            # Get full 512-channel universe from SSOT
+            data = dmx_state.get_universe(universe)
 
-            max_ch = max(int(k) for k in channels_dict.keys())
-            data = dmx_state.get_channels_for_esp(1, max_ch)
-
-            for ch_str, value in channels_dict.items():
-                ch = int(ch_str)
-                if 1 <= ch <= len(data):
-                    data[ch - 1] = int(value)
+            # Apply any new channel updates
+            if channels_dict:
+                for ch_str, value in channels_dict.items():
+                    ch = int(ch_str)
+                    if 1 <= ch <= 512:
+                        data[ch - 1] = int(value)
 
             esp_cmd = {"cmd": "scene", "ch": 1, "data": data}
             if fade_ms > 0:
@@ -985,7 +983,7 @@ class NodeManager:
             json_cmd = json.dumps(esp_cmd) + '\n'
             ser.write(json_cmd.encode())
             ser.flush()
-            print(f"📤 UART -> {len(data)} channels, fade={fade_ms}ms")
+            print(f"📤 UART -> 512 channels (full frame), fade={fade_ms}ms")
             return True
 
         except Exception as e:
