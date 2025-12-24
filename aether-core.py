@@ -854,11 +854,19 @@ def init_database():
 # Node Manager
 # ============================================================
 class NodeManager:
+    # Packet protocol version - increment if packet format changes
+    PACKET_VERSION = 2  # v2: respects ESP32 512-byte buffer limit
+
     def __init__(self):
         self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         self.lock = threading.Lock()
         self._serial = None
+        # Diagnostics tracking
+        self._last_udp_send = None
+        self._last_uart_send = None
+        self._udp_send_count = 0
+        self._uart_send_count = 0
 
     def _get_serial(self):
         if self._serial is None or not self._serial.is_open:
@@ -1030,22 +1038,60 @@ class NodeManager:
             if not ip:
                 print(f"⚠️ No IP for WiFi node {node.get('name')}")
                 return False
-            
-            # Get full 512-channel universe from SSOT
-            data = dmx_state.get_universe(universe)
 
-            # Apply any new channel updates
+            # CRITICAL: ESP32 firmware has 512-byte UDP buffer limit!
+            # Full 512-channel JSON is ~1055-2079 bytes - causes truncation + JSON parse failure
+            # Solution: Send only channels up to highest channel being used (like pre-df154bd)
+
+            # Get current state and find highest active channel
+            full_state = dmx_state.get_universe(universe)
+
+            # Apply any new channel updates to our working copy
             if channels_dict:
                 for ch_str, value in channels_dict.items():
                     ch = int(ch_str)
                     if 1 <= ch <= 512:
-                        data[ch - 1] = int(value)
+                        full_state[ch - 1] = int(value)
+
+            # Find the highest non-zero channel (or highest channel being updated)
+            max_ch = 1
+            if channels_dict:
+                max_ch = max(int(k) for k in channels_dict.keys())
+            # Also check for any non-zero values beyond that
+            for i in range(511, max_ch - 1, -1):
+                if full_state[i] > 0:
+                    max_ch = max(max_ch, i + 1)
+                    break
+
+            # Limit to reasonable size - at most ~150 channels to stay under 512 bytes
+            # (each value is ~2-4 chars + comma, so 150 * 4 = 600, plus overhead ~100 = ~700 worst case)
+            # Be conservative: 100 channels = ~450 bytes max
+            max_safe_channels = min(max_ch, 100)
+
+            # Truncate data to safe size
+            data = full_state[:max_safe_channels]
 
             esp_cmd = {"cmd": "scene", "ch": 1, "data": data}
             if fade_ms > 0:
                 esp_cmd["fade"] = fade_ms
 
-            print(f"📤 UDP -> {node.get('name')} ({ip}): 512 channels (full frame), fade={fade_ms}ms")
+            # Log packet size for debugging
+            packet_json = json.dumps(esp_cmd)
+            packet_size = len(packet_json)
+
+            print(f"📤 UDP -> {node.get('name')} ({ip}): {max_safe_channels} ch, {packet_size} bytes, fade={fade_ms}ms")
+
+            # Track for diagnostics
+            self._last_udp_send = {
+                'time': datetime.now().isoformat(),
+                'node': node.get('name'),
+                'ip': ip,
+                'channels': max_safe_channels,
+                'packet_size': packet_size,
+                'fade_ms': fade_ms
+            }
+            self._udp_send_count += 1
+
             return self.send_command_to_wifi(ip, esp_cmd)
 
     def send_to_hardwired(self, universe, channels_dict, fade_ms=0):
@@ -1073,6 +1119,16 @@ class NodeManager:
             ser.write(json_cmd.encode())
             ser.flush()
             print(f"📤 UART -> 512 channels (full frame), fade={fade_ms}ms")
+
+            # Track for diagnostics
+            self._last_uart_send = {
+                'time': datetime.now().isoformat(),
+                'universe': universe,
+                'channels': 512,
+                'packet_size': len(json_cmd),
+                'fade_ms': fade_ms
+            }
+            self._uart_send_count += 1
             return True
 
         except Exception as e:
@@ -2168,6 +2224,42 @@ def dmx_master_reset():
 @app.route('/api/dmx/universe/<int:universe>', methods=['GET'])
 def dmx_get_universe(universe):
     return jsonify({'universe': universe, 'channels': dmx_state.get_universe(universe)})
+
+@app.route('/api/dmx/diagnostics', methods=['GET'])
+def dmx_diagnostics():
+    """Diagnostics endpoint for debugging DMX output issues"""
+    return jsonify({
+        'packet_version': NodeManager.PACKET_VERSION,
+        'packet_version_info': 'v2: respects ESP32 512-byte buffer limit',
+        'udp': {
+            'last_send': node_manager._last_udp_send,
+            'total_sends': node_manager._udp_send_count,
+            'port': WIFI_COMMAND_PORT,
+            'max_safe_packet_size': 512,
+            'max_safe_channels': 100
+        },
+        'uart': {
+            'last_send': node_manager._last_uart_send,
+            'total_sends': node_manager._uart_send_count,
+            'port': HARDWIRED_UART,
+            'baud': HARDWIRED_BAUD
+        },
+        'chase_engine': {
+            'running_chases': list(chase_engine.running_chases.keys()),
+            'health': chase_engine.chase_health
+        },
+        'playback': playback_manager.get_status(),
+        'ssot': {
+            'universes_active': list(dmx_state.universes.keys()),
+            'master_level': dmx_state.master_level
+        },
+        'system': {
+            'version': AETHER_VERSION,
+            'commit': AETHER_COMMIT,
+            'uptime_seconds': (datetime.now() - AETHER_START_TIME).total_seconds(),
+            'file_path': AETHER_FILE_PATH
+        }
+    })
 
 # ─────────────────────────────────────────────────────────
 # Scene Routes
