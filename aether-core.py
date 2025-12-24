@@ -226,6 +226,8 @@ class ChaseEngine:
         self.lock = threading.Lock()
         self.running_chases = {}  # {chase_id: thread}
         self.stop_flags = {}  # {chase_id: Event}
+        # Health tracking for debugging
+        self.chase_health = {}  # {chase_id: {"step": int, "last_time": float, "status": str}}
 
     def start_chase(self, chase, universes):
         """Start a chase on the given universes"""
@@ -273,55 +275,110 @@ class ChaseEngine:
         steps = chase.get('steps', [])
         bpm = chase.get('bpm', 120)
         loop = chase.get('loop', True)
+        chase_fade_ms = chase.get('fade_ms', 0)  # Global fade for chase
 
         if not steps:
             print(f"⚠️ Chase {chase['name']} has no steps", flush=True)
+            self.chase_health[chase_id] = {"step": -1, "last_time": time.time(), "status": "no_steps"}
             return
 
-        step_interval = 60.0 / bpm  # seconds per step
+        # Default step interval from BPM (used if step doesn't have duration)
+        default_interval = 60.0 / bpm
         step_index = 0
+        loop_count = 0
 
-        print(f"🎬 Chase '{chase['name']}': {len(steps)} steps, {bpm} BPM, interval={step_interval:.2f}s", flush=True)
+        print(f"🎬 Chase '{chase['name']}': {len(steps)} steps, fade={chase_fade_ms}ms, universes={universes}", flush=True)
+        self.chase_health[chase_id] = {"step": 0, "last_time": time.time(), "status": "running", "loop": 0}
 
-        while not stop_flag.is_set():
-            step = steps[step_index]
-            channels = step.get('channels', {})
+        try:
+            while not stop_flag.is_set():
+                step = steps[step_index]
+                channels = step.get('channels', {})
+                # Use step duration if available, otherwise fall back to BPM timing
+                step_duration_ms = step.get('duration', int(default_interval * 1000))
+                # Use step fade or chase fade
+                fade_ms = step.get('fade_ms', chase_fade_ms)
 
-            # Send step to all universes via OLA
-            for univ in universes:
-                self._send_step(univ, channels)
+                # Update health heartbeat
+                self.chase_health[chase_id] = {
+                    "step": step_index,
+                    "last_time": time.time(),
+                    "status": "running",
+                    "loop": loop_count,
+                    "duration_ms": step_duration_ms,
+                    "fade_ms": fade_ms,
+                    "channel_count": len(channels)
+                }
 
-            # Wait for next step
-            stop_flag.wait(step_interval)
+                # Log step transition (SSOT tracing)
+                print(f"🔄 Chase '{chase['name']}' step {step_index}/{len(steps)-1} (loop {loop_count}): "
+                      f"{len(channels)} channels, duration={step_duration_ms}ms, fade={fade_ms}ms", flush=True)
 
-            # Advance step
-            step_index += 1
-            if step_index >= len(steps):
-                if loop:
-                    step_index = 0
-                else:
-                    break
+                # Send step to all universes with fade
+                for univ in universes:
+                    try:
+                        self._send_step(univ, channels, fade_ms)
+                    except Exception as e:
+                        print(f"❌ Chase step send error (U{univ}): {e}", flush=True)
+                        import traceback
+                        traceback.print_exc()
 
-        print(f"⏹️ Chase '{chase['name']}' stopped", flush=True)
+                # Wait for step duration (in seconds)
+                stop_flag.wait(step_duration_ms / 1000.0)
 
-    def _send_step(self, universe, channels):
-        """Send a single chase step - routes through SSOT"""
+                # Advance step
+                step_index += 1
+                if step_index >= len(steps):
+                    if loop:
+                        step_index = 0
+                        loop_count += 1
+                        print(f"🔁 Chase '{chase['name']}' loop {loop_count}", flush=True)
+                    else:
+                        break
+
+        except Exception as e:
+            print(f"❌ Chase '{chase['name']}' crashed: {e}", flush=True)
+            import traceback
+            traceback.print_exc()
+            self.chase_health[chase_id] = {"step": step_index, "last_time": time.time(), "status": f"error: {e}"}
+        finally:
+            self.chase_health[chase_id] = {"step": step_index, "last_time": time.time(), "status": "stopped"}
+            print(f"⏹️ Chase '{chase['name']}' stopped after {loop_count} loops", flush=True)
+
+    def _send_step(self, universe, channels, fade_ms=0):
+        """Send a single chase step - routes through SSOT (same path as /api/dmx/set)"""
         if not channels:
+            print(f"  ⚠️ _send_step: no channels to send for U{universe}", flush=True)
             return
         parsed_channels = {}
         for key, value in channels.items():
             key_str = str(key)
             if ':' in key_str:
+                # Format: "universe:channel" -> only apply to matching universe
                 parts = key_str.split(':')
                 ch_univ = int(parts[0])
                 ch_num = int(parts[1])
                 if ch_univ == universe:
                     parsed_channels[ch_num] = value
             else:
+                # Simple channel number - apply to all universes
                 parsed_channels[int(key_str)] = value
         if not parsed_channels:
+            print(f"  ⚠️ _send_step: no channels matched U{universe} after parsing", flush=True)
             return
-        content_manager.set_channels(universe, parsed_channels, fade_ms=0)
+
+        # SSOT trace: log what we're about to send
+        sample_ch = list(parsed_channels.items())[:3]  # First 3 for brevity
+        print(f"  📤 _send_step -> SSOT: U{universe}, {len(parsed_channels)} ch, fade={fade_ms}ms, sample={sample_ch}", flush=True)
+
+        # Route through SSOT - same function as /api/dmx/set
+        result = content_manager.set_channels(universe, parsed_channels, fade_ms=fade_ms)
+
+        # Log result
+        if result.get('success'):
+            print(f"  ✓ _send_step: SSOT accepted, {len(result.get('results', []))} nodes updated", flush=True)
+        else:
+            print(f"  ❌ _send_step: SSOT failed: {result.get('error', 'unknown')}", flush=True)
 
 chase_engine = ChaseEngine()
 # ============================================================
@@ -704,6 +761,7 @@ def init_database():
     c.execute('''CREATE TABLE IF NOT EXISTS chases (
         chase_id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, universe INTEGER DEFAULT 1,
         bpm INTEGER DEFAULT 120, loop BOOLEAN DEFAULT 1, steps TEXT, color TEXT DEFAULT '#10b981',
+        fade_ms INTEGER DEFAULT 0,
         synced_to_nodes BOOLEAN DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )''')
@@ -735,7 +793,15 @@ def init_database():
     except:
         pass
 
-    
+    # Add fade_ms column to chases table for smooth transitions
+    try:
+        c.execute('ALTER TABLE chases ADD COLUMN fade_ms INTEGER DEFAULT 0')
+        conn.commit()
+        print("✓ Added fade_ms column to chases table")
+    except:
+        pass  # Column already exists
+
+
     # Add node_id to fixtures (which Pulse node outputs this fixture)
     try:
         c.execute('ALTER TABLE fixtures ADD COLUMN node_id TEXT')
@@ -1550,14 +1616,14 @@ class ContentManager:
         chase_id = data.get('chase_id', f"chase_{int(time.time())}")
         universe = data.get('universe', 1)
         steps = data.get('steps', [])
-        
+
         conn = get_db()
         c = conn.cursor()
         c.execute('''INSERT OR REPLACE INTO chases (chase_id, name, description, universe, bpm, loop,
-            steps, color, synced_to_nodes, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+            steps, color, fade_ms, synced_to_nodes, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
             (chase_id, data.get('name', 'Untitled'), data.get('description', ''),
              universe, data.get('bpm', 120), data.get('loop', True),
-             json.dumps(steps), data.get('color', '#10b981'), False, datetime.now().isoformat()))
+             json.dumps(steps), data.get('color', '#10b981'), data.get('fade_ms', 0), False, datetime.now().isoformat()))
         conn.commit()
         conn.close()
         
@@ -2125,6 +2191,21 @@ def play_chase(chase_id):
         target_channels=data.get('target_channels'),
         universe=data.get('universe')
     ))
+
+@app.route('/api/chases/<chase_id>/stop', methods=['POST'])
+def stop_chase(chase_id):
+    """Stop a specific chase"""
+    chase_engine.stop_chase(chase_id)
+    return jsonify({'success': True, 'chase_id': chase_id})
+
+@app.route('/api/chases/health', methods=['GET'])
+def get_chase_health():
+    """Get health status of all running chases (for debugging)"""
+    return jsonify({
+        'running': list(chase_engine.running_chases.keys()),
+        'health': chase_engine.chase_health,
+        'timestamp': datetime.now().isoformat()
+    })
 
 # ─────────────────────────────────────────────────────────
 # Fixture Routes
