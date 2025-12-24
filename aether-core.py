@@ -980,6 +980,14 @@ class NodeManager:
         return node
 
     def unpair_node(self, node_id):
+        # Get node info before updating DB
+        node = self.get_node(node_id)
+
+        # Send unpair command to WiFi node to clear its config
+        if node and node.get('type') == 'wifi' and node.get('ip'):
+            self.send_command_to_wifi(node['ip'], {'cmd': 'unpair'})
+            print(f"📤 Unpair sent to {node.get('name', node_id)} ({node['ip']})")
+
         conn = get_db()
         c = conn.cursor()
         c.execute('UPDATE nodes SET is_paired = 0 WHERE node_id = ? AND can_delete = 1', (str(node_id),))
@@ -988,6 +996,14 @@ class NodeManager:
         self.broadcast_status()
 
     def delete_node(self, node_id):
+        # Get node info before deleting
+        node = self.get_node(node_id)
+
+        # Send unpair command to WiFi node to clear its config
+        if node and node.get('type') == 'wifi' and node.get('ip'):
+            self.send_command_to_wifi(node['ip'], {'cmd': 'unpair'})
+            print(f"📤 Unpair sent to {node.get('name', node_id)} ({node['ip']})")
+
         conn = get_db()
         c = conn.cursor()
         c.execute('DELETE FROM nodes WHERE node_id = ? AND can_delete = 1', (str(node_id),))
@@ -1365,7 +1381,8 @@ class NodeManager:
             return
         
         universe = node.get('universe', 1)
-        print(f"🔄 Syncing content to {node['name']} (U{universe})")
+        node_name = node.get('name') or node.get('node_id', 'unknown')
+        print(f"🔄 Syncing content to {node_name} (U{universe})")
         
         # Get all scenes for this universe
         conn = get_db()
@@ -1389,7 +1406,7 @@ class NodeManager:
             self.sync_chase_to_node(node, chase)
             time.sleep(CHUNK_DELAY)
         
-        print(f"✓ Synced {len(scenes)} scenes, {len(chases)} chases to {node['name']}")
+        print(f"✓ Synced {len(scenes)} scenes, {len(chases)} chases to {node_name}")
 
     def sync_all_content(self):
         """Sync all content to all paired WiFi nodes"""
@@ -2260,7 +2277,15 @@ def get_node(node_id):
 
 @app.route('/api/nodes/<node_id>/pair', methods=['POST'])
 def pair_node(node_id):
-    return jsonify(node_manager.pair_node(node_id, request.get_json() or {}))
+    try:
+        node = node_manager.pair_node(node_id, request.get_json() or {})
+        if node:
+            return jsonify(node)
+        else:
+            return jsonify({'error': 'Node not found - it may not have registered yet'}), 404
+    except Exception as e:
+        print(f"Error pairing node {node_id}: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/nodes/<node_id>/configure', methods=['POST'])
 def configure_node(node_id):
