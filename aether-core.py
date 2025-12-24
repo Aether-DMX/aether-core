@@ -2164,6 +2164,87 @@ def system_update_check():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/system/autosync', methods=['GET'])
+def get_autosync_status():
+    """Get auto-sync status"""
+    return jsonify({
+        'enabled': getattr(app, '_autosync_enabled', False),
+        'interval_minutes': getattr(app, '_autosync_interval', 30),
+        'last_check': getattr(app, '_autosync_last_check', None),
+        'last_update': getattr(app, '_autosync_last_update', None)
+    })
+
+@app.route('/api/system/autosync', methods=['POST'])
+def set_autosync():
+    """Enable/disable auto-sync"""
+    data = request.get_json() or {}
+    enabled = data.get('enabled', False)
+    interval = data.get('interval_minutes', 30)
+
+    app._autosync_enabled = enabled
+    app._autosync_interval = max(5, min(1440, interval))  # 5 min to 24 hours
+
+    if enabled:
+        start_autosync_thread()
+        print(f"✓ Auto-sync enabled: checking every {app._autosync_interval} minutes")
+    else:
+        print("✓ Auto-sync disabled")
+
+    return jsonify({
+        'success': True,
+        'enabled': app._autosync_enabled,
+        'interval_minutes': app._autosync_interval
+    })
+
+def start_autosync_thread():
+    """Start background thread for auto-sync"""
+    def autosync_worker():
+        while getattr(app, '_autosync_enabled', False):
+            try:
+                interval = getattr(app, '_autosync_interval', 30) * 60  # Convert to seconds
+                time.sleep(interval)
+
+                if not getattr(app, '_autosync_enabled', False):
+                    break
+
+                app._autosync_last_check = datetime.now().isoformat()
+
+                # Check for updates
+                subprocess.run(['git', 'fetch', 'origin'],
+                    capture_output=True, timeout=30,
+                    cwd=os.path.dirname(AETHER_FILE_PATH))
+
+                result = subprocess.run(
+                    ['git', 'rev-list', 'HEAD..origin/main', '--count'],
+                    capture_output=True, text=True, timeout=10,
+                    cwd=os.path.dirname(AETHER_FILE_PATH))
+
+                commits_behind = int(result.stdout.strip()) if result.returncode == 0 else 0
+
+                if commits_behind > 0:
+                    print(f"🔄 Auto-sync: {commits_behind} updates available, pulling...")
+
+                    pull_result = subprocess.run(
+                        ['git', 'pull', 'origin', 'main'],
+                        capture_output=True, text=True, timeout=60,
+                        cwd=os.path.dirname(AETHER_FILE_PATH))
+
+                    if pull_result.returncode == 0:
+                        app._autosync_last_update = datetime.now().isoformat()
+                        print("✓ Auto-sync: update pulled, restarting service...")
+                        time.sleep(1)
+                        os.system('sudo systemctl restart aether')
+                    else:
+                        print(f"❌ Auto-sync pull failed: {pull_result.stderr}")
+
+            except Exception as e:
+                print(f"❌ Auto-sync error: {e}")
+
+    # Only start if not already running
+    if not getattr(app, '_autosync_thread', None) or not app._autosync_thread.is_alive():
+        app._autosync_thread = threading.Thread(target=autosync_worker, daemon=True)
+        app._autosync_thread.start()
+
 @app.route('/api/nodes', methods=['GET'])
 def get_nodes():
     return jsonify(node_manager.get_all_nodes())
