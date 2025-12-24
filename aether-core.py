@@ -36,6 +36,29 @@ DATABASE = os.path.join(HOME_DIR, "aether-core.db")
 SETTINGS_FILE = os.path.join(HOME_DIR, "aether-settings.json")
 DMX_STATE_FILE = os.path.join(HOME_DIR, "aether-dmx-state.json")
 
+# ============================================================
+# Version/Runtime Info - For SSOT verification
+# ============================================================
+AETHER_VERSION = "3.1.0"
+AETHER_START_TIME = datetime.now()
+AETHER_FILE_PATH = os.path.abspath(__file__)
+
+def get_git_commit():
+    """Get current git commit hash if available"""
+    try:
+        result = subprocess.run(
+            ['git', 'rev-parse', '--short', 'HEAD'],
+            capture_output=True, text=True, timeout=2,
+            cwd=os.path.dirname(AETHER_FILE_PATH)
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except:
+        pass
+    return "unknown"
+
+AETHER_COMMIT = get_git_commit()
+
 # Serial port for hardwired node
 HARDWIRED_UART = "/dev/serial0"
 HARDWIRED_BAUD = 115200
@@ -1877,9 +1900,23 @@ def stale_checker():
 @app.route('/api/health', methods=['GET'])
 def health():
     return jsonify({
-        'status': 'healthy', 'version': '3.0.0', 'timestamp': datetime.now().isoformat(),
+        'status': 'healthy', 'version': AETHER_VERSION, 'timestamp': datetime.now().isoformat(),
         'services': {'database': True, 'discovery': True,
                      'serial': node_manager._serial is not None and node_manager._serial.is_open}
+    })
+
+@app.route('/api/version', methods=['GET'])
+def version():
+    """Get version info for SSOT verification - confirms which backend file is running"""
+    uptime_seconds = (datetime.now() - AETHER_START_TIME).total_seconds()
+    return jsonify({
+        'version': AETHER_VERSION,
+        'commit': AETHER_COMMIT,
+        'file_path': AETHER_FILE_PATH,
+        'cwd': os.getcwd(),
+        'started_at': AETHER_START_TIME.isoformat(),
+        'uptime_seconds': int(uptime_seconds),
+        'python': subprocess.run(['python3', '--version'], capture_output=True, text=True).stdout.strip() if os.name != 'nt' else 'N/A'
     })
 
 @app.route('/api/session/resume', methods=['GET'])
@@ -2622,9 +2659,14 @@ def handle_subscribe_dmx(data):
 # ============================================================
 if __name__ == '__main__':
     print("\n" + "="*60)
-    print("  AETHER Core v3.0 - Local Playback Engine")
+    print(f"  AETHER Core v{AETHER_VERSION} - Local Playback Engine")
     print("  Features: Scene/Chase sync, Universe splitting")
     print("="*60)
+    print(f"  SSOT VERIFICATION:")
+    print(f"    File:   {AETHER_FILE_PATH}")
+    print(f"    Commit: {AETHER_COMMIT}")
+    print(f"    CWD:    {os.getcwd()}")
+    print("="*60 + "\n")
 
     init_database()
     ai_ssot.init_ai_db()
