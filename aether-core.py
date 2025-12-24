@@ -2053,6 +2053,117 @@ def system_stats():
 
     return jsonify(stats)
 
+@app.route('/api/system/update', methods=['POST'])
+def system_update():
+    """Pull latest code from git and restart the service"""
+    results = {'steps': [], 'success': False}
+
+    try:
+        # Step 1: Git fetch
+        fetch_result = subprocess.run(
+            ['git', 'fetch', 'origin'],
+            capture_output=True, text=True, timeout=30,
+            cwd=os.path.dirname(AETHER_FILE_PATH)
+        )
+        results['steps'].append({
+            'step': 'git_fetch',
+            'success': fetch_result.returncode == 0,
+            'output': fetch_result.stdout + fetch_result.stderr
+        })
+
+        # Step 2: Check if update available
+        status_result = subprocess.run(
+            ['git', 'status', '-uno'],
+            capture_output=True, text=True, timeout=10,
+            cwd=os.path.dirname(AETHER_FILE_PATH)
+        )
+        behind = 'behind' in status_result.stdout
+        results['update_available'] = behind
+
+        if not behind:
+            results['message'] = 'Already up to date'
+            results['success'] = True
+            return jsonify(results)
+
+        # Step 3: Git pull
+        pull_result = subprocess.run(
+            ['git', 'pull', 'origin', 'main'],
+            capture_output=True, text=True, timeout=60,
+            cwd=os.path.dirname(AETHER_FILE_PATH)
+        )
+        results['steps'].append({
+            'step': 'git_pull',
+            'success': pull_result.returncode == 0,
+            'output': pull_result.stdout + pull_result.stderr
+        })
+
+        if pull_result.returncode != 0:
+            results['message'] = 'Git pull failed'
+            return jsonify(results), 500
+
+        # Step 4: Get new commit
+        commit_result = subprocess.run(
+            ['git', 'rev-parse', '--short', 'HEAD'],
+            capture_output=True, text=True, timeout=5,
+            cwd=os.path.dirname(AETHER_FILE_PATH)
+        )
+        results['new_commit'] = commit_result.stdout.strip()
+        results['old_commit'] = AETHER_COMMIT
+
+        # Step 5: Schedule restart (non-blocking)
+        results['message'] = 'Update pulled. Restarting service...'
+        results['success'] = True
+
+        # Restart service in background after response is sent
+        def restart_service():
+            time.sleep(1)  # Give time for response to be sent
+            os.system('sudo systemctl restart aether')
+
+        restart_thread = threading.Thread(target=restart_service, daemon=True)
+        restart_thread.start()
+
+        return jsonify(results)
+
+    except Exception as e:
+        results['error'] = str(e)
+        return jsonify(results), 500
+
+@app.route('/api/system/update/check', methods=['GET'])
+def system_update_check():
+    """Check if updates are available without applying them"""
+    try:
+        # Fetch latest
+        subprocess.run(
+            ['git', 'fetch', 'origin'],
+            capture_output=True, text=True, timeout=30,
+            cwd=os.path.dirname(AETHER_FILE_PATH)
+        )
+
+        # Check status
+        result = subprocess.run(
+            ['git', 'rev-list', 'HEAD..origin/main', '--count'],
+            capture_output=True, text=True, timeout=10,
+            cwd=os.path.dirname(AETHER_FILE_PATH)
+        )
+
+        commits_behind = int(result.stdout.strip()) if result.returncode == 0 else 0
+
+        # Get latest remote commit message
+        log_result = subprocess.run(
+            ['git', 'log', 'origin/main', '-1', '--format=%h %s'],
+            capture_output=True, text=True, timeout=10,
+            cwd=os.path.dirname(AETHER_FILE_PATH)
+        )
+
+        return jsonify({
+            'current_commit': AETHER_COMMIT,
+            'update_available': commits_behind > 0,
+            'commits_behind': commits_behind,
+            'latest_commit': log_result.stdout.strip() if log_result.returncode == 0 else None
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/nodes', methods=['GET'])
 def get_nodes():
     return jsonify(node_manager.get_all_nodes())
