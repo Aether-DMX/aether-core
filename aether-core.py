@@ -406,6 +406,69 @@ class ChaseEngine:
 
 chase_engine = ChaseEngine()
 effects_engine = DynamicEffectsEngine()
+
+# ============================================================
+# Arbitration Manager - Single source of truth for "who owns output"
+# ============================================================
+class ArbitrationManager:
+    """
+    Priority-based arbitration for DMX output control.
+    Priority: BLACKOUT(100) > MANUAL(80) > EFFECT(60) > CHASE(40) > SCENE(20) > IDLE(0)
+    """
+    PRIORITY = {'blackout': 100, 'manual': 80, 'effect': 60, 'chase': 40, 'scene': 20, 'idle': 0}
+
+    def __init__(self):
+        self.current_owner = 'idle'
+        self.current_id = None
+        self.blackout_active = False
+        self.last_change = None
+        self.lock = threading.Lock()
+        self.history = []
+
+    def acquire(self, owner_type, owner_id=None, force=False):
+        with self.lock:
+            if self.blackout_active and owner_type != 'blackout':
+                return False
+            new_pri = self.PRIORITY.get(owner_type, 0)
+            cur_pri = self.PRIORITY.get(self.current_owner, 0)
+            if force or new_pri >= cur_pri:
+                old = self.current_owner
+                self.current_owner = owner_type
+                self.current_id = owner_id
+                self.last_change = datetime.now().isoformat()
+                self.history.append({'time': self.last_change, 'from': old, 'to': owner_type, 'id': owner_id})
+                if len(self.history) > 50: self.history = self.history[-50:]
+                print(f"🎯 Arbitration: {old} → {owner_type}", flush=True)
+                return True
+            return False
+
+    def release(self, owner_type=None):
+        with self.lock:
+            if owner_type is None or self.current_owner == owner_type:
+                self.current_owner = 'idle'
+                self.current_id = None
+                self.last_change = datetime.now().isoformat()
+
+    def set_blackout(self, active):
+        with self.lock:
+            self.blackout_active = active
+            self.current_owner = 'blackout' if active else 'idle'
+            self.last_change = datetime.now().isoformat()
+            print(f"{'⬛ BLACKOUT ACTIVE' if active else '🔓 Blackout released'}", flush=True)
+
+    def get_status(self):
+        with self.lock:
+            return {'current_owner': self.current_owner, 'current_id': self.current_id,
+                    'blackout_active': self.blackout_active, 'last_change': self.last_change,
+                    'history': self.history[-10:]}
+
+    def can_write(self, owner_type):
+        with self.lock:
+            if self.blackout_active and owner_type != 'blackout': return False
+            return self.current_owner == owner_type or self.current_owner == 'idle'
+
+arbitration = ArbitrationManager()
+
 # ============================================================
 # Schedule Runner
 # ============================================================
@@ -1877,6 +1940,21 @@ class ContentManager:
 content_manager = ContentManager()
 
 # ============================================================
+# SSOT Output Router - Unified output path for all DMX writes
+# ============================================================
+def ssot_send_frame(universe, channels_array):
+    """Unified output function for all DMX writes. Routes to OLA."""
+    try:
+        data_str = ','.join(str(v) for v in channels_array)
+        subprocess.run(['ola_set_dmx', '-u', str(universe), '-d', data_str],
+                      capture_output=True, timeout=0.5)
+    except Exception as e:
+        print(f"❌ SSOT output error U{universe}: {e}")
+
+# Hook up effects engine to SSOT
+effects_engine.set_ssot_hooks(dmx_state, ssot_send_frame)
+
+# ============================================================
 # Background Services
 # ============================================================
 def discovery_listener():
@@ -2405,6 +2483,8 @@ def dmx_diagnostics():
             'port': HARDWIRED_UART,
             'baud': HARDWIRED_BAUD
         },
+        'arbitration': arbitration.get_status(),
+        'effects_engine': effects_engine.get_status(),
         'chase_engine': {
             'running_chases': list(chase_engine.running_chases.keys()),
             'health': chase_engine.chase_health
