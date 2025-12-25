@@ -1529,6 +1529,11 @@ class ContentManager:
 
     def blackout(self, universe=None, fade_ms=1000):
         """Blackout all channels - if universe is None, blackout ALL universes"""
+        # ARBITRATION: Blackout is highest priority - stop everything first
+        arbitration.set_blackout(True)
+        effects_engine.stop_effect()  # Stop all dynamic effects
+        chase_engine.stop_all()  # Stop all chases
+
         all_nodes = node_manager.get_all_nodes(include_offline=False)
         all_universes_online = list(set(node.get('universe', 1) for node in all_nodes))
         playback_before = dict(self.current_playback) if hasattr(self, 'current_playback') else {}
@@ -1565,6 +1570,9 @@ class ContentManager:
             "dispatch_targets_final": sorted(universes_to_blackout),
             "playback_state_after": {"type": None, "id": None, "universe": None}
         })
+
+        # Release blackout after sending zeros (allow future commands)
+        arbitration.set_blackout(False)
 
         return {'success': True, 'results': results}
 
