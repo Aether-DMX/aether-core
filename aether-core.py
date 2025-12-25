@@ -1639,7 +1639,54 @@ class ContentManager:
             return scene
         return None
 
-    def play_scene(self, scene_id, fade_ms=None, use_local=True, target_channels=None, universe=None, skip_ssot=False):
+    def replicate_scene_to_fixtures(self, channels, fixture_size=4, max_fixtures=128):
+        """Replicate a scene pattern across all fixtures in a universe.
+
+        If scene has channels 1-4, replicate to 5-8, 9-12, etc.
+        Detects the fixture pattern from the scene and tiles it.
+        """
+        if not channels:
+            return channels
+
+        # Find the base pattern - channels that define one fixture
+        ch_nums = sorted(int(k) for k in channels.keys())
+        if not ch_nums:
+            return channels
+
+        # Detect fixture size from the scene (could be 3 for RGB, 4 for RGBW, etc.)
+        min_ch = min(ch_nums)
+        max_ch = max(ch_nums)
+        pattern_size = max_ch - min_ch + 1
+
+        # If pattern is larger than typical fixture, don't replicate
+        if pattern_size > 8:
+            return channels
+
+        # Use the larger of detected pattern or standard fixture size
+        fixture_size = max(fixture_size, pattern_size)
+
+        # Build the base pattern (normalized to start at channel 1)
+        base_pattern = {}
+        for ch_str, value in channels.items():
+            ch = int(ch_str)
+            offset = (ch - 1) % fixture_size  # 0-indexed offset within fixture
+            base_pattern[offset] = value
+
+        # Replicate across all fixtures
+        replicated = {}
+        for fixture_num in range(max_fixtures):
+            fixture_start = fixture_num * fixture_size + 1
+            if fixture_start > 512:
+                break
+            for offset, value in base_pattern.items():
+                ch = fixture_start + offset
+                if ch <= 512:
+                    replicated[str(ch)] = value
+
+        print(f"🔄 Replicated {len(channels)} channels -> {len(replicated)} channels (pattern size: {fixture_size})")
+        return replicated
+
+    def play_scene(self, scene_id, fade_ms=None, use_local=True, target_channels=None, universe=None, skip_ssot=False, replicate=True):
         """Play a scene - broadcasts to ALL online nodes across all universes"""
         print(f"▶️ play_scene called: scene_id={scene_id}", flush=True)
         scene = self.get_scene(scene_id)
@@ -1668,9 +1715,14 @@ class ContentManager:
 
         fade = fade_ms if fade_ms is not None else scene.get('fade_ms', 500)
         channels_to_apply = scene['channels']
+
+        # Replicate scene pattern across all fixtures (unless targeting specific channels)
+        if replicate and not target_channels:
+            channels_to_apply = self.replicate_scene_to_fixtures(channels_to_apply)
+
         if target_channels:
             target_set = set(target_channels)
-            channels_to_apply = {k: v for k, v in scene['channels'].items() if int(k) in target_set}
+            channels_to_apply = {k: v for k, v in channels_to_apply.items() if int(k) in target_set}
 
         if universe is not None:
             universes_with_nodes = {universe} if universe in all_universes else set()
