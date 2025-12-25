@@ -22,6 +22,7 @@ from flask_cors import CORS
 from flask_socketio import SocketIO, emit
 import ai_ssot
 import ai_ops_registry
+from effects_engine import DynamicEffectsEngine
 
 # ============================================================
 # Configuration - Dynamic paths based on user home directory
@@ -404,6 +405,7 @@ class ChaseEngine:
             print(f"  ❌ _send_step: SSOT failed: {result.get('error', 'unknown')}", flush=True)
 
 chase_engine = ChaseEngine()
+effects_engine = DynamicEffectsEngine()
 # ============================================================
 # Schedule Runner
 # ============================================================
@@ -2494,6 +2496,75 @@ def get_chase_health():
         'health': chase_engine.chase_health,
         'timestamp': datetime.now().isoformat()
     })
+
+# ─────────────────────────────────────────────────────────
+# Dynamic Effects Routes (smooth fades, staggered patterns)
+# ─────────────────────────────────────────────────────────
+@app.route('/api/effects/christmas', methods=['POST'])
+def start_christmas_effect():
+    data = request.get_json() or {}
+    universes = data.get('universes', [2, 4])
+    effect_id = effects_engine.christmas_stagger(
+        universes,
+        data.get('fixtures_per_universe', 2),
+        data.get('channels_per_fixture', 4),
+        data.get('fade_ms', 1500),
+        data.get('hold_ms', 1000),
+        data.get('stagger_ms', 300)
+    )
+    return jsonify({'success': True, 'effect_id': effect_id})
+
+@app.route('/api/effects/twinkle', methods=['POST'])
+def start_twinkle_effect():
+    data = request.get_json() or {}
+    universes = data.get('universes', [2, 4])
+    effect_id = effects_engine.random_twinkle(
+        universes,
+        data.get('fixtures_per_universe', 2),
+        data.get('channels_per_fixture', 4),
+        data.get('colors'),
+        data.get('min_fade_ms', 500),
+        data.get('max_fade_ms', 2000)
+    )
+    return jsonify({'success': True, 'effect_id': effect_id})
+
+@app.route('/api/effects/smooth', methods=['POST'])
+def start_smooth_effect():
+    data = request.get_json() or {}
+    universes = data.get('universes', [2, 4])
+    effect_id = effects_engine.smooth_chase(
+        universes,
+        data.get('fixtures_per_universe', 2),
+        data.get('channels_per_fixture', 4),
+        data.get('colors'),
+        data.get('fade_ms', 1500),
+        data.get('hold_ms', 500)
+    )
+    return jsonify({'success': True, 'effect_id': effect_id})
+
+@app.route('/api/effects/wave', methods=['POST'])
+def start_wave_effect():
+    data = request.get_json() or {}
+    universes = data.get('universes', [2, 4])
+    effect_id = effects_engine.wave(
+        universes,
+        data.get('fixtures_per_universe', 2),
+        data.get('channels_per_fixture', 4),
+        data.get('color', [255, 0, 0, 0]),
+        data.get('wave_speed_ms', 2000),
+        data.get('tail_length', 2)
+    )
+    return jsonify({'success': True, 'effect_id': effect_id})
+
+@app.route('/api/effects/stop', methods=['POST'])
+def stop_effects():
+    data = request.get_json() or {}
+    effects_engine.stop_effect(data.get('effect_id'))
+    return jsonify({'success': True})
+
+@app.route('/api/effects', methods=['GET'])
+def get_running_effects():
+    return jsonify({'running': list(effects_engine.running.keys()), 'count': len(effects_engine.running)})
 
 # ─────────────────────────────────────────────────────────
 # Fixture Routes
