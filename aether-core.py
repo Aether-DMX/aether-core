@@ -1049,45 +1049,8 @@ class NodeManager:
         if node.get('type') == 'hardwired' or node.get('is_builtin'):
             return self.send_to_hardwired(universe, channels_dict, fade_ms)
         else:
-            # WiFi nodes - send UDP JSON command with fade support
-            ip = node.get('ip')
-            if not ip:
-                print(f"⚠️ No IP for WiFi node {node.get('name')}")
-                return False
-
-            # Get full 512-channel universe from SSOT
-            # NOTE: ESP32 firmware v1.1+ has 2500-byte buffer, can handle full frames
-            data = dmx_state.get_universe(universe)
-
-            # Apply any new channel updates
-            if channels_dict:
-                for ch_str, value in channels_dict.items():
-                    ch = int(ch_str)
-                    if 1 <= ch <= 512:
-                        data[ch - 1] = int(value)
-
-            esp_cmd = {"cmd": "scene", "ch": 1, "data": data}
-            if fade_ms > 0:
-                esp_cmd["fade"] = fade_ms
-
-            # Log packet size for debugging
-            packet_json = json.dumps(esp_cmd)
-            packet_size = len(packet_json)
-
-            print(f"📤 UDP -> {node.get('name')} ({ip}): 512 ch, {packet_size} bytes, fade={fade_ms}ms")
-
-            # Track for diagnostics
-            self._last_udp_send = {
-                'time': datetime.now().isoformat(),
-                'node': node.get('name'),
-                'ip': ip,
-                'channels': 512,
-                'packet_size': packet_size,
-                'fade_ms': fade_ms
-            }
-            self._udp_send_count += 1
-
-            return self.send_command_to_wifi(ip, esp_cmd)
+            # WiFi nodes - use OLA/sACN multicast (ESP32s listen to their universe)
+            return self.send_via_ola(universe, channels_dict)
 
     def send_to_hardwired(self, universe, channels_dict, fade_ms=0):
         """Send command to hardwired ESP32 via UART - always sends full 512-channel frame"""
