@@ -1129,8 +1129,8 @@ class NodeManager:
         if node_type == 'hardwired':
             return self.send_to_hardwired(universe, channels_dict, fade_ms)
         else:
-            # WiFi nodes - use OLA/sACN multicast (ESP32s listen to their universe)
-            return self.send_via_ola(universe, channels_dict)
+            # WiFi nodes - use OLA/sACN multicast with backend-interpolated fades
+            return self.send_via_ola(universe, channels_dict, fade_ms)
 
     def send_to_hardwired(self, universe, channels_dict, fade_ms=0):
         """Send command to hardwired ESP32 via UART - always sends full 512-channel frame"""
@@ -1179,31 +1179,61 @@ class NodeManager:
         # This method is now deprecated - we use send_via_ola instead
         return True
 
-    def send_via_ola(self, universe, channels_dict):
-        """Send DMX to a universe via OLA (sACN output)"""
+    def send_via_ola(self, universe, channels_dict, fade_ms=0):
+        """Send DMX to a universe via OLA (sACN output) with optional backend-interpolated fade"""
         try:
-            # Build full 512 channel array from current state
-            current = dmx_state.get_universe(universe)
-            
-            # Apply changes
+            # Get current state as starting point
+            current = list(dmx_state.get_universe(universe))
+
+            # Build target state
+            target = list(current)
             for ch_str, value in channels_dict.items():
                 ch = int(ch_str)
                 if 1 <= ch <= 512:
-                    current[ch - 1] = int(value)
-            
-            # Send via OLA CLI
-            data_str = ','.join(str(v) for v in current)
-            result = subprocess.run(
-                ['ola_set_dmx', '-u', str(universe), '-d', data_str],
-                capture_output=True, text=True, timeout=2
-            )
-            
-            if result.returncode == 0:
-                print(f"📤 OLA U{universe} -> {len(channels_dict)} channels")
+                    target[ch - 1] = int(value)
+
+            # If fade requested, interpolate frames
+            if fade_ms > 0:
+                fps = 30
+                total_frames = max(1, int((fade_ms / 1000.0) * fps))
+                frame_interval = fade_ms / 1000.0 / total_frames
+
+                print(f"📤 OLA U{universe} -> fade {fade_ms}ms ({total_frames} frames)", flush=True)
+
+                for frame in range(total_frames + 1):
+                    progress = frame / total_frames
+                    # Interpolate each channel
+                    interpolated = [
+                        int(current[i] + (target[i] - current[i]) * progress)
+                        for i in range(512)
+                    ]
+                    # Send frame
+                    data_str = ','.join(str(v) for v in interpolated)
+                    subprocess.run(
+                        ['ola_set_dmx', '-u', str(universe), '-d', data_str],
+                        capture_output=True, text=True, timeout=2
+                    )
+                    # Update SSOT state
+                    dmx_state.set_channels(universe, {str(i+1): v for i, v in enumerate(interpolated) if v > 0})
+
+                    if frame < total_frames:
+                        time.sleep(frame_interval)
+
                 return True
             else:
-                print(f"❌ OLA error: {result.stderr}")
-                return False
+                # No fade - immediate set
+                data_str = ','.join(str(v) for v in target)
+                result = subprocess.run(
+                    ['ola_set_dmx', '-u', str(universe), '-d', data_str],
+                    capture_output=True, text=True, timeout=2
+                )
+
+                if result.returncode == 0:
+                    print(f"📤 OLA U{universe} -> {len(channels_dict)} channels (snap)")
+                    return True
+                else:
+                    print(f"❌ OLA error: {result.stderr}")
+                    return False
         except Exception as e:
             print(f"❌ OLA error: {e}")
             return False
