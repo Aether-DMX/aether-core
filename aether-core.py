@@ -1129,8 +1129,13 @@ class NodeManager:
         if node_type == 'hardwired':
             return self.send_to_hardwired(universe, channels_dict, fade_ms)
         else:
-            # WiFi nodes - use OLA/sACN multicast with backend-interpolated fades
-            return self.send_via_ola(universe, channels_dict, fade_ms)
+            # WiFi nodes - use UDP JSON for node-side fades (smoother than sACN)
+            ip = node.get('ip')
+            if ip:
+                return self.send_dmx_to_wifi_node(ip, universe, channels_dict, fade_ms)
+            else:
+                # Fallback to OLA for nodes without IP
+                return self.send_via_ola(universe, channels_dict, fade_ms)
 
     def send_to_hardwired(self, universe, channels_dict, fade_ms=0):
         """Send command to hardwired ESP32 via UART - always sends full 512-channel frame"""
@@ -1246,6 +1251,40 @@ class NodeManager:
             return True
         except Exception as e:
             print(f"❌ UDP command error to {ip}: {e}")
+            return False
+
+    def send_dmx_to_wifi_node(self, ip, universe, channels_dict, fade_ms=0):
+        """Send DMX values to WiFi node via UDP JSON - uses node-side fade engine"""
+        try:
+            # Build command with sparse channels (matches firmware format)
+            cmd = {
+                "cmd": "set_channels",
+                "channels": {str(k): int(v) for k, v in channels_dict.items()}
+            }
+            if fade_ms > 0:
+                cmd["fade"] = fade_ms
+
+            json_data = json.dumps(cmd)
+            self.udp_socket.sendto(json_data.encode(), (ip, WIFI_COMMAND_PORT))
+
+            print(f"📤 UDP JSON -> {ip}:{WIFI_COMMAND_PORT} ({len(channels_dict)} ch, fade={fade_ms}ms)", flush=True)
+
+            # Track for diagnostics
+            self._last_udp_send = {
+                'time': datetime.now().isoformat(),
+                'ip': ip,
+                'universe': universe,
+                'channels': len(channels_dict),
+                'fade_ms': fade_ms
+            }
+            self._udp_send_count += 1
+
+            # Also update SSOT state
+            dmx_state.set_channels(universe, channels_dict)
+
+            return True
+        except Exception as e:
+            print(f"❌ UDP DMX error to {ip}: {e}")
             return False
 
     def send_blackout(self, node, fade_ms=1000):
