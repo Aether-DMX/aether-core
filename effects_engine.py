@@ -12,6 +12,7 @@ class DynamicEffectsEngine:
     """Creates dynamic lighting effects with frame-by-frame interpolation for smooth fades.
 
     All output routes through SSOT (dmx_state + node_manager.send_via_ola).
+    Properly integrates with ArbitrationManager for priority-based control.
     """
 
     def __init__(self):
@@ -21,11 +22,26 @@ class DynamicEffectsEngine:
         self.current_effect = None  # Track what's playing
         self._dmx_state = None  # Will be set by main module
         self._send_callback = None  # Will be set by main module
+        self._arbitration = None  # Will be set by main module
 
-    def set_ssot_hooks(self, dmx_state, send_callback):
+    def set_ssot_hooks(self, dmx_state, send_callback, arbitration=None):
         """Set SSOT hooks from main module for state updates and output"""
         self._dmx_state = dmx_state
         self._send_callback = send_callback
+        self._arbitration = arbitration
+
+    def _acquire_arbitration(self, effect_id):
+        """Acquire effect ownership from arbitration manager"""
+        if self._arbitration:
+            if not self._arbitration.acquire('effect', effect_id):
+                print(f"⚠️ Cannot start effect - arbitration denied", flush=True)
+                return False
+        return True
+
+    def _release_arbitration(self):
+        """Release effect ownership if no effects running"""
+        if self._arbitration and not self.running:
+            self._arbitration.release('effect')
 
     def stop_effect(self, effect_id=None):
         """Stop an effect or all effects"""
@@ -40,11 +56,16 @@ class DynamicEffectsEngine:
             self.running.clear()
             self.threads.clear()
             self.current_effect = None
+        self._release_arbitration()
         print(f"⏹️ Effects stopped: {effect_id or 'all'}")
 
     def _send_frame(self, universe, channels):
         """Send a single DMX frame through SSOT pipeline"""
         try:
+            # Check arbitration - skip if we don't own output
+            if self._arbitration and not self._arbitration.can_write('effect'):
+                return
+
             # Update SSOT state if available
             if self._dmx_state:
                 channels_dict = {str(i+1): v for i, v in enumerate(channels) if v > 0}
@@ -74,6 +95,11 @@ class DynamicEffectsEngine:
                           fade_ms=1500, hold_ms=1000, stagger_ms=300):
         """Christmas colors with staggered fixture timing for wave effects"""
         effect_id = f"christmas_stagger_{int(time.time())}"
+
+        # ARBITRATION: Acquire effect ownership
+        if not self._acquire_arbitration(effect_id):
+            return None
+
         stop_flag = threading.Event()
         self.running[effect_id] = stop_flag
         self.current_effect = effect_id
@@ -172,6 +198,11 @@ class DynamicEffectsEngine:
                        colors=None, min_fade_ms=500, max_fade_ms=2000):
         """Random twinkling effect - fixtures fade to random colors at random times"""
         effect_id = f"twinkle_{int(time.time())}"
+
+        # ARBITRATION: Acquire effect ownership
+        if not self._acquire_arbitration(effect_id):
+            return None
+
         stop_flag = threading.Event()
         self.running[effect_id] = stop_flag
         self.current_effect = effect_id
@@ -246,6 +277,11 @@ class DynamicEffectsEngine:
                      colors=None, fade_ms=1500, hold_ms=500):
         """Smooth synchronized color fade across all fixtures"""
         effect_id = f"smooth_chase_{int(time.time())}"
+
+        # ARBITRATION: Acquire effect ownership
+        if not self._acquire_arbitration(effect_id):
+            return None
+
         stop_flag = threading.Event()
         self.running[effect_id] = stop_flag
         self.current_effect = effect_id
@@ -311,6 +347,11 @@ class DynamicEffectsEngine:
              color=[255, 0, 0, 0], wave_speed_ms=2000, tail_length=2):
         """Wave effect - color travels across fixtures like a wave"""
         effect_id = f"wave_{int(time.time())}"
+
+        # ARBITRATION: Acquire effect ownership
+        if not self._acquire_arbitration(effect_id):
+            return None
+
         stop_flag = threading.Event()
         self.running[effect_id] = stop_flag
         self.current_effect = effect_id

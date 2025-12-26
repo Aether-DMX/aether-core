@@ -257,7 +257,12 @@ class ChaseEngine:
         """Start a chase on the given universes"""
         chase_id = chase['chase_id']
 
-        # Stop if already running
+        # ARBITRATION: Acquire chase ownership
+        if not arbitration.acquire('chase', chase_id):
+            print(f"⚠️ Cannot start chase - arbitration denied (owner: {arbitration.current_owner})", flush=True)
+            return False
+
+        # Stop any other running chases first
         self.stop_chase(chase_id)
 
         # Create stop flag
@@ -273,6 +278,7 @@ class ChaseEngine:
         self.running_chases[chase_id] = thread
         thread.start()
         print(f"🏃 Chase engine started: {chase['name']}", flush=True)
+        return True
 
     def stop_chase(self, chase_id=None):
         """Stop a chase or all chases"""
@@ -288,6 +294,10 @@ class ChaseEngine:
                     flag.set()
                 self.stop_flags.clear()
                 self.running_chases.clear()
+
+            # ARBITRATION: Release chase ownership if no more chases running
+            if not self.running_chases:
+                arbitration.release('chase')
 
     def stop_all(self):
         """Stop all running chases"""
@@ -1693,6 +1703,11 @@ class ContentManager:
         if not scene:
             return {'success': False, 'error': 'Scene not found'}
 
+        # ARBITRATION: Acquire scene ownership
+        if not arbitration.acquire('scene', scene_id):
+            print(f"⚠️ Cannot play scene - arbitration denied (owner: {arbitration.current_owner})", flush=True)
+            return {'success': False, 'error': f'Arbitration denied: {arbitration.current_owner} has control'}
+
         # Capture state before SSOT
         playback_before = dict(self.current_playback)
         all_nodes = node_manager.get_all_nodes(include_offline=False)
@@ -1709,6 +1724,7 @@ class ContentManager:
                 except Exception as e:
                     print(f"⚠️ Show stop error: {e}", flush=True)
                 chase_engine.stop_all()
+                effects_engine.stop_effect()  # Also stop effects
                 time.sleep(0.15)
                 self.current_playback = {'type': 'scene', 'id': scene_id, 'universe': universe}
                 print(f"✓ SSOT: Now playing scene '{scene_id}'", flush=True)
@@ -1851,6 +1867,7 @@ class ContentManager:
             except Exception as e:
                 print(f"⚠️ Show stop: {e}", flush=True)
             chase_engine.stop_all()
+            effects_engine.stop_effect()  # Also stop effects
             for univ in universes_with_nodes:
                 playback_manager.stop(univ)
             time.sleep(0.15)
@@ -2002,17 +2019,36 @@ content_manager = ContentManager()
 # ============================================================
 # SSOT Output Router - Unified output path for all DMX writes
 # ============================================================
-def ssot_send_frame(universe, channels_array):
-    """Unified output function for all DMX writes. Routes to OLA."""
+def ssot_send_frame(universe, channels_array, owner_type='effect'):
+    """
+    Unified output function for all DMX writes.
+    Routes through ContentManager to reach ALL nodes (hardwired + WiFi).
+
+    This is the ONLY function that should send DMX output.
+    All subsystems (Scenes, Chases, Effects) must go through here.
+    """
     try:
-        data_str = ','.join(str(v) for v in channels_array)
-        subprocess.run(['ola_set_dmx', '-u', str(universe), '-d', data_str],
-                      capture_output=True, timeout=0.5)
+        # Check arbitration - if we can't write, skip silently
+        if not arbitration.can_write(owner_type):
+            return
+
+        # Convert array to dict format for ContentManager
+        channels_dict = {}
+        for i, value in enumerate(channels_array):
+            if value > 0:  # Only include non-zero values
+                channels_dict[str(i + 1)] = value
+
+        if not channels_dict:
+            return
+
+        # Route through ContentManager - this sends to ALL nodes (hardwired + WiFi)
+        content_manager.set_channels(universe, channels_dict, fade_ms=0)
+
     except Exception as e:
         print(f"❌ SSOT output error U{universe}: {e}")
 
-# Hook up effects engine to SSOT
-effects_engine.set_ssot_hooks(dmx_state, ssot_send_frame)
+# Hook up effects engine to SSOT with arbitration
+effects_engine.set_ssot_hooks(dmx_state, ssot_send_frame, arbitration)
 
 # ============================================================
 # Background Services
@@ -2058,6 +2094,19 @@ def health():
         'status': 'healthy', 'version': AETHER_VERSION, 'timestamp': datetime.now().isoformat(),
         'services': {'database': True, 'discovery': True,
                      'serial': node_manager._serial is not None and node_manager._serial.is_open}
+    })
+
+@app.route('/api/arbitration', methods=['GET'])
+def get_arbitration():
+    """Get arbitration status - who currently owns DMX output"""
+    return jsonify({
+        'arbitration': arbitration.get_status(),
+        'effects': effects_engine.get_status(),
+        'chases': {
+            'running': list(chase_engine.running_chases.keys()),
+            'health': chase_engine.chase_health
+        },
+        'playback': playback_manager.get_status()
     })
 
 @app.route('/api/version', methods=['GET'])
