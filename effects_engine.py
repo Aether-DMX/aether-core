@@ -60,25 +60,18 @@ class DynamicEffectsEngine:
         print(f"⏹️ Effects stopped: {effect_id or 'all'}")
 
     def _send_frame(self, universe, channels):
-        """Send a single DMX frame through SSOT pipeline"""
+        """Send a single DMX frame through SSOT pipeline - NO FALLBACK, must use dispatcher"""
         try:
             # Check arbitration - skip if we don't own output
             if self._arbitration and not self._arbitration.can_write('effect'):
                 return
 
-            # Update SSOT state if available
-            if self._dmx_state:
-                channels_dict = {str(i+1): v for i, v in enumerate(channels) if v > 0}
-                self._dmx_state.set_channels(universe, channels_dict)
-
-            # Use callback if available (preferred), else fallback to direct OLA
+            # Use callback (SSOT dispatcher) - this is REQUIRED, no fallback
             if self._send_callback:
                 self._send_callback(universe, channels)
             else:
-                # Fallback: direct OLA (should not happen in production)
-                data_str = ','.join(str(v) for v in channels)
-                subprocess.run(['ola_set_dmx', '-u', str(universe), '-d', data_str],
-                              capture_output=True, timeout=0.5)
+                # No fallback - effects engine MUST be hooked to SSOT
+                print(f"❌ Effects engine not hooked to SSOT - skipping frame for U{universe}", flush=True)
         except Exception as e:
             print(f"❌ Effects frame error U{universe}: {e}")
 

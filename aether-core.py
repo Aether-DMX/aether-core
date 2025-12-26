@@ -253,8 +253,8 @@ class ChaseEngine:
         # Health tracking for debugging
         self.chase_health = {}  # {chase_id: {"step": int, "last_time": float, "status": str}}
 
-    def start_chase(self, chase, universes):
-        """Start a chase on the given universes"""
+    def start_chase(self, chase, universes, fade_ms_override=None):
+        """Start a chase on the given universes with optional fade override"""
         chase_id = chase['chase_id']
 
         # ARBITRATION: Acquire chase ownership
@@ -269,15 +269,15 @@ class ChaseEngine:
         stop_flag = threading.Event()
         self.stop_flags[chase_id] = stop_flag
 
-        # Start chase thread
+        # Start chase thread with fade override
         thread = threading.Thread(
             target=self._run_chase,
-            args=(chase, universes, stop_flag),
+            args=(chase, universes, stop_flag, fade_ms_override),
             daemon=True
         )
         self.running_chases[chase_id] = thread
         thread.start()
-        print(f"🏃 Chase engine started: {chase['name']}", flush=True)
+        print(f"🏃 Chase engine started: {chase['name']} (fade_override={fade_ms_override})", flush=True)
         return True
 
     def stop_chase(self, chase_id=None):
@@ -303,13 +303,14 @@ class ChaseEngine:
         """Stop all running chases"""
         self.stop_chase(None)
 
-    def _run_chase(self, chase, universes, stop_flag):
+    def _run_chase(self, chase, universes, stop_flag, fade_ms_override=None):
         """Chase playback loop - runs in background thread"""
         chase_id = chase['chase_id']
         steps = chase.get('steps', [])
         bpm = chase.get('bpm', 120)
         loop = chase.get('loop', True)
-        chase_fade_ms = chase.get('fade_ms', 0)  # Global fade for chase
+        # Apply-time fade override > chase default > 0
+        chase_fade_ms = fade_ms_override if fade_ms_override is not None else chase.get('fade_ms', 0)
 
         if not steps:
             print(f"⚠️ Chase {chase['name']} has no steps", flush=True)
@@ -1116,12 +1117,16 @@ class NodeManager:
         return translated
 
     # ─────────────────────────────────────────────────────────
-    # Send Commands to Nodes
+    # Send Commands to Nodes - UNIFIED DISPATCHER
     # ─────────────────────────────────────────────────────────
     def send_to_node(self, node, channels_dict, fade_ms=0):
-        """Send DMX values to a node"""
+        """Send DMX values to a node - this is the ONLY output point"""
         universe = node.get("universe", 1)
-        if node.get('type') == 'hardwired' or node.get('is_builtin'):
+        node_type = 'hardwired' if (node.get('type') == 'hardwired' or node.get('is_builtin')) else 'wifi'
+        non_zero = sum(1 for v in channels_dict.values() if v > 0) if channels_dict else 0
+        print(f"📡 DISPATCH: {node['name']} (U{universe}, {node_type}) -> {len(channels_dict) if channels_dict else 0} ch ({non_zero} non-zero), fade={fade_ms}ms", flush=True)
+
+        if node_type == 'hardwired':
             return self.send_to_hardwired(universe, channels_dict, fade_ms)
         else:
             # WiFi nodes - use OLA/sACN multicast (ESP32s listen to their universe)
@@ -1848,16 +1853,20 @@ class ContentManager:
             return chase
         return None
 
-    def play_chase(self, chase_id, target_channels=None, universe=None):
+    def play_chase(self, chase_id, target_channels=None, universe=None, fade_ms=None):
         """Start chase playback - streams steps via OLA to ALL online nodes"""
         chase = self.get_chase(chase_id)
         if not chase:
             return {'success': False, 'error': 'Chase not found'}
 
+        # Apply-time fade override: fade_ms param > chase default > 0
+        effective_fade_ms = fade_ms if fade_ms is not None else chase.get('fade_ms', 0)
+        print(f"🎚️ Chase fade: requested={fade_ms}, chase_default={chase.get('fade_ms')}, effective={effective_fade_ms}", flush=True)
+
         # Get ALL online nodes and their universes
         all_nodes = node_manager.get_all_nodes(include_offline=False)
         universes_with_nodes = list(set(node.get('universe', 1) for node in all_nodes))
-        print(f"🎬 Playing chase '{chase['name']}' on universes: {sorted(universes_with_nodes)}", flush=True)
+        print(f"🎬 Playing chase '{chase['name']}' on universes: {sorted(universes_with_nodes)}, fade={effective_fade_ms}ms", flush=True)
 
         # SSOT: Acquire lock and stop everything cleanly
         with self.ssot_lock:
@@ -1879,10 +1888,10 @@ class ContentManager:
         for univ in universes_with_nodes:
             playback_manager.set_playing(univ, 'chase', chase_id)
 
-        # Start chase engine (streams steps via OLA)
-        chase_engine.start_chase(chase, universes_with_nodes)
+        # Start chase engine with apply-time fade override
+        chase_engine.start_chase(chase, universes_with_nodes, fade_ms_override=effective_fade_ms)
 
-        return {'success': True, 'universes': universes_with_nodes}
+        return {'success': True, 'universes': universes_with_nodes, 'fade_ms': effective_fade_ms}
 
     def stop_playback(self, universe=None):
         """Stop all playback"""
@@ -2665,10 +2674,12 @@ def delete_chase(chase_id):
 @app.route('/api/chases/<chase_id>/play', methods=['POST'])
 def play_chase(chase_id):
     data = request.get_json() or {}
+    print(f"📥 Chase play request: chase_id={chase_id}, payload={data}", flush=True)
     return jsonify(content_manager.play_chase(
         chase_id,
         target_channels=data.get('target_channels'),
-        universe=data.get('universe')
+        universe=data.get('universe'),
+        fade_ms=data.get('fade_ms')
     ))
 
 @app.route('/api/chases/<chase_id>/stop', methods=['POST'])
