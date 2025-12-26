@@ -2237,7 +2237,7 @@ def system_update():
         # Restart service in background after response is sent
         def restart_service():
             time.sleep(1)  # Give time for response to be sent
-            os.system('sudo systemctl restart aether')
+            os.system('sudo systemctl restart aether-core')
 
         restart_thread = threading.Thread(target=restart_service, daemon=True)
         restart_thread.start()
@@ -2353,7 +2353,7 @@ def start_autosync_thread():
                         app._autosync_last_update = datetime.now().isoformat()
                         print("✓ Auto-sync: update pulled, restarting service...")
                         time.sleep(1)
-                        os.system('sudo systemctl restart aether')
+                        os.system('sudo systemctl restart aether-core')
                     else:
                         print(f"❌ Auto-sync pull failed: {pull_result.stderr}")
 
