@@ -1154,14 +1154,14 @@ class NodeManager:
                     if 1 <= ch <= 512:
                         data[ch - 1] = int(value)
 
-            esp_cmd = {"cmd": "scene", "ch": 1, "data": data}
+            esp_cmd = {"cmd": "scene", "ch": 1, "data": data, "universe": universe}
             if fade_ms > 0:
                 esp_cmd["fade"] = fade_ms
 
             json_cmd = json.dumps(esp_cmd) + '\n'
             ser.write(json_cmd.encode())
             ser.flush()
-            print(f"📤 UART -> 512 channels (full frame), fade={fade_ms}ms")
+            print(f"📤 UART -> U{universe} 512 channels (full frame), fade={fade_ms}ms")
 
             # Track for diagnostics
             self._last_uart_send = {
