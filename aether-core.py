@@ -1038,20 +1038,33 @@ class NodeManager:
     def pair_node(self, node_id, config):
         conn = get_db()
         c = conn.cursor()
-        c.execute('''UPDATE nodes SET name = COALESCE(?, name), universe = ?, channel_start = ?,
-            channel_end = ?, mode = COALESCE(?, 'output'), is_paired = 1 WHERE node_id = ?''',
-            (config.get('name'), config.get('universe', 1), config.get('channel_start', 1),
-             config.get('channel_end', 512), config.get('mode'), str(node_id)))
+
+        # Check if type is being changed (e.g., wifi -> espnow)
+        new_type = config.get('type')
+        if new_type:
+            c.execute('''UPDATE nodes SET name = COALESCE(?, name), universe = ?, channel_start = ?,
+                channel_end = ?, mode = COALESCE(?, 'output'), type = ?, is_paired = 1 WHERE node_id = ?''',
+                (config.get('name'), config.get('universe', 1), config.get('channel_start', 1),
+                 config.get('channel_end', 512), config.get('mode'), new_type, str(node_id)))
+        else:
+            c.execute('''UPDATE nodes SET name = COALESCE(?, name), universe = ?, channel_start = ?,
+                channel_end = ?, mode = COALESCE(?, 'output'), is_paired = 1 WHERE node_id = ?''',
+                (config.get('name'), config.get('universe', 1), config.get('channel_start', 1),
+                 config.get('channel_end', 512), config.get('mode'), str(node_id)))
         conn.commit()
         conn.close()
-        
+
         # Send config to node
         node = self.get_node(node_id)
         if node and node.get('type') == 'wifi':
+            # WiFi nodes receive config via UDP
             self.send_config_to_node(node, config)
             # Sync all content to newly paired node
             self.sync_content_to_node(node)
-        
+        elif node and node.get('type') == 'espnow':
+            # ESP-NOW nodes are configured but receive data via gateway broadcast
+            print(f"📡 ESP-NOW node paired: {node.get('name')} on U{config.get('universe', 1)} - routes via UART gateway")
+
         self.broadcast_status()
         return node
 
@@ -1120,13 +1133,30 @@ class NodeManager:
     # Send Commands to Nodes - UNIFIED DISPATCHER
     # ─────────────────────────────────────────────────────────
     def send_to_node(self, node, channels_dict, fade_ms=0):
-        """Send DMX values to a node - this is the ONLY output point"""
-        universe = node.get("universe", 1)
-        node_type = 'hardwired' if (node.get('type') == 'hardwired' or node.get('is_builtin')) else 'wifi'
-        non_zero = sum(1 for v in channels_dict.values() if v > 0) if channels_dict else 0
-        print(f"📡 DISPATCH: {node['name']} (U{universe}, {node_type}) -> {len(channels_dict) if channels_dict else 0} ch ({non_zero} non-zero), fade={fade_ms}ms", flush=True)
+        """Send DMX values to a node - this is the ONLY output point
 
-        if node_type == 'hardwired':
+        Routing logic:
+        - hardwired/is_builtin: UART to local ESP32
+        - espnow: UART to gateway ESP32 which broadcasts via ESP-NOW
+        - wifi: UDP JSON directly to node IP
+        """
+        universe = node.get("universe", 1)
+        raw_type = node.get('type', 'wifi')
+
+        # Determine routing: hardwired, espnow, or wifi
+        if raw_type == 'hardwired' or node.get('is_builtin'):
+            route = 'hardwired'
+        elif raw_type == 'espnow':
+            route = 'espnow'  # Route through UART gateway for ESP-NOW broadcast
+        else:
+            route = 'wifi'
+
+        non_zero = sum(1 for v in channels_dict.values() if v > 0) if channels_dict else 0
+        print(f"📡 DISPATCH: {node['name']} (U{universe}, {route}) -> {len(channels_dict) if channels_dict else 0} ch ({non_zero} non-zero), fade={fade_ms}ms", flush=True)
+
+        if route in ('hardwired', 'espnow'):
+            # Both hardwired and ESP-NOW nodes use UART to gateway
+            # Gateway handles routing to correct universe via ESP-NOW broadcast
             return self.send_to_hardwired(universe, channels_dict, fade_ms)
         else:
             # WiFi nodes - use UDP JSON for node-side fades (smoother than sACN)
@@ -2524,23 +2554,40 @@ def configure_node(node_id):
     node = node_manager.get_node(node_id)
     if not node:
         return jsonify({'error': 'Node not found'}), 404
-    
-    # Update database
+
+    # Update database (including type if specified)
     conn = get_db()
     c = conn.cursor()
-    c.execute('''UPDATE nodes SET 
-        name = COALESCE(?, name),
-        universe = COALESCE(?, universe), 
-        channel_start = COALESCE(?, channel_start),
-        channel_end = COALESCE(?, channel_end)
-        WHERE node_id = ?''',
-        (config.get('name'), config.get('universe'), 
-         config.get('channelStart'), config.get('channelEnd'), str(node_id)))
+    new_type = config.get('type')
+    if new_type:
+        c.execute('''UPDATE nodes SET
+            name = COALESCE(?, name),
+            universe = COALESCE(?, universe),
+            channel_start = COALESCE(?, channel_start),
+            channel_end = COALESCE(?, channel_end),
+            type = ?
+            WHERE node_id = ?''',
+            (config.get('name'), config.get('universe'),
+             config.get('channelStart') or config.get('channel_start'),
+             config.get('channelEnd') or config.get('channel_end'),
+             new_type, str(node_id)))
+    else:
+        c.execute('''UPDATE nodes SET
+            name = COALESCE(?, name),
+            universe = COALESCE(?, universe),
+            channel_start = COALESCE(?, channel_start),
+            channel_end = COALESCE(?, channel_end)
+            WHERE node_id = ?''',
+            (config.get('name'), config.get('universe'),
+             config.get('channelStart') or config.get('channel_start'),
+             config.get('channelEnd') or config.get('channel_end'), str(node_id)))
     conn.commit()
     conn.close()
-    
-    # Send config to node if it's WiFi
+
+    # Refresh node from DB
     node = node_manager.get_node(node_id)
+
+    # Send config to node if it's WiFi (ESP-NOW nodes receive via gateway broadcast)
     if node and node.get('type') == 'wifi':
         node_manager.configure_ola_universe(node.get('universe', 1))
         node_manager.send_config_to_node(node, {
@@ -2549,7 +2596,9 @@ def configure_node(node_id):
             'channel_start': node.get('channel_start'),
             'channel_end': node.get('channel_end')
         })
-    
+    elif node and node.get('type') == 'espnow':
+        print(f"📡 ESP-NOW node configured: {node.get('name')} on U{node.get('universe')} - routes via UART gateway")
+
     node_manager.broadcast_status()
     return jsonify({'success': True, 'node': node})
 
