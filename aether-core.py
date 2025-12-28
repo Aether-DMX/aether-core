@@ -974,11 +974,19 @@ class NodeManager:
         return dict(row) if row else None
 
     def get_nodes_in_universe(self, universe):
-        """Get all paired/builtin online nodes in a universe"""
+        """Get all paired/builtin online nodes in a universe
+
+        Note: ESP-NOW nodes don't send WiFi heartbeats, so they may show as 'offline'.
+        We include paired ESP-NOW nodes regardless of status since they receive via gateway.
+        """
         conn = get_db()
         c = conn.cursor()
+        # Include:
+        # 1. Online nodes (WiFi nodes with recent heartbeat)
+        # 2. Built-in nodes (always available)
+        # 3. Paired ESP-NOW nodes (receive via gateway, don't need WiFi heartbeat)
         c.execute('''SELECT * FROM nodes WHERE universe = ? AND (is_paired = 1 OR is_builtin = 1)
-                     AND status = "online" ORDER BY channel_start''', (universe,))
+                     AND (status = "online" OR type = "espnow") ORDER BY channel_start''', (universe,))
         rows = c.fetchall()
         conn.close()
         return [dict(row) for row in rows]
