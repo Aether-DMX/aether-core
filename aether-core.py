@@ -280,24 +280,34 @@ class ChaseEngine:
         print(f"🏃 Chase engine started: {chase['name']} (fade_override={fade_ms_override})", flush=True)
         return True
 
-    def stop_chase(self, chase_id=None):
-        """Stop a chase or all chases"""
+    def stop_chase(self, chase_id=None, wait=True):
+        """Stop a chase or all chases, optionally waiting for thread to finish"""
+        threads_to_join = []
         with self.lock:
             if chase_id:
                 if chase_id in self.stop_flags:
                     self.stop_flags[chase_id].set()
                     self.stop_flags.pop(chase_id, None)
-                    self.running_chases.pop(chase_id, None)
+                    thread = self.running_chases.pop(chase_id, None)
+                    if thread and wait:
+                        threads_to_join.append(thread)
             else:
                 # Stop all
                 for flag in self.stop_flags.values():
                     flag.set()
+                if wait:
+                    threads_to_join = list(self.running_chases.values())
                 self.stop_flags.clear()
                 self.running_chases.clear()
 
             # ARBITRATION: Release chase ownership if no more chases running
             if not self.running_chases:
                 arbitration.release('chase')
+
+        # Wait for threads outside of lock to avoid deadlock
+        if wait:
+            for thread in threads_to_join:
+                thread.join(timeout=0.5)  # Max 500ms wait per thread
 
     def stop_all(self):
         """Stop all running chases"""
@@ -1845,9 +1855,8 @@ class ContentManager:
                     show_engine.stop_silent() if hasattr(show_engine, "stop_silent") else show_engine.stop()
                 except Exception as e:
                     print(f"⚠️ Show stop error: {e}", flush=True)
-                chase_engine.stop_all()
+                chase_engine.stop_all()  # Now waits for chase threads to finish
                 effects_engine.stop_effect()  # Also stop effects
-                time.sleep(0.15)
                 self.current_playback = {'type': 'scene', 'id': scene_id, 'universe': universe}
                 print(f"✓ SSOT: Now playing scene '{scene_id}'", flush=True)
 
@@ -1996,11 +2005,10 @@ class ContentManager:
                 show_engine.stop()
             except Exception as e:
                 print(f"⚠️ Show stop: {e}", flush=True)
-            chase_engine.stop_all()
+            chase_engine.stop_all()  # Now waits for chase threads to finish
             effects_engine.stop_effect()  # Also stop effects
             for univ in universes_with_nodes:
                 playback_manager.stop(univ)
-            time.sleep(0.15)
             self.current_playback = {'type': 'chase', 'id': chase_id, 'universe': universe}
             print(f"✓ SSOT: Now playing chase '{chase_id}'", flush=True)
 
