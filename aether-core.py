@@ -2791,6 +2791,7 @@ def delete_scene(scene_id):
 @app.route('/api/scenes/<scene_id>/play', methods=['POST'])
 def play_scene(scene_id):
     data = request.get_json() or {}
+    print(f"📥 Scene play request: scene_id={scene_id}, payload={data}", flush=True)
     return jsonify(content_manager.play_scene(
         scene_id,
         fade_ms=data.get('fade_ms'),
