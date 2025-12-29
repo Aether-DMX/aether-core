@@ -1980,9 +1980,13 @@ class ContentManager:
         effective_fade_ms = fade_ms if fade_ms is not None else chase.get('fade_ms', 0)
         print(f"🎚️ Chase fade: requested={fade_ms}, chase_default={chase.get('fade_ms')}, effective={effective_fade_ms}", flush=True)
 
-        # Get ALL online nodes and their universes
-        all_nodes = node_manager.get_all_nodes(include_offline=False)
-        universes_with_nodes = list(set(node.get('universe', 1) for node in all_nodes))
+        # Get target universes - if universe specified, use only that one
+        if universe is not None:
+            universes_with_nodes = [universe]
+        else:
+            # Default: all online universes
+            all_nodes = node_manager.get_all_nodes(include_offline=False)
+            universes_with_nodes = list(set(node.get('universe', 1) for node in all_nodes))
         print(f"🎬 Playing chase '{chase['name']}' on universes: {sorted(universes_with_nodes)}, fade={effective_fade_ms}ms", flush=True)
 
         # SSOT: Acquire lock and stop everything cleanly
