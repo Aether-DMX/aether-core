@@ -1340,6 +1340,11 @@ class NodeManager:
             json_cmd = json.dumps(esp_cmd) + '\n'
             ser.write(json_cmd.encode())
             ser.flush()
+
+            # Small delay to allow ESP32 to process before next packet
+            # Prevents buffer overflow when sending to multiple universes rapidly
+            time.sleep(0.05)  # 50ms delay
+
             print(f"📤 UART -> U{universe} 512 channels (full frame), fade={fade_ms}ms")
 
             # Track for diagnostics
