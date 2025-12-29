@@ -329,10 +329,20 @@ class ChaseEngine:
             while not stop_flag.is_set():
                 step = steps[step_index]
                 channels = step.get('channels', {})
-                # Use step duration if available, otherwise fall back to BPM timing
-                step_duration_ms = step.get('duration', int(default_interval * 1000))
                 # Use step fade or chase fade
                 fade_ms = step.get('fade_ms', chase_fade_ms)
+                # Calculate step duration: support both 'duration' and 'hold_ms' formats
+                # hold_ms = time to hold AFTER fade completes
+                # duration = total step time (legacy format)
+                if 'hold_ms' in step:
+                    # New format: fade_ms + hold_ms = total step time
+                    step_duration_ms = fade_ms + step['hold_ms']
+                elif 'duration' in step:
+                    # Legacy format: duration is total step time
+                    step_duration_ms = step['duration']
+                else:
+                    # Fallback to BPM timing
+                    step_duration_ms = int(default_interval * 1000)
 
                 # Update health heartbeat
                 self.chase_health[chase_id] = {
