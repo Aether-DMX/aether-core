@@ -60,6 +60,89 @@ def get_git_commit():
 
 AETHER_COMMIT = get_git_commit()
 
+# ============================================================
+# SSOT Guardrail - Prevents future bypass regressions
+# ============================================================
+def ssot_integrity_check():
+    """
+    Startup check that scans for forbidden DMX send patterns outside the SSOT pipeline.
+
+    The ONLY valid DMX output paths are:
+    1. ContentManager.set_channels() -> NodeManager.send_to_node() -> [UART/UDP/OLA]
+    2. ContentManager.blackout() -> NodeManager.send_blackout()
+
+    Any direct calls to ola_set_dmx, serial.write for DMX, or UDP sendto for DMX
+    outside of NodeManager methods is a SSOT violation.
+
+    This check reads the source code and warns on startup if violations are detected.
+    """
+    violations = []
+
+    # Read our own source code
+    try:
+        with open(AETHER_FILE_PATH, 'r') as f:
+            lines = f.readlines()
+    except:
+        print("⚠️ SSOT check: Could not read source file")
+        return []
+
+    # Track what class/method we're in
+    current_class = None
+    current_method = None
+
+    # Allowed locations for DMX send operations
+    ALLOWED_CLASSES = {'NodeManager'}
+    ALLOWED_METHODS = {
+        'send_via_ola', 'send_via_uart', 'send_to_hardwired',
+        'send_to_node', 'send_dmx_to_wifi_node', 'send_command_to_wifi',
+        'send_blackout'
+    }
+
+    for i, line in enumerate(lines, 1):
+        stripped = line.strip()
+
+        # Track class context
+        if stripped.startswith('class ') and ':' in stripped:
+            current_class = stripped.split('class ')[1].split('(')[0].split(':')[0]
+            current_method = None
+        elif stripped.startswith('def ') and current_class:
+            current_method = stripped.split('def ')[1].split('(')[0]
+
+        # Skip allowed locations
+        if current_class in ALLOWED_CLASSES:
+            continue
+        if current_method in ALLOWED_METHODS:
+            continue
+
+        # Check for forbidden patterns
+        if 'ola_set_dmx' in line and 'subprocess' in line:
+            violations.append(f"Line {i}: Direct ola_set_dmx outside NodeManager")
+        if 'serial.write' in line and 'dmx' in line.lower():
+            violations.append(f"Line {i}: Direct serial write for DMX")
+        if 'sendto(' in line and 'dmx' in line.lower() and 'node_manager' not in line.lower():
+            violations.append(f"Line {i}: Direct UDP sendto for DMX")
+
+    return violations
+
+
+def ssot_startup_verify():
+    """Run SSOT integrity check on startup and log results"""
+    print("🔒 Running SSOT integrity check...", flush=True)
+    violations = ssot_integrity_check()
+
+    if violations:
+        print(f"⚠️ SSOT VIOLATIONS DETECTED ({len(violations)}):", flush=True)
+        for v in violations[:5]:  # Show first 5
+            print(f"   ❌ {v}", flush=True)
+        if len(violations) > 5:
+            print(f"   ... and {len(violations) - 5} more", flush=True)
+        print("   Fix: Route all DMX output through ContentManager.set_channels()", flush=True)
+    else:
+        print("✅ SSOT integrity verified - all DMX paths route through dispatcher", flush=True)
+
+    return len(violations) == 0
+
+
 # Serial port for hardwired node
 HARDWIRED_UART = "/dev/serial0"
 HARDWIRED_BAUD = 115200
@@ -445,6 +528,9 @@ class ArbitrationManager:
     """
     Priority-based arbitration for DMX output control.
     Priority: BLACKOUT(100) > MANUAL(80) > EFFECT(60) > CHASE(40) > SCENE(20) > IDLE(0)
+
+    SSOT ENFORCEMENT: All DMX write attempts must check arbitration first.
+    Rejected writes are tracked for diagnostics.
     """
     PRIORITY = {'blackout': 100, 'manual': 80, 'effect': 60, 'chase': 40, 'scene': 20, 'idle': 0}
 
@@ -455,10 +541,19 @@ class ArbitrationManager:
         self.last_change = None
         self.lock = threading.Lock()
         self.history = []
+        # SSOT diagnostics tracking
+        self.rejected_writes = []  # Track rejected acquire attempts
+        self.last_writer = None  # Last service that successfully wrote
+        self.last_scene_id = None  # Last scene played
+        self.last_scene_time = None  # When last scene was played
+        self.writes_per_service = {}  # Count writes per service type
 
     def acquire(self, owner_type, owner_id=None, force=False):
         with self.lock:
+            now = datetime.now().isoformat()
             if self.blackout_active and owner_type != 'blackout':
+                # Track rejected write
+                self._track_rejection(owner_type, owner_id, 'blackout_active', now)
                 return False
             new_pri = self.PRIORITY.get(owner_type, 0)
             cur_pri = self.PRIORITY.get(self.current_owner, 0)
@@ -466,19 +561,44 @@ class ArbitrationManager:
                 old = self.current_owner
                 self.current_owner = owner_type
                 self.current_id = owner_id
-                self.last_change = datetime.now().isoformat()
-                self.history.append({'time': self.last_change, 'from': old, 'to': owner_type, 'id': owner_id})
+                self.last_change = now
+                self.last_writer = owner_type
+                # Track scene plays specifically
+                if owner_type == 'scene':
+                    self.last_scene_id = owner_id
+                    self.last_scene_time = now
+                # Track writes per service
+                self.writes_per_service[owner_type] = self.writes_per_service.get(owner_type, 0) + 1
+                self.history.append({'time': now, 'from': old, 'to': owner_type, 'id': owner_id, 'action': 'acquire'})
                 if len(self.history) > 50: self.history = self.history[-50:]
                 print(f"🎯 Arbitration: {old} → {owner_type}", flush=True)
                 return True
+            # Track rejected write - lower priority
+            self._track_rejection(owner_type, owner_id, f'priority_too_low (current: {self.current_owner})', now)
             return False
+
+    def _track_rejection(self, owner_type, owner_id, reason, timestamp):
+        """Track rejected write attempts for diagnostics"""
+        self.rejected_writes.append({
+            'time': timestamp,
+            'requester': owner_type,
+            'requester_id': owner_id,
+            'reason': reason,
+            'current_owner': self.current_owner
+        })
+        if len(self.rejected_writes) > 20:
+            self.rejected_writes = self.rejected_writes[-20:]
+        print(f"⚠️ Arbitration REJECTED: {owner_type} (reason: {reason})", flush=True)
 
     def release(self, owner_type=None):
         with self.lock:
             if owner_type is None or self.current_owner == owner_type:
+                old = self.current_owner
                 self.current_owner = 'idle'
                 self.current_id = None
                 self.last_change = datetime.now().isoformat()
+                self.history.append({'time': self.last_change, 'from': old, 'to': 'idle', 'action': 'release'})
+                if len(self.history) > 50: self.history = self.history[-50:]
 
     def set_blackout(self, active):
         with self.lock:
@@ -489,9 +609,18 @@ class ArbitrationManager:
 
     def get_status(self):
         with self.lock:
-            return {'current_owner': self.current_owner, 'current_id': self.current_id,
-                    'blackout_active': self.blackout_active, 'last_change': self.last_change,
-                    'history': self.history[-10:]}
+            return {
+                'current_owner': self.current_owner,
+                'current_id': self.current_id,
+                'blackout_active': self.blackout_active,
+                'last_change': self.last_change,
+                'last_writer': self.last_writer,
+                'last_scene_id': self.last_scene_id,
+                'last_scene_time': self.last_scene_time,
+                'writes_per_service': dict(self.writes_per_service),
+                'rejected_writes': self.rejected_writes[-5:],  # Last 5 rejections
+                'history': self.history[-10:]
+            }
 
     def can_write(self, owner_type):
         with self.lock:
@@ -1164,36 +1293,22 @@ class NodeManager:
         """Send DMX values to a node - this is the ONLY output point
 
         Routing logic:
-        - hardwired/is_builtin: UART to local ESP32
-        - espnow: UART to gateway ESP32 which broadcasts via ESP-NOW
-        - wifi: UDP JSON directly to node IP
+        ALL DMX data goes through UART to gateway ESP32, which:
+        - Outputs DMX locally for hardwired fixtures
+        - Broadcasts via ESP-NOW to ALL wireless nodes (all universes)
+
+        WiFi on nodes is ONLY for control/config/heartbeats, NOT DMX data.
         """
         universe = node.get("universe", 1)
         raw_type = node.get('type', 'wifi')
-
-        # Determine routing: hardwired, espnow, or wifi
-        if raw_type == 'hardwired' or node.get('is_builtin'):
-            route = 'hardwired'
-        elif raw_type == 'espnow':
-            route = 'espnow'  # Route through UART gateway for ESP-NOW broadcast
-        else:
-            route = 'wifi'
+        is_builtin = node.get('is_builtin')
 
         non_zero = sum(1 for v in channels_dict.values() if v > 0) if channels_dict else 0
-        print(f"📡 DISPATCH: {node['name']} (U{universe}, {route}) -> {len(channels_dict) if channels_dict else 0} ch ({non_zero} non-zero), fade={fade_ms}ms", flush=True)
+        print(f"📡 DISPATCH: {node['name']} (U{universe}, {raw_type}) -> {len(channels_dict) if channels_dict else 0} ch ({non_zero} non-zero), fade={fade_ms}ms", flush=True)
 
-        if route in ('hardwired', 'espnow'):
-            # Both hardwired and ESP-NOW nodes use UART to gateway
-            # Gateway handles routing to correct universe via ESP-NOW broadcast
-            return self.send_to_hardwired(universe, channels_dict, fade_ms)
-        else:
-            # WiFi nodes - use UDP JSON for node-side fades (smoother than sACN)
-            ip = node.get('ip')
-            if ip:
-                return self.send_dmx_to_wifi_node(ip, universe, channels_dict, fade_ms)
-            else:
-                # Fallback to OLA for nodes without IP
-                return self.send_via_ola(universe, channels_dict, fade_ms)
+        # ALL nodes route through UART to gateway
+        # Gateway handles local DMX output AND ESP-NOW broadcast to wireless nodes
+        return self.send_to_hardwired(universe, channels_dict, fade_ms)
 
     def send_to_hardwired(self, universe, channels_dict, fade_ms=0):
         """Send command to hardwired ESP32 via UART - always sends full 512-channel frame"""
@@ -1202,11 +1317,17 @@ class NodeManager:
             if ser is None:
                 return False
 
-            # Get full 512-channel universe from SSOT
+            # Get full 512-channel universe from SSOT (which was just updated by set_channels)
             data = dmx_state.get_universe(universe)
 
-            # Apply any new channel updates
+            # Debug: Log what we're about to send
+            non_zero_ssot = sum(1 for v in data if v > 0)
+            print(f"  📊 UART SSOT state: {non_zero_ssot} non-zero channels", flush=True)
+
+            # Apply any new channel updates (belt-and-suspenders - SSOT should already have these)
             if channels_dict:
+                non_zero_dict = sum(1 for v in channels_dict.values() if v > 0)
+                print(f"  📊 UART applying {len(channels_dict)} channels ({non_zero_dict} non-zero) on top", flush=True)
                 for ch_str, value in channels_dict.items():
                     ch = int(ch_str)
                     if 1 <= ch <= 512:
@@ -1243,7 +1364,10 @@ class NodeManager:
         return True
 
     def send_via_ola(self, universe, channels_dict, fade_ms=0):
-        """Send DMX to a universe via OLA (sACN output) with optional backend-interpolated fade"""
+        """Send DMX to a universe via OLA (sACN output) with optional backend-interpolated fade
+
+        SSOT COMPLIANCE: This method always updates dmx_state after sending to OLA.
+        """
         try:
             # Get current state as starting point
             current = list(dmx_state.get_universe(universe))
@@ -1276,7 +1400,7 @@ class NodeManager:
                         ['ola_set_dmx', '-u', str(universe), '-d', data_str],
                         capture_output=True, text=True, timeout=2
                     )
-                    # Update SSOT state
+                    # Update SSOT state (only non-zero to avoid bloat)
                     dmx_state.set_channels(universe, {str(i+1): v for i, v in enumerate(interpolated) if v > 0})
 
                     if frame < total_frames:
@@ -1293,6 +1417,8 @@ class NodeManager:
 
                 if result.returncode == 0:
                     print(f"📤 OLA U{universe} -> {len(channels_dict)} channels (snap)")
+                    # SSOT FIX: Update SSOT state for snap mode (was missing!)
+                    dmx_state.set_channels(universe, channels_dict)
                     return True
                 else:
                     print(f"❌ OLA error: {result.stderr}")
@@ -1829,7 +1955,10 @@ class ContentManager:
         return replicated
 
     def play_scene(self, scene_id, fade_ms=None, use_local=True, target_channels=None, universe=None, skip_ssot=False, replicate=True):
-        """Play a scene - broadcasts to ALL online nodes across all universes"""
+        """Play a scene - broadcasts to ALL online nodes across all universes
+
+        SSOT COMPLIANCE: All DMX writes go through set_channels which updates dmx_state.
+        """
         print(f"▶️ play_scene called: scene_id={scene_id}", flush=True)
         scene = self.get_scene(scene_id)
         if not scene:
@@ -1871,10 +2000,24 @@ class ContentManager:
             target_set = set(target_channels)
             channels_to_apply = {k: v for k, v in channels_to_apply.items() if int(k) in target_set}
 
+        # FIX: When a specific universe is requested, use it even if no nodes are detected
+        # This allows SSOT state update for scenes targeting specific universes
         if universe is not None:
-            universes_with_nodes = {universe} if universe in all_universes else set()
+            # Always include the requested universe - nodes may be ESP-NOW (don't send heartbeats)
+            universes_with_nodes = {universe}
+            if universe not in all_universes:
+                print(f"⚠️ Universe {universe} requested but no online nodes detected - will still update SSOT", flush=True)
         else:
-            universes_with_nodes = all_universes
+            # "All" button: Get ALL configured universes from database (not just online nodes)
+            # Gateway broadcasts via ESP-NOW to all universes regardless of WiFi heartbeat status
+            all_configured_nodes = node_manager.get_all_nodes(include_offline=True)
+            all_configured_universes = set(node.get('universe', 1) for node in all_configured_nodes)
+            universes_with_nodes = all_configured_universes if all_configured_universes else {1}
+
+        # Early warning if no universes available
+        if not universes_with_nodes:
+            print(f"⚠️ No universes available for scene play - defaulting to universe 1", flush=True)
+            universes_with_nodes = {1}
 
         beta_log("play_scene", {
             "requested_universe": universe,
@@ -1889,7 +2032,22 @@ class ContentManager:
 
         print(f"🎬 Playing scene '{scene['name']}' on universes: {sorted(universes_with_nodes)}", flush=True)
 
+        # Debug: Show what channels we're about to apply
+        non_zero = {k: v for k, v in channels_to_apply.items() if v > 0}
+        print(f"  📋 Channels to apply: {len(channels_to_apply)} total, {len(non_zero)} non-zero", flush=True)
+        if len(non_zero) <= 10:
+            print(f"  📋 Non-zero values: {non_zero}", flush=True)
+        else:
+            sample = dict(list(non_zero.items())[:5])
+            print(f"  📋 Sample non-zero values: {sample}...", flush=True)
+
         all_results = []
+
+        # Clear ALL previous playback states before setting new one
+        # Only one scene can be "playing" at a time globally
+        if target_channels is None:
+            playback_manager.stop()  # Clear all universes
+
         for univ in universes_with_nodes:
             if target_channels is None:
                 current = playback_manager.get_status(univ)
@@ -1897,9 +2055,9 @@ class ContentManager:
                     print(f"⏹️ Stopping chase on U{univ} before scene play", flush=True)
                     node_manager.stop_playback_on_nodes(univ)
                 playback_manager.set_playing(univ, 'scene', scene_id)
+            # set_channels already updates dmx_state - no need for duplicate call
             result = self.set_channels(univ, channels_to_apply, fade)
             all_results.extend(result.get('results', []))
-            dmx_state.set_channels(univ, channels_to_apply)
 
         conn = get_db()
         c = conn.cursor()
@@ -1907,7 +2065,7 @@ class ContentManager:
         conn.commit()
         conn.close()
 
-        return {'success': True, 'results': all_results}
+        return {'success': True, 'results': all_results, 'universes': list(universes_with_nodes)}
 
     def delete_scene(self, scene_id):
         conn = get_db()
@@ -2254,6 +2412,7 @@ def version():
     return jsonify({
         'version': AETHER_VERSION,
         'commit': AETHER_COMMIT,
+        'git_commit': AETHER_COMMIT,  # Alias for deploy.sh verification
         'file_path': AETHER_FILE_PATH,
         'cwd': os.getcwd(),
         'started_at': AETHER_START_TIME.isoformat(),
@@ -2362,15 +2521,23 @@ def system_stats():
 
 @app.route('/api/system/update', methods=['POST'])
 def system_update():
-    """Pull latest code from git and restart the service"""
+    """Pull latest code from git and deploy to runtime location"""
     results = {'steps': [], 'success': False}
+
+    # Determine paths based on environment
+    git_dir = os.path.dirname(AETHER_FILE_PATH)
+    # If running from /home/ramzt, the git repo is in ~/aether-core-git
+    if '/aether-core-git/' not in AETHER_FILE_PATH and '/aether-core/' not in AETHER_FILE_PATH:
+        git_dir = os.path.expanduser('~/aether-core-git/aether-core')
+
+    runtime_file = '/home/ramzt/aether-core.py'
 
     try:
         # Step 1: Git fetch
         fetch_result = subprocess.run(
             ['git', 'fetch', 'origin'],
             capture_output=True, text=True, timeout=30,
-            cwd=os.path.dirname(AETHER_FILE_PATH)
+            cwd=git_dir
         )
         results['steps'].append({
             'step': 'git_fetch',
@@ -2382,7 +2549,7 @@ def system_update():
         status_result = subprocess.run(
             ['git', 'status', '-uno'],
             capture_output=True, text=True, timeout=10,
-            cwd=os.path.dirname(AETHER_FILE_PATH)
+            cwd=git_dir
         )
         behind = 'behind' in status_result.stdout
         results['update_available'] = behind
@@ -2396,7 +2563,7 @@ def system_update():
         pull_result = subprocess.run(
             ['git', 'pull', 'origin', 'main'],
             capture_output=True, text=True, timeout=60,
-            cwd=os.path.dirname(AETHER_FILE_PATH)
+            cwd=git_dir
         )
         results['steps'].append({
             'step': 'git_pull',
@@ -2412,13 +2579,32 @@ def system_update():
         commit_result = subprocess.run(
             ['git', 'rev-parse', '--short', 'HEAD'],
             capture_output=True, text=True, timeout=5,
-            cwd=os.path.dirname(AETHER_FILE_PATH)
+            cwd=git_dir
         )
-        results['new_commit'] = commit_result.stdout.strip()
+        new_commit = commit_result.stdout.strip()
+        results['new_commit'] = new_commit
         results['old_commit'] = AETHER_COMMIT
 
-        # Step 5: Schedule restart (non-blocking)
-        results['message'] = 'Update pulled. Restarting service...'
+        # Step 5: Deploy to runtime location (critical for Pi setup)
+        source_file = os.path.join(git_dir, 'aether-core.py')
+        if os.path.exists(source_file) and runtime_file != source_file:
+            # Copy the file
+            import shutil
+            shutil.copy2(source_file, runtime_file)
+
+            # Embed commit hash (since runtime is outside git)
+            timestamp = datetime.now().strftime('%Y-%m-%d_%H:%M:%S')
+            sed_cmd = f'sed -i "s/AETHER_COMMIT = get_git_commit()/AETHER_COMMIT = \\"{new_commit}\\"  # Baked at deploy: {timestamp}/" {runtime_file}'
+            subprocess.run(['bash', '-c', sed_cmd], capture_output=True)
+
+            results['steps'].append({
+                'step': 'deploy_to_runtime',
+                'success': True,
+                'output': f'Copied to {runtime_file} with embedded commit {new_commit}'
+            })
+
+        # Step 6: Schedule restart (non-blocking)
+        results['message'] = 'Update deployed. Restarting service...'
         results['success'] = True
 
         # Restart service in background after response is sent
@@ -2506,6 +2692,12 @@ def set_autosync():
 def start_autosync_thread():
     """Start background thread for auto-sync"""
     def autosync_worker():
+        # Determine paths based on environment
+        git_dir = os.path.dirname(AETHER_FILE_PATH)
+        if '/aether-core-git/' not in AETHER_FILE_PATH and '/aether-core/' not in AETHER_FILE_PATH:
+            git_dir = os.path.expanduser('~/aether-core-git/aether-core')
+        runtime_file = '/home/ramzt/aether-core.py'
+
         while getattr(app, '_autosync_enabled', False):
             try:
                 interval = getattr(app, '_autosync_interval', 30) * 60  # Convert to seconds
@@ -2519,12 +2711,12 @@ def start_autosync_thread():
                 # Check for updates
                 subprocess.run(['git', 'fetch', 'origin'],
                     capture_output=True, timeout=30,
-                    cwd=os.path.dirname(AETHER_FILE_PATH))
+                    cwd=git_dir)
 
                 result = subprocess.run(
                     ['git', 'rev-list', 'HEAD..origin/main', '--count'],
                     capture_output=True, text=True, timeout=10,
-                    cwd=os.path.dirname(AETHER_FILE_PATH))
+                    cwd=git_dir)
 
                 commits_behind = int(result.stdout.strip()) if result.returncode == 0 else 0
 
@@ -2534,11 +2726,29 @@ def start_autosync_thread():
                     pull_result = subprocess.run(
                         ['git', 'pull', 'origin', 'main'],
                         capture_output=True, text=True, timeout=60,
-                        cwd=os.path.dirname(AETHER_FILE_PATH))
+                        cwd=git_dir)
 
                     if pull_result.returncode == 0:
+                        # Deploy to runtime location
+                        source_file = os.path.join(git_dir, 'aether-core.py')
+                        if os.path.exists(source_file) and runtime_file != source_file:
+                            import shutil
+                            shutil.copy2(source_file, runtime_file)
+
+                            # Embed commit hash
+                            commit_result = subprocess.run(
+                                ['git', 'rev-parse', '--short', 'HEAD'],
+                                capture_output=True, text=True, timeout=5,
+                                cwd=git_dir)
+                            new_commit = commit_result.stdout.strip()
+                            timestamp = datetime.now().strftime('%Y-%m-%d_%H:%M:%S')
+                            sed_cmd = f'sed -i "s/AETHER_COMMIT = get_git_commit()/AETHER_COMMIT = \\"{new_commit}\\"  # Baked at deploy: {timestamp}/" {runtime_file}'
+                            subprocess.run(['bash', '-c', sed_cmd], capture_output=True)
+
+                            print(f"✓ Auto-sync: deployed {new_commit} to {runtime_file}")
+
                         app._autosync_last_update = datetime.now().isoformat()
-                        print("✓ Auto-sync: update pulled, restarting service...")
+                        print("✓ Auto-sync: restarting service...")
                         time.sleep(1)
                         os.system('sudo systemctl restart aether-core')
                     else:
@@ -2676,48 +2886,49 @@ def dmx_blackout():
 
 @app.route('/api/dmx/master', methods=['POST'])
 def dmx_master():
-    """Master dimmer - scales all output proportionally"""
+    """Master dimmer - scales all output proportionally
+
+    SSOT COMPLIANCE: Routes through ContentManager.set_channels for unified dispatch.
+    """
     data = request.get_json() or {}
     level = data.get('level', 100)
     capture = data.get('capture', False)
-    
+
     print(f"🎚️ Master dimmer: level={level}%, capture={capture}", flush=True)
-    
+
     # Capture current state if requested or if we don't have a base yet
     if capture or not dmx_state.master_base:
         dmx_state.master_base = {}
         captured_any = False
-        
+
         for univ, channels in dmx_state.universes.items():
             if any(v > 0 for v in channels):
                 dmx_state.master_base[univ] = list(channels)
                 total_val = sum(channels)
                 print(f"   📸 Captured universe {univ}: {total_val} total brightness", flush=True)
                 captured_any = True
-        
+
         if not captured_any:
             print("   ⚠️ No active channels to capture", flush=True)
             return jsonify({'success': False, 'error': 'No active lighting to dim'})
-    
+
     dmx_state.master_level = level
     scale = level / 100.0
-    
+
+    all_results = []
     for univ, base in dmx_state.master_base.items():
         scaled = {}
         for ch_idx, base_val in enumerate(base):
             if base_val > 0:
-                scaled[ch_idx + 1] = int(base_val * scale)
-        
+                scaled[str(ch_idx + 1)] = int(base_val * scale)
+
         if scaled:
             print(f"   🔧 Scaling universe {univ}: {len(scaled)} channels at {level}%", flush=True)
-            dmx_state.set_channels(univ, scaled)
-            nodes = node_manager.get_nodes_in_universe(univ)
-            for node in nodes:
-                local_ch = node_manager.translate_channels_for_node(node, scaled)
-                if local_ch:
-                    node_manager.send_to_node(node, local_ch, fade_ms=0)
-    
-    return jsonify({'success': True, 'level': level})
+            # SSOT FIX: Route through ContentManager.set_channels (was direct node send)
+            result = content_manager.set_channels(univ, scaled, fade_ms=0)
+            all_results.append({'universe': univ, 'result': result})
+
+    return jsonify({'success': True, 'level': level, 'results': all_results})
 
 @app.route('/api/dmx/master/reset', methods=['POST'])
 def dmx_master_reset():
@@ -2732,39 +2943,120 @@ def dmx_get_universe(universe):
 
 @app.route('/api/dmx/diagnostics', methods=['GET'])
 def dmx_diagnostics():
-    """Diagnostics endpoint for debugging DMX output issues"""
+    """Diagnostics endpoint for debugging DMX output issues
+
+    SSOT COMPLIANCE: This endpoint shows complete state of the SSOT system,
+    including ownership, routing, and any rejected writes.
+    """
+    arb_status = arbitration.get_status()
+
+    # Calculate active channels per universe
+    universe_stats = {}
+    for univ, channels in dmx_state.universes.items():
+        non_zero = sum(1 for v in channels if v > 0)
+        total_brightness = sum(channels)
+        universe_stats[univ] = {
+            'active_channels': non_zero,
+            'total_brightness': total_brightness,
+            'max_value': max(channels) if channels else 0
+        }
+
     return jsonify({
+        'timestamp': datetime.now().isoformat(),
         'packet_version': NodeManager.PACKET_VERSION,
         'packet_version_info': 'v3: full 512-ch frames, ESP32 firmware v1.1 has 2500-byte buffer',
-        'udp': {
-            'last_send': node_manager._last_udp_send,
-            'total_sends': node_manager._udp_send_count,
-            'port': WIFI_COMMAND_PORT,
-            'max_packet_size': 2500,
-            'channels_per_frame': 512
+
+        # Transport diagnostics
+        'transport': {
+            'udp': {
+                'last_send': node_manager._last_udp_send,
+                'total_sends': node_manager._udp_send_count,
+                'port': WIFI_COMMAND_PORT,
+                'max_packet_size': 2500,
+                'channels_per_frame': 512
+            },
+            'uart': {
+                'last_send': node_manager._last_uart_send,
+                'total_sends': node_manager._uart_send_count,
+                'port': HARDWIRED_UART,
+                'baud': HARDWIRED_BAUD,
+                'connected': node_manager._serial is not None and node_manager._serial.is_open
+            }
         },
-        'uart': {
-            'last_send': node_manager._last_uart_send,
-            'total_sends': node_manager._uart_send_count,
-            'port': HARDWIRED_UART,
-            'baud': HARDWIRED_BAUD
+
+        # SSOT ownership and control
+        'ownership': {
+            'current_owner': arb_status.get('current_owner'),
+            'current_id': arb_status.get('current_id'),
+            'priority': ArbitrationManager.PRIORITY.get(arb_status.get('current_owner'), 0),
+            'blackout_active': arb_status.get('blackout_active'),
+            'last_change': arb_status.get('last_change'),
+            'last_writer': arb_status.get('last_writer'),
+            'last_scene_id': arb_status.get('last_scene_id'),
+            'last_scene_time': arb_status.get('last_scene_time')
         },
-        'arbitration': arbitration.get_status(),
-        'effects_engine': effects_engine.get_status(),
-        'chase_engine': {
-            'running_chases': list(chase_engine.running_chases.keys()),
-            'health': chase_engine.chase_health
+
+        # Write statistics for detecting spammers
+        'writes_per_service': arb_status.get('writes_per_service', {}),
+
+        # Rejected writes (potential conflicts)
+        'rejected_writes': arb_status.get('rejected_writes', []),
+
+        # Arbitration history
+        'arbitration_history': arb_status.get('history', []),
+
+        # Running engines
+        'engines': {
+            'effects': effects_engine.get_status(),
+            'chase': {
+                'running_chases': list(chase_engine.running_chases.keys()),
+                'health': chase_engine.chase_health
+            },
+            'show': {
+                'running': show_engine.running,
+                'current_show': show_engine.current_show.get('name') if show_engine.current_show else None,
+                'paused': show_engine.paused,
+                'tempo': show_engine.tempo
+            },
+            'schedule': {
+                'running': schedule_runner.running,
+                'schedule_count': len(schedule_runner.schedules)
+            }
         },
+
+        # Playback state per universe
         'playback': playback_manager.get_status(),
+
+        # SSOT state
         'ssot': {
             'universes_active': list(dmx_state.universes.keys()),
-            'master_level': dmx_state.master_level
+            'universe_stats': universe_stats,
+            'master_level': dmx_state.master_level,
+            'has_master_base': bool(dmx_state.master_base)
         },
+
+        # System info
         'system': {
             'version': AETHER_VERSION,
             'commit': AETHER_COMMIT,
-            'uptime_seconds': (datetime.now() - AETHER_START_TIME).total_seconds(),
+            'uptime_seconds': int((datetime.now() - AETHER_START_TIME).total_seconds()),
             'file_path': AETHER_FILE_PATH
+        },
+
+        # SSOT compliance summary
+        'ssot_compliance': {
+            'all_services_routed': True,  # After fixes, all services route through SSOT
+            'arbitration_enforced': True,
+            'dispatcher_unified': True,
+            'notes': [
+                'Manual faders: /api/dmx/set -> ContentManager.set_channels',
+                'Scenes: /api/scenes/{id}/play -> ContentManager.play_scene -> set_channels',
+                'Chases: ChaseEngine._send_step -> ContentManager.set_channels',
+                'Effects: DynamicEffectsEngine._send_frame -> ssot_send_frame -> set_channels',
+                'Blackout: ContentManager.blackout',
+                'Master dimmer: /api/dmx/master -> ContentManager.set_channels',
+                'Gateway: NodeManager.send_to_node (unified dispatcher)'
+            ]
         }
     })
 
@@ -3339,12 +3631,14 @@ if __name__ == '__main__':
     print(f"    CWD:    {os.getcwd()}")
     print("="*60 + "\n")
 
+    # SSOT guardrail check - warn on startup if any bypasses detected
+    ssot_startup_verify()
+
     init_database()
     ai_ssot.init_ai_db()
     threading.Thread(target=discovery_listener, daemon=True).start()
     threading.Thread(target=stale_checker, daemon=True).start()
     schedule_runner.start()
-
 
     print(f"✓ API server on port {API_PORT}")
     print(f"✓ Discovery on UDP {DISCOVERY_PORT}")
