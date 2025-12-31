@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
 """
-AETHER Core v4.0 - sACN/OLA DMX Control System
+AETHER Core v4.1 - sACN/OLA + UART Gateway DMX Control System
 Single source of truth for ALL system functionality
 
-Transport: sACN/E1.31 via OLA (Open Lighting Architecture)
-All DMX output goes through OLA which handles sACN multicast to nodes.
+Transport:
+- sACN/E1.31 via OLA for WiFi nodes (multicast)
+- UART gateway for direct wired ESP32 connection (Pi GPIO)
 
 Features:
 - sACN/E1.31 multicast DMX output via OLA
+- UART gateway for reliable wired DMX output
 - Scene/Chase management and playback
-- Universe splitting (multiple nodes per universe)
+- Universe splitting (multiple nodes per universe via channel slices)
 - Coordinated play/stop across all nodes
-- No legacy transports (ESP-NOW, UART removed)
+- Gateway + WiFi nodes can share the same universe
 """
 
 import socket
@@ -29,12 +31,24 @@ import ai_ssot
 import ai_ops_registry
 from effects_engine import DynamicEffectsEngine
 
+# Optional serial support for UART gateway
+try:
+    import serial
+    SERIAL_AVAILABLE = True
+except ImportError:
+    SERIAL_AVAILABLE = False
+    print("⚠️ pyserial not installed - UART gateway disabled")
+
 # ============================================================
 # Configuration - Dynamic paths based on user home directory
 # ============================================================
 API_PORT = 8891
 DISCOVERY_PORT = 9999
 WIFI_COMMAND_PORT = 8888
+
+# UART Gateway configuration (Pi GPIO to ESP32)
+UART_GATEWAY_PORT = "/dev/serial0"  # Pi GPIO 14/15
+UART_GATEWAY_BAUD = 115200
 
 # Dynamic paths - works for any user
 HOME_DIR = os.path.expanduser("~")
@@ -45,7 +59,7 @@ DMX_STATE_FILE = os.path.join(HOME_DIR, "aether-dmx-state.json")
 # ============================================================
 # Version/Runtime Info - For SSOT verification
 # ============================================================
-AETHER_VERSION = "4.0.0"
+AETHER_VERSION = "4.1.0"
 AETHER_START_TIME = datetime.now()
 AETHER_FILE_PATH = os.path.abspath(__file__)
 
@@ -95,7 +109,8 @@ def ssot_integrity_check():
     # Allowed locations for DMX send operations
     ALLOWED_CLASSES = {'NodeManager'}
     ALLOWED_METHODS = {
-        'send_via_ola', 'send_to_node', 'send_command_to_wifi', 'send_blackout'
+        'send_via_ola', 'send_to_node', 'send_command_to_wifi', 'send_blackout',
+        'send_to_uart_gateway', 'send_config_to_gateway'
     }
 
     for i, line in enumerate(lines, 1):
@@ -1080,10 +1095,11 @@ def init_database():
 # Node Manager
 # ============================================================
 class NodeManager:
-    """Node management with OLA-only DMX output.
+    """Node management with OLA and UART gateway DMX output.
 
-    All DMX data is sent via OLA which outputs sACN multicast.
-    No legacy transports (UART, ESP-NOW) are supported.
+    DMX data is sent via:
+    - OLA/sACN multicast for WiFi nodes
+    - UART for gateway nodes (direct Pi GPIO connection)
     """
 
     def __init__(self):
@@ -1097,8 +1113,17 @@ class NodeManager:
         # Diagnostics tracking - UDP config commands
         self._last_udp_send = None
         self._udp_send_count = 0
+        # Diagnostics tracking - UART gateway
+        self._last_uart_send = None
+        self._uart_send_count = 0
+        self._uart_errors = 0
+        # UART serial connection
+        self._uart = None
+        self._uart_lock = threading.Lock()
         # Check OLA availability on init
         self._check_ola()
+        # Initialize UART gateway if available
+        self._init_uart_gateway()
 
     def _check_ola(self):
         """Check if OLA daemon is running and accessible"""
@@ -1124,6 +1149,173 @@ class NodeManager:
             print("❌ OLA: Daemon timeout - may be hung")
         except Exception as e:
             print(f"❌ OLA: Check failed - {e}")
+
+    def _init_uart_gateway(self):
+        """Initialize UART connection to gateway ESP32 (if available)"""
+        if not SERIAL_AVAILABLE:
+            print("⚠️ UART Gateway: pyserial not installed - skipping")
+            return
+
+        try:
+            self._uart = serial.Serial(
+                port=UART_GATEWAY_PORT,
+                baudrate=UART_GATEWAY_BAUD,
+                timeout=0.1
+            )
+            print(f"✅ UART Gateway: Connected to {UART_GATEWAY_PORT} @ {UART_GATEWAY_BAUD} baud")
+
+            # Start heartbeat listener thread
+            self._uart_listener_thread = threading.Thread(target=self._uart_listener, daemon=True)
+            self._uart_listener_thread.start()
+        except serial.SerialException as e:
+            print(f"⚠️ UART Gateway: Not available - {e}")
+            self._uart = None
+        except Exception as e:
+            print(f"⚠️ UART Gateway: Init failed - {e}")
+            self._uart = None
+
+    def _uart_listener(self):
+        """Background thread to listen for heartbeats from gateway node"""
+        buffer = ""
+        while True:
+            try:
+                if self._uart and self._uart.is_open and self._uart.in_waiting:
+                    data = self._uart.read(self._uart.in_waiting).decode('utf-8', errors='ignore')
+                    buffer += data
+
+                    # Process complete JSON lines
+                    while '\n' in buffer:
+                        line, buffer = buffer.split('\n', 1)
+                        line = line.strip()
+                        if line:
+                            self._handle_gateway_message(line)
+                time.sleep(0.1)
+            except Exception as e:
+                # Silent fail - gateway may not be connected
+                time.sleep(1)
+
+    def _handle_gateway_message(self, json_str):
+        """Handle incoming message from gateway node"""
+        try:
+            data = json.loads(json_str)
+            msg_type = data.get('type')
+
+            if msg_type == 'heartbeat':
+                # Register/update gateway node
+                node_data = {
+                    'node_id': data.get('node_id'),
+                    'hostname': data.get('name', 'Gateway'),
+                    'universe': data.get('universe', 1),
+                    'slice_start': data.get('slice_start', 1),
+                    'slice_end': data.get('slice_end', 512),
+                    'slice_mode': data.get('slice_mode', 'zero_outside'),
+                    'firmware': data.get('firmware', 'pulse-gateway'),
+                    'transport': 'uart',
+                    'uptime': data.get('uptime', 0)
+                }
+                self._register_gateway_node(node_data)
+            elif msg_type == 'status':
+                print(f"📡 Gateway status: {json_str}")
+        except json.JSONDecodeError:
+            pass  # Ignore malformed messages
+        except Exception as e:
+            print(f"⚠️ Gateway message error: {e}")
+
+    def _register_gateway_node(self, data):
+        """Register or update gateway node in database"""
+        node_id = str(data.get('node_id'))
+        conn = get_db()
+        c = conn.cursor()
+        c.execute('SELECT * FROM nodes WHERE node_id = ?', (node_id,))
+        existing = c.fetchone()
+        now = datetime.now().isoformat()
+
+        firmware_str = data.get('firmware', 'pulse-gateway')
+        if 'uart' not in firmware_str.lower():
+            firmware_str = f"{firmware_str} (UART)"
+
+        if existing:
+            c.execute('''UPDATE nodes SET
+                hostname = COALESCE(?, hostname), uptime = COALESCE(?, uptime),
+                firmware = COALESCE(?, firmware), status = 'online', last_seen = ?
+                WHERE node_id = ?''',
+                (data.get('hostname'), data.get('uptime'), firmware_str, now, node_id))
+        else:
+            c.execute('''INSERT INTO nodes (node_id, name, hostname, universe, channel_start,
+                channel_end, slice_mode, type, firmware, status, is_paired, is_builtin,
+                can_delete, first_seen, last_seen)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'gateway', ?, 'online', 1, 0, 0, ?, ?)''',
+                (node_id, data.get('hostname', 'Gateway'), data.get('hostname'),
+                 data.get('universe', 1), data.get('slice_start', 1), data.get('slice_end', 512),
+                 data.get('slice_mode', 'zero_outside'), firmware_str, now, now))
+        conn.commit()
+        conn.close()
+
+    def get_gateway_nodes_in_universe(self, universe):
+        """Get gateway nodes in a universe"""
+        conn = get_db()
+        c = conn.cursor()
+        c.execute('''SELECT * FROM nodes WHERE universe = ? AND type = 'gateway'
+                     AND status = 'online' ORDER BY channel_start''', (universe,))
+        rows = c.fetchall()
+        conn.close()
+        return [dict(row) for row in rows]
+
+    def send_to_uart_gateway(self, universe, channels_list):
+        """Send DMX data to gateway node via UART
+
+        Args:
+            universe: DMX universe number
+            channels_list: List of 512 channel values
+        """
+        if not self._uart or not self._uart.is_open:
+            return False
+
+        try:
+            with self._uart_lock:
+                command = {
+                    'cmd': 'dmx',
+                    'universe': universe,
+                    'data': channels_list
+                }
+                json_data = json.dumps(command) + '\n'
+                self._uart.write(json_data.encode('utf-8'))
+                self._uart.flush()
+
+                self._last_uart_send = {
+                    'time': datetime.now().isoformat(),
+                    'universe': universe
+                }
+                self._uart_send_count += 1
+                return True
+        except Exception as e:
+            print(f"❌ UART send error: {e}")
+            self._uart_errors += 1
+            return False
+
+    def send_config_to_gateway(self, config):
+        """Send configuration to gateway node via UART"""
+        if not self._uart or not self._uart.is_open:
+            return False
+
+        try:
+            with self._uart_lock:
+                command = {
+                    'cmd': 'config',
+                    'name': config.get('name', 'Gateway'),
+                    'universe': config.get('universe', 1),
+                    'channel_start': config.get('channel_start', 1),
+                    'channel_end': config.get('channel_end', 512),
+                    'slice_mode': config.get('slice_mode', 'zero_outside')
+                }
+                json_data = json.dumps(command) + '\n'
+                self._uart.write(json_data.encode('utf-8'))
+                self._uart.flush()
+                print(f"📤 UART Gateway config: U{command['universe']} ch{command['channel_start']}-{command['channel_end']}")
+                return True
+        except Exception as e:
+            print(f"❌ UART config error: {e}")
+            return False
 
     def get_all_nodes(self, include_offline=True):
         conn = get_db()
@@ -1325,9 +1517,12 @@ class NodeManager:
         return self.send_via_ola(universe, channels_dict, fade_ms)
 
     def send_via_ola(self, universe, channels_dict, fade_ms=0):
-        """Send DMX to a universe via OLA (sACN output) with optional backend-interpolated fade
+        """Send DMX to a universe via OLA (sACN) and UART gateway with optional fade
 
-        SSOT COMPLIANCE: This method always updates dmx_state after sending to OLA.
+        SSOT COMPLIANCE: This method always updates dmx_state after sending.
+        DMX is sent to both:
+        - OLA for sACN multicast to WiFi nodes
+        - UART gateway for direct wired output (if connected)
         """
         try:
             # Get current state as starting point
@@ -1339,6 +1534,10 @@ class NodeManager:
                 ch = int(ch_str)
                 if 1 <= ch <= 512:
                     target[ch - 1] = int(value)
+
+            # Check if we have a gateway node for this universe
+            gateway_nodes = self.get_gateway_nodes_in_universe(universe)
+            has_gateway = len(gateway_nodes) > 0
 
             # If fade requested, interpolate frames
             if fade_ms > 0:
@@ -1355,12 +1554,15 @@ class NodeManager:
                         int(current[i] + (target[i] - current[i]) * progress)
                         for i in range(512)
                     ]
-                    # Send frame
+                    # Send frame to OLA
                     data_str = ','.join(str(v) for v in interpolated)
                     subprocess.run(
                         ['ola_set_dmx', '-u', str(universe), '-d', data_str],
                         capture_output=True, text=True, timeout=2
                     )
+                    # Send frame to UART gateway
+                    if has_gateway:
+                        self.send_to_uart_gateway(universe, interpolated)
                     # Update SSOT state (only non-zero to avoid bloat)
                     dmx_state.set_channels(universe, {str(i+1): v for i, v in enumerate(interpolated) if v > 0})
 
@@ -1376,8 +1578,15 @@ class NodeManager:
                     capture_output=True, text=True, timeout=2
                 )
 
+                # Send to UART gateway
+                if has_gateway:
+                    self.send_to_uart_gateway(universe, target)
+
                 if result.returncode == 0:
-                    print(f"📤 OLA U{universe} -> {len(channels_dict)} channels (snap)")
+                    out_str = f"📤 OLA U{universe} -> {len(channels_dict)} channels (snap)"
+                    if has_gateway:
+                        out_str += " + UART"
+                    print(out_str)
                     # Update SSOT state
                     dmx_state.set_channels(universe, channels_dict)
                     # Track diagnostics
@@ -1416,9 +1625,8 @@ class NodeManager:
         return self.send_via_ola(universe, all_zeros)
 
     def send_config_to_node(self, node, config):
-        """Send configuration update to a WiFi node"""
-        if node.get('type') != 'wifi':
-            return False
+        """Send configuration update to a WiFi or gateway node"""
+        node_type = node.get('type')
 
         universe = config.get('universe', node.get('universe', 1))
 
@@ -1427,23 +1635,35 @@ class NodeManager:
         channel_end = config.get('channel_end') or config.get('channelEnd') or node.get('channel_end', 512)
         slice_mode = config.get('slice_mode', node.get('slice_mode', 'zero_outside'))
 
-        # Send config to ESP32 - include both new and legacy field names for compatibility
-        command = {
-            'cmd': 'config',
-            'name': config.get('name', node.get('name')),
-            'universe': universe,
-            'channel_start': channel_start,
-            'channel_end': channel_end,
-            'slice_mode': slice_mode,
-            # Legacy field names for backward compatibility with older firmware
-            'startChannel': channel_start,
-            'channelCount': channel_end
-        }
-        result = self.send_command_to_wifi(node['ip'], command)
-        
+        if node_type == 'gateway':
+            # Send config to gateway via UART
+            result = self.send_config_to_gateway({
+                'name': config.get('name', node.get('name')),
+                'universe': universe,
+                'channel_start': channel_start,
+                'channel_end': channel_end,
+                'slice_mode': slice_mode
+            })
+        elif node_type == 'wifi':
+            # Send config to ESP32 via UDP - include both new and legacy field names
+            command = {
+                'cmd': 'config',
+                'name': config.get('name', node.get('name')),
+                'universe': universe,
+                'channel_start': channel_start,
+                'channel_end': channel_end,
+                'slice_mode': slice_mode,
+                # Legacy field names for backward compatibility with older firmware
+                'startChannel': channel_start,
+                'channelCount': channel_end
+            }
+            result = self.send_command_to_wifi(node['ip'], command)
+        else:
+            return False
+
         # Auto-configure OLA universe
         self.configure_ola_universe(universe)
-        
+
         return result
 
     def configure_ola_universe(self, universe):
