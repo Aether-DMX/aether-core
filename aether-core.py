@@ -1,17 +1,22 @@
 #!/usr/bin/env python3
 """
-AETHER Core v3.0 - Unified Control System with Local Playback
+AETHER Core v4.0 - sACN/OLA DMX Control System
 Single source of truth for ALL system functionality
+
+Transport: sACN/E1.31 via OLA (Open Lighting Architecture)
+All DMX output goes through OLA which handles sACN multicast to nodes.
+
 Features:
-- Scene/Chase sync to ESP32 nodes for local playback
+- sACN/E1.31 multicast DMX output via OLA
+- Scene/Chase management and playback
 - Universe splitting (multiple nodes per universe)
 - Coordinated play/stop across all nodes
+- No legacy transports (ESP-NOW, UART removed)
 """
 
 import socket
 import json
 import sqlite3
-import serial
 import threading
 import time
 import os
@@ -40,7 +45,7 @@ DMX_STATE_FILE = os.path.join(HOME_DIR, "aether-dmx-state.json")
 # ============================================================
 # Version/Runtime Info - For SSOT verification
 # ============================================================
-AETHER_VERSION = "3.1.0"
+AETHER_VERSION = "4.0.0"
 AETHER_START_TIME = datetime.now()
 AETHER_FILE_PATH = os.path.abspath(__file__)
 
@@ -67,14 +72,11 @@ def ssot_integrity_check():
     """
     Startup check that scans for forbidden DMX send patterns outside the SSOT pipeline.
 
-    The ONLY valid DMX output paths are:
-    1. ContentManager.set_channels() -> NodeManager.send_to_node() -> [UART/UDP/OLA]
-    2. ContentManager.blackout() -> NodeManager.send_blackout()
+    The ONLY valid DMX output path is:
+    ContentManager.set_channels() -> NodeManager.send_to_node() -> send_via_ola() -> OLA
 
-    Any direct calls to ola_set_dmx, serial.write for DMX, or UDP sendto for DMX
-    outside of NodeManager methods is a SSOT violation.
-
-    This check reads the source code and warns on startup if violations are detected.
+    All DMX goes through OLA which outputs via sACN multicast to nodes.
+    No legacy transports (UART, ESP-NOW) are supported.
     """
     violations = []
 
@@ -93,9 +95,7 @@ def ssot_integrity_check():
     # Allowed locations for DMX send operations
     ALLOWED_CLASSES = {'NodeManager'}
     ALLOWED_METHODS = {
-        'send_via_ola', 'send_via_uart', 'send_to_hardwired',
-        'send_to_node', 'send_dmx_to_wifi_node', 'send_command_to_wifi',
-        'send_blackout'
+        'send_via_ola', 'send_to_node', 'send_command_to_wifi', 'send_blackout'
     }
 
     for i, line in enumerate(lines, 1):
@@ -117,10 +117,6 @@ def ssot_integrity_check():
         # Check for forbidden patterns
         if 'ola_set_dmx' in line and 'subprocess' in line:
             violations.append(f"Line {i}: Direct ola_set_dmx outside NodeManager")
-        if 'serial.write' in line and 'dmx' in line.lower():
-            violations.append(f"Line {i}: Direct serial write for DMX")
-        if 'sendto(' in line and 'dmx' in line.lower() and 'node_manager' not in line.lower():
-            violations.append(f"Line {i}: Direct UDP sendto for DMX")
 
     return violations
 
@@ -138,19 +134,14 @@ def ssot_startup_verify():
             print(f"   ... and {len(violations) - 5} more", flush=True)
         print("   Fix: Route all DMX output through ContentManager.set_channels()", flush=True)
     else:
-        print("✅ SSOT integrity verified - all DMX paths route through dispatcher", flush=True)
+        print("✅ SSOT integrity verified - all DMX paths route through OLA", flush=True)
 
     return len(violations) == 0
 
 
-# Serial port for hardwired node
-HARDWIRED_UART = "/dev/serial0"
-HARDWIRED_BAUD = 115200
-
 # Timing configuration
 STALE_TIMEOUT = 60
-CHUNK_SIZE = 5  # Max channels per UDP packet
-CHUNK_DELAY = 0.05  # Delay between chunks (50ms)
+OLA_OUTPUT_FPS = 40  # Max frames per second to OLA
 
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*"}})
@@ -992,6 +983,7 @@ def init_database():
     c.execute('''CREATE TABLE IF NOT EXISTS nodes (
         node_id TEXT PRIMARY KEY, name TEXT, hostname TEXT, mac TEXT, ip TEXT,
         universe INTEGER DEFAULT 1, channel_start INTEGER DEFAULT 1, channel_end INTEGER DEFAULT 512,
+        slice_mode TEXT DEFAULT 'zero_outside',
         mode TEXT DEFAULT 'output', type TEXT DEFAULT 'wifi', connection TEXT, firmware TEXT,
         status TEXT DEFAULT 'offline', is_builtin BOOLEAN DEFAULT 0, is_paired BOOLEAN DEFAULT 0,
         can_delete BOOLEAN DEFAULT 1, uptime INTEGER DEFAULT 0, rssi INTEGER DEFAULT 0, fps REAL DEFAULT 0,
@@ -1056,20 +1048,29 @@ def init_database():
         conn.commit()
     except:
         pass
-    # Add built-in hardwired node
+    # Add built-in OLA node
     # Add fixture_ids to groups
     try:
         c.execute('ALTER TABLE groups ADD COLUMN fixture_ids TEXT')
         conn.commit()
     except:
         pass
+
+    # Add slice_mode column to nodes table (migration for existing databases)
+    try:
+        c.execute('ALTER TABLE nodes ADD COLUMN slice_mode TEXT DEFAULT \'zero_outside\'')
+        conn.commit()
+        print("✓ Added slice_mode column to nodes table")
+    except:
+        pass  # Column already exists
+
     c.execute('SELECT * FROM nodes WHERE node_id = ?', ('universe-1-builtin',))
     if not c.fetchone():
         c.execute('''INSERT INTO nodes (node_id, name, hostname, mac, ip, universe, channel_start, type, channel_end,
             mode, type, connection, firmware, status, is_builtin, is_paired, can_delete, first_seen)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-            ('universe-1-builtin', 'Universe 1 (Built-in)', 'aether-pi', 'UART', 'localhost', 1, 1, 512,
-             'output', 'hardwired', 'Serial UART', 'AETHER v5.1', 'online', True, True, False, datetime.now().isoformat()))
+            ('universe-1-builtin', 'Universe 1 (OLA)', 'aether-pi', 'OLA', 'localhost', 1, 1, 512,
+             'output', 'ola', 'OLA/sACN', 'AETHER v4.0', 'online', True, True, False, datetime.now().isoformat()))
         conn.commit()
 
     print("✓ Database initialized")
@@ -1079,29 +1080,50 @@ def init_database():
 # Node Manager
 # ============================================================
 class NodeManager:
-    # Packet protocol version - increment if packet format changes
-    PACKET_VERSION = 3  # v3: full 512-ch frames, ESP32 firmware v1.1 has 2500-byte buffer
+    """Node management with OLA-only DMX output.
+
+    All DMX data is sent via OLA which outputs sACN multicast.
+    No legacy transports (UART, ESP-NOW) are supported.
+    """
 
     def __init__(self):
         self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         self.lock = threading.Lock()
-        self._serial = None
-        # Diagnostics tracking
+        # Diagnostics tracking - OLA/sACN output
+        self._last_ola_send = None
+        self._ola_send_count = 0
+        self._ola_errors = 0
+        # Diagnostics tracking - UDP config commands
         self._last_udp_send = None
-        self._last_uart_send = None
         self._udp_send_count = 0
-        self._uart_send_count = 0
+        # Check OLA availability on init
+        self._check_ola()
 
-    def _get_serial(self):
-        if self._serial is None or not self._serial.is_open:
-            try:
-                self._serial = serial.Serial(HARDWIRED_UART, HARDWIRED_BAUD, timeout=0.1)
-                print(f"✓ Serial connected: {HARDWIRED_UART} @ {HARDWIRED_BAUD}")
-            except Exception as e:
-                print(f"❌ Serial connection failed: {e}")
-                self._serial = None
-        return self._serial
+    def _check_ola(self):
+        """Check if OLA daemon is running and accessible"""
+        try:
+            result = subprocess.run(
+                ['ola_dev_info'],
+                capture_output=True, text=True, timeout=5
+            )
+            if result.returncode == 0:
+                print("✅ OLA: Daemon running and accessible")
+                # Check for E1.31/sACN output device
+                if 'E1.31' in result.stdout or 'sACN' in result.stdout:
+                    print("✅ OLA: E1.31/sACN output device found")
+                else:
+                    print("⚠️ OLA: No E1.31/sACN device found - run: ola_patch to configure")
+            else:
+                print("❌ OLA: Daemon not responding")
+                print("   Start OLA with: sudo systemctl start olad")
+        except FileNotFoundError:
+            print("❌ OLA: Not installed")
+            print("   Install with: sudo apt install ola")
+        except subprocess.TimeoutExpired:
+            print("❌ OLA: Daemon timeout - may be hung")
+        except Exception as e:
+            print(f"❌ OLA: Check failed - {e}")
 
     def get_all_nodes(self, include_offline=True):
         conn = get_db()
@@ -1123,19 +1145,14 @@ class NodeManager:
         return dict(row) if row else None
 
     def get_nodes_in_universe(self, universe):
-        """Get all paired/builtin online nodes in a universe
+        """Get all paired/builtin nodes in a universe
 
-        Note: ESP-NOW nodes don't send WiFi heartbeats, so they may show as 'offline'.
-        We include paired ESP-NOW nodes regardless of status since they receive via gateway.
+        All nodes receive DMX via sACN multicast from OLA.
         """
         conn = get_db()
         c = conn.cursor()
-        # Include:
-        # 1. Online nodes (WiFi nodes with recent heartbeat)
-        # 2. Built-in nodes (always available)
-        # 3. Paired ESP-NOW nodes (receive via gateway, don't need WiFi heartbeat)
         c.execute('''SELECT * FROM nodes WHERE universe = ? AND (is_paired = 1 OR is_builtin = 1)
-                     AND (status = "online" OR type = "espnow") ORDER BY channel_start''', (universe,))
+                     ORDER BY channel_start''', (universe,))
         rows = c.fetchall()
         conn.close()
         return [dict(row) for row in rows]
@@ -1159,24 +1176,35 @@ class NodeManager:
         now = datetime.now().isoformat()
 
         was_offline = False
+        # Build firmware string: prefer 'firmware' field, fall back to 'version'
+        # Also include transport if provided (e.g., "pulse-sacn (sACN)")
+        firmware_str = data.get('firmware') or data.get('version')
+        transport_str = data.get('transport', '')
+        if transport_str and firmware_str:
+            firmware_str = f"{firmware_str} ({transport_str})"
+
         if existing:
             # Check if node was offline before updating
             c.execute('SELECT status FROM nodes WHERE node_id = ?', (node_id,))
             row = c.fetchone()
             was_offline = row and row[0] == 'offline'
-            
+
             c.execute('''UPDATE nodes SET hostname = COALESCE(?, hostname), mac = COALESCE(?, mac),
                 ip = COALESCE(?, ip), uptime = COALESCE(?, uptime), rssi = COALESCE(?, rssi),
                 fps = COALESCE(?, fps), firmware = COALESCE(?, firmware), status = 'online', last_seen = ?
                 WHERE node_id = ?''',
                 (data.get('hostname'), data.get('mac'), data.get('ip'), data.get('uptime'),
-                 data.get('rssi'), data.get('fps'), data.get('version'), now, node_id))
+                 data.get('rssi'), data.get('fps'), firmware_str, now, node_id))
         else:
+            # Support both legacy (startChannel/channelCount) and new (slice_start/slice_end/slice_mode) fields
+            slice_start = data.get('slice_start') or data.get('startChannel', 1)
+            slice_end = data.get('slice_end') or data.get('channelCount', 512)
+            slice_mode = data.get('slice_mode', 'zero_outside')
             c.execute('''INSERT INTO nodes (node_id, name, hostname, mac, ip, universe, channel_start, type,
-                channel_end, status, is_paired, first_seen, last_seen) VALUES (?, ?, ?, ?, ?, ?, ?, 'wifi', ?, ?, ?, ?, ?)''',
+                channel_end, slice_mode, firmware, status, is_paired, first_seen, last_seen) VALUES (?, ?, ?, ?, ?, ?, ?, 'wifi', ?, ?, ?, ?, ?, ?, ?)''',
                 (node_id, data.get('hostname', f'Node-{node_id[-4:]}'), data.get('hostname'),
-                 data.get('mac'), data.get('ip'), data.get('universe', 1), data.get('startChannel', 1),
-                 data.get('channelCount', 512), 'online', False, now, now))
+                 data.get('mac'), data.get('ip'), data.get('universe', 1), slice_start,
+                 slice_end, slice_mode, firmware_str, 'online', False, now, now))
         conn.commit()
         conn.close()
         # Re-send config to paired WiFi nodes ONLY on reconnect (was offline, now online)
@@ -1187,7 +1215,8 @@ class NodeManager:
                 'name': node.get('name'),
                 'universe': node.get('universe', 1),
                 'channel_start': node.get('channel_start', 1),
-                'channel_end': node.get('channel_end', 512)
+                'channel_end': node.get('channel_end', 512),
+                'slice_mode': node.get('slice_mode', 'zero_outside')
             })
         self.broadcast_status()
         return node
@@ -1196,31 +1225,24 @@ class NodeManager:
         conn = get_db()
         c = conn.cursor()
 
-        # Check if type is being changed (e.g., wifi -> espnow)
-        new_type = config.get('type')
-        if new_type:
-            c.execute('''UPDATE nodes SET name = COALESCE(?, name), universe = ?, channel_start = ?,
-                channel_end = ?, mode = COALESCE(?, 'output'), type = ?, is_paired = 1 WHERE node_id = ?''',
-                (config.get('name'), config.get('universe', 1), config.get('channel_start', 1),
-                 config.get('channel_end', 512), config.get('mode'), new_type, str(node_id)))
-        else:
-            c.execute('''UPDATE nodes SET name = COALESCE(?, name), universe = ?, channel_start = ?,
-                channel_end = ?, mode = COALESCE(?, 'output'), is_paired = 1 WHERE node_id = ?''',
-                (config.get('name'), config.get('universe', 1), config.get('channel_start', 1),
-                 config.get('channel_end', 512), config.get('mode'), str(node_id)))
+        # Support both legacy and new slice field names
+        channel_start = config.get('channel_start') or config.get('channelStart', 1)
+        channel_end = config.get('channel_end') or config.get('channelEnd', 512)
+        slice_mode = config.get('slice_mode', 'zero_outside')
+
+        c.execute('''UPDATE nodes SET name = COALESCE(?, name), universe = ?, channel_start = ?,
+            channel_end = ?, slice_mode = ?, mode = COALESCE(?, 'output'), is_paired = 1 WHERE node_id = ?''',
+            (config.get('name'), config.get('universe', 1), channel_start,
+             channel_end, slice_mode, config.get('mode'), str(node_id)))
         conn.commit()
         conn.close()
 
-        # Send config to node
+        # Send config to node via UDP
         node = self.get_node(node_id)
-        if node and node.get('type') == 'wifi':
-            # WiFi nodes receive config via UDP
+        if node:
             self.send_config_to_node(node, config)
-            # Sync all content to newly paired node
             self.sync_content_to_node(node)
-        elif node and node.get('type') == 'espnow':
-            # ESP-NOW nodes are configured but receive data via gateway broadcast
-            print(f"📡 ESP-NOW node paired: {node.get('name')} on U{config.get('universe', 1)} - routes via UART gateway")
+            print(f"✅ Node paired: {node.get('name')} on U{config.get('universe', 1)} ch{channel_start}-{channel_end} ({slice_mode})")
 
         self.broadcast_status()
         return node
@@ -1287,86 +1309,20 @@ class NodeManager:
         return translated
 
     # ─────────────────────────────────────────────────────────
-    # Send Commands to Nodes - UNIFIED DISPATCHER
+    # Send Commands to Nodes - OLA ONLY
     # ─────────────────────────────────────────────────────────
     def send_to_node(self, node, channels_dict, fade_ms=0):
-        """Send DMX values to a node - this is the ONLY output point
+        """Send DMX values to a node via OLA/sACN
 
-        Routing logic:
-        ALL DMX data goes through UART to gateway ESP32, which:
-        - Outputs DMX locally for hardwired fixtures
-        - Broadcasts via ESP-NOW to ALL wireless nodes (all universes)
-
-        WiFi on nodes is ONLY for control/config/heartbeats, NOT DMX data.
+        All DMX output goes through OLA which sends sACN multicast.
+        Nodes listen on their assigned universe's multicast address.
         """
         universe = node.get("universe", 1)
-        raw_type = node.get('type', 'wifi')
-        is_builtin = node.get('is_builtin')
 
         non_zero = sum(1 for v in channels_dict.values() if v > 0) if channels_dict else 0
-        print(f"📡 DISPATCH: {node['name']} (U{universe}, {raw_type}) -> {len(channels_dict) if channels_dict else 0} ch ({non_zero} non-zero), fade={fade_ms}ms", flush=True)
+        print(f"📡 OLA: U{universe} -> {len(channels_dict) if channels_dict else 0} ch ({non_zero} non-zero), fade={fade_ms}ms", flush=True)
 
-        # ALL nodes route through UART to gateway
-        # Gateway handles local DMX output AND ESP-NOW broadcast to wireless nodes
-        return self.send_to_hardwired(universe, channels_dict, fade_ms)
-
-    def send_to_hardwired(self, universe, channels_dict, fade_ms=0):
-        """Send command to hardwired ESP32 via UART - always sends full 512-channel frame"""
-        try:
-            ser = self._get_serial()
-            if ser is None:
-                return False
-
-            # Get full 512-channel universe from SSOT (which was just updated by set_channels)
-            data = dmx_state.get_universe(universe)
-
-            # Debug: Log what we're about to send
-            non_zero_ssot = sum(1 for v in data if v > 0)
-            print(f"  📊 UART SSOT state: {non_zero_ssot} non-zero channels", flush=True)
-
-            # Apply any new channel updates (belt-and-suspenders - SSOT should already have these)
-            if channels_dict:
-                non_zero_dict = sum(1 for v in channels_dict.values() if v > 0)
-                print(f"  📊 UART applying {len(channels_dict)} channels ({non_zero_dict} non-zero) on top", flush=True)
-                for ch_str, value in channels_dict.items():
-                    ch = int(ch_str)
-                    if 1 <= ch <= 512:
-                        data[ch - 1] = int(value)
-
-            esp_cmd = {"cmd": "scene", "ch": 1, "data": data, "universe": universe}
-            if fade_ms > 0:
-                esp_cmd["fade"] = fade_ms
-
-            json_cmd = json.dumps(esp_cmd) + '\n'
-            ser.write(json_cmd.encode())
-            ser.flush()
-
-            # Small delay to allow ESP32 to process before next packet
-            # Prevents buffer overflow when sending to multiple universes rapidly
-            time.sleep(0.05)  # 50ms delay
-
-            print(f"📤 UART -> U{universe} 512 channels (full frame), fade={fade_ms}ms")
-
-            # Track for diagnostics
-            self._last_uart_send = {
-                'time': datetime.now().isoformat(),
-                'universe': universe,
-                'channels': 512,
-                'packet_size': len(json_cmd),
-                'fade_ms': fade_ms
-            }
-            self._uart_send_count += 1
-            return True
-
-        except Exception as e:
-            print(f"❌ UART error: {e}")
-            self._serial = None
-            return False
-
-    def send_to_wifi(self, ip, channels_dict, fade_ms=0):
-        """Send DMX via OLA sACN - wireless nodes listen to their universe"""
-        # This method is now deprecated - we use send_via_ola instead
-        return True
+        return self.send_via_ola(universe, channels_dict, fade_ms)
 
     def send_via_ola(self, universe, channels_dict, fade_ms=0):
         """Send DMX to a universe via OLA (sACN output) with optional backend-interpolated fade
@@ -1422,95 +1378,66 @@ class NodeManager:
 
                 if result.returncode == 0:
                     print(f"📤 OLA U{universe} -> {len(channels_dict)} channels (snap)")
-                    # SSOT FIX: Update SSOT state for snap mode (was missing!)
+                    # Update SSOT state
                     dmx_state.set_channels(universe, channels_dict)
+                    # Track diagnostics
+                    self._last_ola_send = {
+                        'time': datetime.now().isoformat(),
+                        'universe': universe,
+                        'channels': len(channels_dict)
+                    }
+                    self._ola_send_count += 1
                     return True
                 else:
                     print(f"❌ OLA error: {result.stderr}")
+                    self._ola_errors += 1
                     return False
         except Exception as e:
             print(f"❌ OLA error: {e}")
+            self._ola_errors += 1
             return False
 
     def send_command_to_wifi(self, ip, command):
-        """Send any command to WiFi node"""
+        """Send config command to WiFi node (not DMX data)"""
         try:
             json_data = json.dumps(command)
             self.udp_socket.sendto(json_data.encode(), (ip, WIFI_COMMAND_PORT))
+            self._last_udp_send = datetime.now().isoformat()
+            self._udp_send_count += 1
             return True
         except Exception as e:
             print(f"❌ UDP command error to {ip}: {e}")
             return False
 
-    def send_dmx_to_wifi_node(self, ip, universe, channels_dict, fade_ms=0):
-        """Send DMX values to WiFi node via UDP JSON - uses node-side fade engine"""
-        try:
-            # Build command with sparse channels (matches firmware format)
-            cmd = {
-                "cmd": "set_channels",
-                "channels": {str(k): int(v) for k, v in channels_dict.items()}
-            }
-            if fade_ms > 0:
-                cmd["fade"] = fade_ms
-
-            json_data = json.dumps(cmd)
-            self.udp_socket.sendto(json_data.encode(), (ip, WIFI_COMMAND_PORT))
-
-            print(f"📤 UDP JSON -> {ip}:{WIFI_COMMAND_PORT} ({len(channels_dict)} ch, fade={fade_ms}ms)", flush=True)
-
-            # Track for diagnostics
-            self._last_udp_send = {
-                'time': datetime.now().isoformat(),
-                'ip': ip,
-                'universe': universe,
-                'channels': len(channels_dict),
-                'fade_ms': fade_ms
-            }
-            self._udp_send_count += 1
-
-            # Also update SSOT state
-            dmx_state.set_channels(universe, channels_dict)
-
-            return True
-        except Exception as e:
-            print(f"❌ UDP DMX error to {ip}: {e}")
-            return False
-
     def send_blackout(self, node, fade_ms=1000):
-        """Send blackout command to a node"""
-        if node.get('type') == 'hardwired' or node.get('is_builtin'):
-            try:
-                ser = self._get_serial()
-                if ser:
-                    esp_cmd = {"cmd": "blackout"}
-                    if fade_ms > 0:
-                        esp_cmd["fade"] = fade_ms
-                    ser.write((json.dumps(esp_cmd) + '\n').encode())
-                    ser.flush()
-                    return True
-            except Exception as e:
-                print(f"❌ Blackout error: {e}")
-                return False
-        else:
-            # WiFi nodes use OLA/sACN - send all zeros
-            universe = node.get('universe', 1)
-            all_zeros = {str(ch): 0 for ch in range(1, 513)}
-            return self.send_via_ola(universe, all_zeros)
+        """Send blackout to a node via OLA"""
+        universe = node.get('universe', 1)
+        all_zeros = {str(ch): 0 for ch in range(1, 513)}
+        return self.send_via_ola(universe, all_zeros)
 
     def send_config_to_node(self, node, config):
         """Send configuration update to a WiFi node"""
         if node.get('type') != 'wifi':
             return False
-        
+
         universe = config.get('universe', node.get('universe', 1))
-        
-        # Send config to ESP32
+
+        # Support both legacy and new slice field names
+        channel_start = config.get('channel_start') or config.get('channelStart') or node.get('channel_start', 1)
+        channel_end = config.get('channel_end') or config.get('channelEnd') or node.get('channel_end', 512)
+        slice_mode = config.get('slice_mode', node.get('slice_mode', 'zero_outside'))
+
+        # Send config to ESP32 - include both new and legacy field names for compatibility
         command = {
             'cmd': 'config',
             'name': config.get('name', node.get('name')),
             'universe': universe,
-            'channel_start': config.get('channel_start', node.get('channel_start', 1)),
-            'channel_end': config.get('channel_end', node.get('channel_end', 512))
+            'channel_start': channel_start,
+            'channel_end': channel_end,
+            'slice_mode': slice_mode,
+            # Legacy field names for backward compatibility with older firmware
+            'startChannel': channel_start,
+            'channelCount': channel_end
         }
         result = self.send_command_to_wifi(node['ip'], command)
         
@@ -2008,13 +1935,11 @@ class ContentManager:
         # FIX: When a specific universe is requested, use it even if no nodes are detected
         # This allows SSOT state update for scenes targeting specific universes
         if universe is not None:
-            # Always include the requested universe - nodes may be ESP-NOW (don't send heartbeats)
             universes_with_nodes = {universe}
             if universe not in all_universes:
                 print(f"⚠️ Universe {universe} requested but no online nodes detected - will still update SSOT", flush=True)
         else:
-            # "All" button: Get ALL configured universes from database (not just online nodes)
-            # Gateway broadcasts via ESP-NOW to all universes regardless of WiFi heartbeat status
+            # "All" button: Get ALL configured universes from database
             all_configured_nodes = node_manager.get_all_nodes(include_offline=True)
             all_configured_universes = set(node.get('universe', 1) for node in all_configured_nodes)
             universes_with_nodes = all_configured_universes if all_configured_universes else {1}
@@ -2323,7 +2248,7 @@ content_manager = ContentManager()
 def ssot_send_frame(universe, channels_array, owner_type='effect'):
     """
     Unified output function for all DMX writes.
-    Routes through ContentManager to reach ALL nodes (hardwired + WiFi).
+    Routes through ContentManager to reach ALL nodes via OLA/sACN.
 
     This is the ONLY function that should send DMX output.
     All subsystems (Scenes, Chases, Effects) must go through here.
@@ -2342,7 +2267,7 @@ def ssot_send_frame(universe, channels_array, owner_type='effect'):
         if not channels_dict:
             return
 
-        # Route through ContentManager - this sends to ALL nodes (hardwired + WiFi)
+        # Route through ContentManager - sends to OLA for sACN output
         content_manager.set_channels(universe, channels_dict, fade_ms=0)
 
     except Exception as e:
@@ -2393,8 +2318,7 @@ def stale_checker():
 def health():
     return jsonify({
         'status': 'healthy', 'version': AETHER_VERSION, 'timestamp': datetime.now().isoformat(),
-        'services': {'database': True, 'discovery': True,
-                     'serial': node_manager._serial is not None and node_manager._serial.is_open}
+        'services': {'database': True, 'discovery': True, 'ola': True}
     })
 
 @app.route('/api/arbitration', methods=['GET'])
@@ -2800,7 +2724,12 @@ def configure_node(node_id):
     if not node:
         return jsonify({'error': 'Node not found'}), 404
 
-    # Update database (including type if specified)
+    # Support both legacy and new slice field names
+    channel_start = config.get('channelStart') or config.get('channel_start')
+    channel_end = config.get('channelEnd') or config.get('channel_end')
+    slice_mode = config.get('slice_mode')
+
+    # Update database (including type and slice_mode if specified)
     conn = get_db()
     c = conn.cursor()
     new_type = config.get('type')
@@ -2810,39 +2739,38 @@ def configure_node(node_id):
             universe = COALESCE(?, universe),
             channel_start = COALESCE(?, channel_start),
             channel_end = COALESCE(?, channel_end),
+            slice_mode = COALESCE(?, slice_mode),
             type = ?
             WHERE node_id = ?''',
             (config.get('name'), config.get('universe'),
-             config.get('channelStart') or config.get('channel_start'),
-             config.get('channelEnd') or config.get('channel_end'),
+             channel_start, channel_end, slice_mode,
              new_type, str(node_id)))
     else:
         c.execute('''UPDATE nodes SET
             name = COALESCE(?, name),
             universe = COALESCE(?, universe),
             channel_start = COALESCE(?, channel_start),
-            channel_end = COALESCE(?, channel_end)
+            channel_end = COALESCE(?, channel_end),
+            slice_mode = COALESCE(?, slice_mode)
             WHERE node_id = ?''',
             (config.get('name'), config.get('universe'),
-             config.get('channelStart') or config.get('channel_start'),
-             config.get('channelEnd') or config.get('channel_end'), str(node_id)))
+             channel_start, channel_end, slice_mode, str(node_id)))
     conn.commit()
     conn.close()
 
     # Refresh node from DB
     node = node_manager.get_node(node_id)
 
-    # Send config to node if it's WiFi (ESP-NOW nodes receive via gateway broadcast)
+    # Send config to node via UDP command port
     if node and node.get('type') == 'wifi':
         node_manager.configure_ola_universe(node.get('universe', 1))
         node_manager.send_config_to_node(node, {
             'name': node.get('name'),
             'universe': node.get('universe'),
             'channel_start': node.get('channel_start'),
-            'channel_end': node.get('channel_end')
+            'channel_end': node.get('channel_end'),
+            'slice_mode': node.get('slice_mode', 'zero_outside')
         })
-    elif node and node.get('type') == 'espnow':
-        print(f"📡 ESP-NOW node configured: {node.get('name')} on U{node.get('universe')} - routes via UART gateway")
 
     node_manager.broadcast_status()
     return jsonify({'success': True, 'node': node})
@@ -2971,21 +2899,18 @@ def dmx_diagnostics():
         'packet_version': NodeManager.PACKET_VERSION,
         'packet_version_info': 'v3: full 512-ch frames, ESP32 firmware v1.1 has 2500-byte buffer',
 
-        # Transport diagnostics
+        # Transport diagnostics (OLA/sACN only)
         'transport': {
-            'udp': {
+            'ola': {
+                'last_send': node_manager._last_ola_send,
+                'total_sends': node_manager._ola_send_count,
+                'errors': node_manager._ola_errors,
+                'output': 'sACN multicast via OLA'
+            },
+            'config_udp': {
                 'last_send': node_manager._last_udp_send,
                 'total_sends': node_manager._udp_send_count,
-                'port': WIFI_COMMAND_PORT,
-                'max_packet_size': 2500,
-                'channels_per_frame': 512
-            },
-            'uart': {
-                'last_send': node_manager._last_uart_send,
-                'total_sends': node_manager._uart_send_count,
-                'port': HARDWIRED_UART,
-                'baud': HARDWIRED_BAUD,
-                'connected': node_manager._serial is not None and node_manager._serial.is_open
+                'port': WIFI_COMMAND_PORT
             }
         },
 
@@ -3060,7 +2985,7 @@ def dmx_diagnostics():
                 'Effects: DynamicEffectsEngine._send_frame -> ssot_send_frame -> set_channels',
                 'Blackout: ContentManager.blackout',
                 'Master dimmer: /api/dmx/master -> ContentManager.set_channels',
-                'Gateway: NodeManager.send_to_node (unified dispatcher)'
+                'Output: NodeManager.send_via_ola (OLA/sACN multicast)'
             ]
         }
     })
@@ -3647,7 +3572,7 @@ if __name__ == '__main__':
 
     print(f"✓ API server on port {API_PORT}")
     print(f"✓ Discovery on UDP {DISCOVERY_PORT}")
-    print(f"✓ Serial: {HARDWIRED_UART}")
+    print(f"✓ OLA/sACN output enabled")
     print("="*60 + "\n")
 
     socketio.run(app, host='0.0.0.0', port=API_PORT, debug=False, allow_unsafe_werkzeug=True)
