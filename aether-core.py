@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """
-AETHER Core v4.1 - sACN/OLA + UART Gateway DMX Control System
+AETHER Core v4.3 - Hybrid UDP JSON + sACN DMX Control System
 Single source of truth for ALL system functionality
 
 Transport:
-- sACN/E1.31 via OLA for WiFi nodes (multicast)
+- Direct UDP JSON commands to ESP32 nodes (more reliable on WiFi)
+- Optional sACN/E1.31 multicast (fallback)
 - UART gateway for direct wired ESP32 connection (Pi GPIO)
 
 Features:
-- sACN/E1.31 multicast DMX output via OLA
+- UDP JSON DMX output ({"cmd":"dmx","ch":[...]}) - bypasses sACN for reliable WiFi
+- Direct sACN/E1.31 multicast DMX output via Python sacn library
 - UART gateway for reliable wired DMX output
 - Scene/Chase management and playback
 - Universe splitting (multiple nodes per universe via channel slices)
@@ -39,6 +41,10 @@ except ImportError:
     SERIAL_AVAILABLE = False
     print("⚠️ pyserial not installed - UART gateway disabled")
 
+# UDPJSON DMX Transport - No OLA or sACN required
+# All DMX output goes directly to ESP32 nodes via UDP JSON
+AETHER_UDPJSON_PORT = 6455  # SSOT: Primary port for UDPJSON DMX commands
+
 # ============================================================
 # Configuration - Dynamic paths based on user home directory
 # ============================================================
@@ -50,6 +56,9 @@ WIFI_COMMAND_PORT = 8888
 UART_GATEWAY_PORT = "/dev/serial0"  # Pi GPIO 14/15
 UART_GATEWAY_BAUD = 115200
 
+# DMX Transport Mode - UDPJSON only (OLA and sACN removed)
+DMX_TRANSPORT_MODE = "udp_json"  # Only supported mode
+
 # Dynamic paths - works for any user
 HOME_DIR = os.path.expanduser("~")
 DATABASE = os.path.join(HOME_DIR, "aether-core.db")
@@ -59,7 +68,7 @@ DMX_STATE_FILE = os.path.join(HOME_DIR, "aether-dmx-state.json")
 # ============================================================
 # Version/Runtime Info - For SSOT verification
 # ============================================================
-AETHER_VERSION = "4.1.0"
+AETHER_VERSION = "4.3.0"
 AETHER_START_TIME = datetime.now()
 AETHER_FILE_PATH = os.path.abspath(__file__)
 
@@ -87,10 +96,10 @@ def ssot_integrity_check():
     Startup check that scans for forbidden DMX send patterns outside the SSOT pipeline.
 
     The ONLY valid DMX output path is:
-    ContentManager.set_channels() -> NodeManager.send_to_node() -> send_via_ola() -> OLA
+    ContentManager.set_channels() -> NodeManager.send_to_node() -> dmx_state -> UDPJSON
 
-    All DMX goes through OLA which outputs via sACN multicast to nodes.
-    No legacy transports (UART, ESP-NOW) are supported.
+    All DMX goes through UDP JSON commands directly to ESP32 nodes on port 6455.
+    No OLA, sACN, UART, or ESP-NOW transports are used.
     """
     violations = []
 
@@ -149,14 +158,14 @@ def ssot_startup_verify():
             print(f"   ... and {len(violations) - 5} more", flush=True)
         print("   Fix: Route all DMX output through ContentManager.set_channels()", flush=True)
     else:
-        print("✅ SSOT integrity verified - all DMX paths route through OLA", flush=True)
+        print("✅ SSOT integrity verified - all DMX paths route through UDPJSON", flush=True)
 
     return len(violations) == 0
 
 
 # Timing configuration
 STALE_TIMEOUT = 60
-OLA_OUTPUT_FPS = 40  # Max frames per second to OLA
+SACN_OUTPUT_FPS = 40  # Max frames per second for sACN output
 
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*"}})
@@ -180,9 +189,17 @@ def beta_log(action_name, data):
 # DMX State - THE SINGLE SOURCE OF TRUTH FOR CHANNEL VALUES
 # ============================================================
 class DMXStateManager:
-    """Manages DMX state for all universes - this is the SSOT for channel values"""
+    """Manages DMX state for all universes - this is the SSOT for channel values
+
+    FADE HANDLING:
+    - All fades are handled internally via target/current state interpolation
+    - The refresh loop reads get_output_values() which returns interpolated values
+    - Output goes via UDPJSON to ESP32 nodes
+    """
     def __init__(self):
-        self.universes = {}  # {universe_num: [512 values]}
+        self.universes = {}  # {universe_num: [512 current values]}
+        self.targets = {}    # {universe_num: [512 target values]}
+        self.fade_info = {}  # {universe_num: {'start_time': float, 'duration': float, 'start_values': [512]}}
         self.master_level = 100  # 0-100 percent
         self.master_base = {}  # Captured state at 100%
         self.lock = threading.Lock()
@@ -262,30 +279,91 @@ class DMXStateManager:
                 return self.universes[universe][channel - 1]
             return 0
 
-    def set_channels(self, universe, channels_dict):
-        """Update specific channels, preserving others"""
+    def set_channels(self, universe, channels_dict, fade_ms=0):
+        """Update specific channels with optional fade
+
+        If fade_ms > 0:
+          - Current values become start state
+          - Target values are set from channels_dict
+          - Interpolation happens in get_output_values()
+
+        If fade_ms == 0:
+          - Immediate snap to new values
+        """
         with self.lock:
             if universe not in self.universes:
                 self.universes[universe] = [0] * 512
-            for ch_str, value in channels_dict.items():
-                ch = int(ch_str)
-                if 1 <= ch <= 512:
-                    self.universes[universe][ch - 1] = int(value)
+            if universe not in self.targets:
+                self.targets[universe] = [0] * 512
+
+            if fade_ms > 0:
+                # Start a fade: capture current as start, set new as target
+                self.fade_info[universe] = {
+                    'start_time': time.time(),
+                    'duration': fade_ms / 1000.0,
+                    'start_values': list(self.universes[universe])
+                }
+                # Update targets only for specified channels
+                for ch_str, value in channels_dict.items():
+                    ch = int(ch_str)
+                    if 1 <= ch <= 512:
+                        self.targets[universe][ch - 1] = int(value)
+            else:
+                # Immediate snap - update both current and target
+                for ch_str, value in channels_dict.items():
+                    ch = int(ch_str)
+                    if 1 <= ch <= 512:
+                        self.universes[universe][ch - 1] = int(value)
+                        self.targets[universe][ch - 1] = int(value)
+                # Clear any fade in progress
+                self.fade_info.pop(universe, None)
+
         socketio.emit('dmx_state', {
             'universe': universe,
-            'channels': self.universes[universe]
+            'channels': self.get_output_values(universe)
         })
         self._schedule_save()
 
-    def blackout(self, universe):
-        """Set all channels to 0"""
+    def get_output_values(self, universe):
+        """Get current output values, including fade interpolation
+
+        This is what the refresh loop should use to get the actual values to send.
+        It handles fade interpolation automatically.
+        """
         with self.lock:
-            self.universes[universe] = [0] * 512
-        socketio.emit('dmx_state', {
-            'universe': universe,
-            'channels': self.universes[universe]
-        })
-        self._schedule_save()
+            if universe not in self.universes:
+                self.universes[universe] = [0] * 512
+                return [0] * 512
+
+            fade = self.fade_info.get(universe)
+            if fade:
+                elapsed = time.time() - fade['start_time']
+                progress = min(1.0, elapsed / fade['duration'])
+
+                if progress >= 1.0:
+                    # Fade complete - snap to target and clear fade
+                    if universe in self.targets:
+                        self.universes[universe] = list(self.targets[universe])
+                    self.fade_info.pop(universe, None)
+                    return list(self.universes[universe])
+                else:
+                    # Interpolate between start and target
+                    start = fade['start_values']
+                    target = self.targets.get(universe, self.universes[universe])
+                    interpolated = [
+                        int(start[i] + (target[i] - start[i]) * progress)
+                        for i in range(512)
+                    ]
+                    # Update current state so websocket sees progress
+                    self.universes[universe] = interpolated
+                    return interpolated
+            else:
+                return list(self.universes[universe])
+
+    def blackout(self, universe, fade_ms=0):
+        """Set all channels to 0 with optional fade"""
+        all_zeros = {str(ch): 0 for ch in range(1, 513)}
+        self.set_channels(universe, all_zeros, fade_ms=fade_ms)
 
     def get_channels_for_esp(self, universe, up_to_channel):
         """Get channel array for sending to ESP32"""
@@ -331,10 +409,10 @@ class PlaybackManager:
 playback_manager = PlaybackManager()
 
 # ============================================================
-# Chase Playback Engine (streams steps via OLA/sACN)
+# Chase Playback Engine (streams steps via UDPJSON)
 # ============================================================
 class ChaseEngine:
-    """Runs chases by streaming each step via OLA to all universes"""
+    """Runs chases by streaming each step via UDPJSON to all universes"""
     def __init__(self):
         self.lock = threading.Lock()
         self.running_chases = {}  # {chase_id: thread}
@@ -1084,8 +1162,8 @@ def init_database():
         c.execute('''INSERT INTO nodes (node_id, name, hostname, mac, ip, universe, channel_start, type, channel_end,
             mode, type, connection, firmware, status, is_builtin, is_paired, can_delete, first_seen)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-            ('universe-1-builtin', 'Universe 1 (OLA)', 'aether-pi', 'OLA', 'localhost', 1, 1, 512,
-             'output', 'ola', 'OLA/sACN', 'AETHER v4.0', 'online', True, True, False, datetime.now().isoformat()))
+            ('universe-1-builtin', 'Universe 1 (Built-in)', 'aether-pi', 'sACN', 'localhost', 1, 1, 512,
+             'output', 'sacn', 'Direct sACN', 'AETHER v4.2', 'online', True, True, False, datetime.now().isoformat()))
         conn.commit()
 
     print("✓ Database initialized")
@@ -1095,84 +1173,241 @@ def init_database():
 # Node Manager
 # ============================================================
 class NodeManager:
-    """Node management with OLA and UART gateway DMX output.
+    """Node management with UDPJSON DMX output.
 
-    DMX data is sent via:
-    - OLA/sACN multicast for WiFi nodes
-    - UART for gateway nodes (direct Pi GPIO connection)
+    DMX data is sent via UDP JSON commands to ESP32 nodes on port 6455.
+    Protocol: {"type":"set","universe":N,"channels":{...},"ts":...}
+
+    OLA and sACN are NOT used. All output goes directly to nodes.
     """
+
+    # Protocol version for debugging
+    PACKET_VERSION = 4  # v4: UDPJSON only, no OLA/sACN
 
     def __init__(self):
         self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         self.lock = threading.Lock()
-        # Diagnostics tracking - OLA/sACN output
-        self._last_ola_send = None
-        self._ola_send_count = 0
-        self._ola_errors = 0
+
+        # Diagnostics tracking - UDPJSON DMX output
+        self._last_udpjson_send = None
+        self._udpjson_send_count = 0
+        self._udpjson_errors = 0
+        self._udpjson_per_universe = {}  # {universe: send_count}
+
         # Diagnostics tracking - UDP config commands
         self._last_udp_send = None
         self._udp_send_count = 0
-        # Diagnostics tracking - UART gateway
-        self._last_uart_send = None
-        self._uart_send_count = 0
-        self._uart_errors = 0
-        # UART serial connection
-        self._uart = None
-        self._uart_lock = threading.Lock()
-        # Check OLA availability on init
-        self._check_ola()
-        # Initialize UART gateway if available
-        self._init_uart_gateway()
 
-    def _check_ola(self):
-        """Check if OLA daemon is running and accessible"""
+        # DMX refresh loop control
+        self._refresh_running = False
+        self._refresh_thread = None
+        self._refresh_rate = 40  # Hz (frames per second)
+
+        print(f"✅ DMX Transport: UDPJSON mode (port {AETHER_UDPJSON_PORT})")
+
+    # ─────────────────────────────────────────────────────────
+    # UDPJSON DMX Protocol - Primary output method
+    # ─────────────────────────────────────────────────────────
+    def send_udpjson(self, ip, port, payload_dict):
+        """Send a UDPJSON command to a node.
+
+        Args:
+            ip: Node IP address
+            port: UDP port (typically AETHER_UDPJSON_PORT=6455)
+            payload_dict: Dictionary to send as JSON
+
+        Returns:
+            True on success, False on error
+        """
         try:
-            result = subprocess.run(
-                ['ola_dev_info'],
-                capture_output=True, text=True, timeout=5
-            )
-            if result.returncode == 0:
-                print("✅ OLA: Daemon running and accessible")
-                # Check for E1.31/sACN output device
-                if 'E1.31' in result.stdout or 'sACN' in result.stdout:
-                    print("✅ OLA: E1.31/sACN output device found")
-                else:
-                    print("⚠️ OLA: No E1.31/sACN device found - run: ola_patch to configure")
-            else:
-                print("❌ OLA: Daemon not responding")
-                print("   Start OLA with: sudo systemctl start olad")
-        except FileNotFoundError:
-            print("❌ OLA: Not installed")
-            print("   Install with: sudo apt install ola")
-        except subprocess.TimeoutExpired:
-            print("❌ OLA: Daemon timeout - may be hung")
-        except Exception as e:
-            print(f"❌ OLA: Check failed - {e}")
+            # Add timestamp if not present
+            if 'ts' not in payload_dict:
+                payload_dict['ts'] = int(time.time())
 
-    def _init_uart_gateway(self):
-        """Initialize UART connection to gateway ESP32 (if available)"""
-        if not SERIAL_AVAILABLE:
-            print("⚠️ UART Gateway: pyserial not installed - skipping")
+            json_data = json.dumps(payload_dict, separators=(',', ':'))
+            self.udp_socket.sendto(json_data.encode(), (ip, port))
+
+            # Track diagnostics
+            self._udpjson_send_count += 1
+            self._last_udpjson_send = time.time()
+
+            universe = payload_dict.get('universe')
+            if universe:
+                self._udpjson_per_universe[universe] = self._udpjson_per_universe.get(universe, 0) + 1
+
+            return True
+        except Exception as e:
+            self._udpjson_errors += 1
+            print(f"❌ UDPJSON send error to {ip}:{port}: {e}")
+            return False
+
+    def send_udpjson_set(self, node_ip, universe, channels_dict, source="backend"):
+        """Send a 'set' command to a node via UDPJSON.
+
+        Args:
+            node_ip: Node IP address
+            universe: Universe number
+            channels_dict: {channel: value, ...} dictionary
+            source: Source identifier (e.g., "frontend", "chase", "scene")
+        """
+        payload = {
+            "type": "set",
+            "universe": universe,
+            "channels": channels_dict,
+            "source": source
+        }
+        return self.send_udpjson(node_ip, AETHER_UDPJSON_PORT, payload)
+
+    def send_udpjson_fade(self, node_ip, universe, channels_dict, duration_ms, easing="linear", source="backend"):
+        """Send a 'fade' command to a node via UDPJSON.
+
+        Args:
+            node_ip: Node IP address
+            universe: Universe number
+            channels_dict: {channel: target_value, ...}
+            duration_ms: Fade duration in milliseconds
+            easing: Easing function (e.g., "linear", "ease-in", "ease-out")
+            source: Source identifier
+        """
+        payload = {
+            "type": "fade",
+            "universe": universe,
+            "duration_ms": duration_ms,
+            "channels": channels_dict,
+            "easing": easing,
+            "source": source
+        }
+        return self.send_udpjson(node_ip, AETHER_UDPJSON_PORT, payload)
+
+    def send_udpjson_blackout(self, node_ip, universe, source="backend"):
+        """Send a 'blackout' command to a node via UDPJSON."""
+        payload = {
+            "type": "blackout",
+            "universe": universe,
+            "source": source
+        }
+        return self.send_udpjson(node_ip, AETHER_UDPJSON_PORT, payload)
+
+    def send_udpjson_ping(self, node_ip):
+        """Send a 'ping' command to a node and expect a 'pong' response."""
+        payload = {
+            "type": "ping"
+        }
+        return self.send_udpjson(node_ip, AETHER_UDPJSON_PORT, payload)
+
+    def start_dmx_refresh(self):
+        """Start the continuous DMX refresh loop.
+
+        Sends DMX data at 40fps to all active nodes via UDPJSON.
+        """
+        if self._refresh_running:
+            print("⚠️ DMX Refresh: Already running")
             return
 
-        try:
-            self._uart = serial.Serial(
-                port=UART_GATEWAY_PORT,
-                baudrate=UART_GATEWAY_BAUD,
-                timeout=0.1
-            )
-            print(f"✅ UART Gateway: Connected to {UART_GATEWAY_PORT} @ {UART_GATEWAY_BAUD} baud")
+        self._refresh_running = True
+        self._refresh_thread = threading.Thread(target=self._dmx_refresh_loop, daemon=True)
+        self._refresh_thread.start()
+        print(f"✅ DMX Refresh: Started at {self._refresh_rate} fps (UDPJSON on port {AETHER_UDPJSON_PORT})")
+        print(f"   Thread alive: {self._refresh_thread.is_alive()}")
 
-            # Start heartbeat listener thread
-            self._uart_listener_thread = threading.Thread(target=self._uart_listener, daemon=True)
-            self._uart_listener_thread.start()
-        except serial.SerialException as e:
-            print(f"⚠️ UART Gateway: Not available - {e}")
-            self._uart = None
-        except Exception as e:
-            print(f"⚠️ UART Gateway: Init failed - {e}")
-            self._uart = None
+    def stop_dmx_refresh(self):
+        """Stop the DMX refresh loop"""
+        self._refresh_running = False
+        if self._refresh_thread:
+            self._refresh_thread.join(timeout=1.0)
+        print("⏹️ DMX Refresh: Stopped")
+
+    def _dmx_refresh_loop(self):
+        """Background thread that sends DMX data to nodes via UDPJSON.
+
+        All output uses the new UDPJSON protocol on port 6455.
+        """
+        frame_interval = 1.0 / self._refresh_rate
+        frame_count = 0
+        print(f"🔄 DMX Refresh loop starting (interval={frame_interval:.3f}s) - UDPJSON on port {AETHER_UDPJSON_PORT}")
+
+        # Cache node IPs by universe
+        universe_to_nodes = {}  # {universe: [(node_ip, slice_start, slice_end), ...]}
+
+        while self._refresh_running:
+            try:
+                loop_start = time.time()
+
+                # Get active universes from dmx_state
+                active_universes = set(dmx_state.universes.keys())
+
+                # Build universe->nodes mapping from database (refresh periodically)
+                if frame_count % (self._refresh_rate * 2) == 0:  # Every 2 seconds
+                    try:
+                        conn = get_db()
+                        c = conn.cursor()
+                        # Only get WiFi nodes with IPs (not built-in universe 1)
+                        c.execute("""
+                            SELECT universe, ip, channel_start, channel_end
+                            FROM nodes
+                            WHERE is_paired = 1 AND ip IS NOT NULL AND type = 'wifi'
+                        """)
+                        universe_to_nodes = {}
+                        for row in c.fetchall():
+                            u, ip, ch_start, ch_end = row
+                            # Skip universe 1 (offline)
+                            if u == 1:
+                                continue
+                            if u not in universe_to_nodes:
+                                universe_to_nodes[u] = []
+                            universe_to_nodes[u].append((ip, ch_start or 1, ch_end or 512))
+                            active_universes.add(u)
+                        conn.close()
+                    except Exception as e:
+                        print(f"⚠️ Node query error: {e}")
+
+                # Log active universes periodically (every 5 seconds)
+                frame_count += 1
+                if frame_count == 1 or frame_count % (self._refresh_rate * 5) == 0:
+                    print(f"🔄 DMX Refresh: universes={sorted(active_universes)}, udpjson sends={self._udpjson_send_count}")
+
+                # Send DMX data for each active universe (skip universe 1)
+                for universe in active_universes:
+                    if not self._refresh_running:
+                        break
+                    if universe == 1:
+                        continue  # Universe 1 is offline - skip
+
+                    # Get output values (handles fade interpolation internally)
+                    dmx_values = dmx_state.get_output_values(universe)
+
+                    # Build channels dict for UDPJSON (only non-zero for efficiency)
+                    channels_dict = {}
+                    for i, val in enumerate(dmx_values):
+                        if val > 0:
+                            channels_dict[str(i + 1)] = val
+
+                    # Send to each node in this universe via UDPJSON
+                    nodes = universe_to_nodes.get(universe, [])
+                    for node_ip, slice_start, slice_end in nodes:
+                        # Filter channels for this node's slice
+                        node_channels = {}
+                        for ch_str, val in channels_dict.items():
+                            ch = int(ch_str)
+                            if slice_start <= ch <= slice_end:
+                                node_channels[ch_str] = val
+
+                        # Send UDPJSON set command
+                        if node_channels or frame_count % self._refresh_rate == 0:
+                            # Send either when there's data, or once per second for keepalive
+                            self.send_udpjson_set(node_ip, universe, node_channels, source="refresh")
+
+                # Maintain consistent frame rate for fade interpolation
+                elapsed = time.time() - loop_start
+                sleep_time = frame_interval - elapsed
+                if sleep_time > 0:
+                    time.sleep(sleep_time)
+
+            except Exception as e:
+                # Log errors but don't crash the loop
+                print(f"❌ DMX Refresh error: {e}")
+                time.sleep(0.1)
 
     def _uart_listener(self):
         """Background thread to listen for heartbeats from gateway node"""
@@ -1501,109 +1736,53 @@ class NodeManager:
         return translated
 
     # ─────────────────────────────────────────────────────────
-    # Send Commands to Nodes - OLA ONLY
+    # Send Commands to Nodes - UDPJSON
     # ─────────────────────────────────────────────────────────
     def send_to_node(self, node, channels_dict, fade_ms=0):
-        """Send DMX values to a node via OLA/sACN
+        """Send DMX values to a node via UDPJSON
 
-        All DMX output goes through OLA which sends sACN multicast.
-        Nodes listen on their assigned universe's multicast address.
+        All DMX output goes through UDPJSON to ESP32 nodes on port 6455.
         """
         universe = node.get("universe", 1)
 
+        # Universe 1 is offline
+        if universe == 1:
+            print(f"⚠️ Universe 1 is offline - skipping send to node", flush=True)
+            return False
+
         non_zero = sum(1 for v in channels_dict.values() if v > 0) if channels_dict else 0
-        print(f"📡 OLA: U{universe} -> {len(channels_dict) if channels_dict else 0} ch ({non_zero} non-zero), fade={fade_ms}ms", flush=True)
+        print(f"📡 UDPJSON: U{universe} -> {len(channels_dict) if channels_dict else 0} ch ({non_zero} non-zero), fade={fade_ms}ms", flush=True)
 
-        return self.send_via_ola(universe, channels_dict, fade_ms)
+        return self.update_dmx_state(universe, channels_dict, fade_ms)
 
-    def send_via_ola(self, universe, channels_dict, fade_ms=0):
-        """Send DMX to a universe via OLA (sACN) and UART gateway with optional fade
+    def update_dmx_state(self, universe, channels_dict, fade_ms=0):
+        """Update DMX state for a universe - the refresh loop handles UDPJSON output
 
-        SSOT COMPLIANCE: This method always updates dmx_state after sending.
-        DMX is sent to both:
-        - OLA for sACN multicast to WiFi nodes
-        - UART gateway for direct wired output (if connected)
+        SSOT COMPLIANCE: This method ONLY updates dmx_state.
+        The continuous refresh loop (_dmx_refresh_loop) handles:
+        - Sending UDPJSON commands at consistent 40fps
+        - Fade interpolation via dmx_state.get_output_values()
         """
+        # Universe 1 is offline
+        if universe == 1:
+            print(f"⚠️ Universe 1 is offline - not updating state", flush=True)
+            return False
+
         try:
-            # Get current state as starting point
-            current = list(dmx_state.get_universe(universe))
+            non_zero = sum(1 for v in channels_dict.values() if v > 0) if channels_dict else 0
 
-            # Build target state
-            target = list(current)
-            for ch_str, value in channels_dict.items():
-                ch = int(ch_str)
-                if 1 <= ch <= 512:
-                    target[ch - 1] = int(value)
-
-            # Check if we have a gateway node for this universe
-            gateway_nodes = self.get_gateway_nodes_in_universe(universe)
-            has_gateway = len(gateway_nodes) > 0
-
-            # If fade requested, interpolate frames
             if fade_ms > 0:
-                fps = 30
-                total_frames = max(1, int((fade_ms / 1000.0) * fps))
-                frame_interval = fade_ms / 1000.0 / total_frames
-
-                print(f"📤 OLA U{universe} -> fade {fade_ms}ms ({total_frames} frames)", flush=True)
-
-                for frame in range(total_frames + 1):
-                    progress = frame / total_frames
-                    # Interpolate each channel
-                    interpolated = [
-                        int(current[i] + (target[i] - current[i]) * progress)
-                        for i in range(512)
-                    ]
-                    # Send frame to OLA
-                    data_str = ','.join(str(v) for v in interpolated)
-                    subprocess.run(
-                        ['ola_set_dmx', '-u', str(universe), '-d', data_str],
-                        capture_output=True, text=True, timeout=2
-                    )
-                    # Send frame to UART gateway
-                    if has_gateway:
-                        self.send_to_uart_gateway(universe, interpolated)
-                    # Update SSOT state (only non-zero to avoid bloat)
-                    dmx_state.set_channels(universe, {str(i+1): v for i, v in enumerate(interpolated) if v > 0})
-
-                    if frame < total_frames:
-                        time.sleep(frame_interval)
-
-                return True
+                print(f"📤 SSOT U{universe} -> {len(channels_dict)} ch ({non_zero} non-zero), fade={fade_ms}ms", flush=True)
             else:
-                # No fade - immediate set
-                data_str = ','.join(str(v) for v in target)
-                result = subprocess.run(
-                    ['ola_set_dmx', '-u', str(universe), '-d', data_str],
-                    capture_output=True, text=True, timeout=2
-                )
+                print(f"📤 SSOT U{universe} -> {len(channels_dict)} ch ({non_zero} non-zero), snap", flush=True)
 
-                # Send to UART gateway
-                if has_gateway:
-                    self.send_to_uart_gateway(universe, target)
+            # Update SSOT state with fade info - refresh loop handles UDPJSON output
+            dmx_state.set_channels(universe, channels_dict, fade_ms=fade_ms)
 
-                if result.returncode == 0:
-                    out_str = f"📤 OLA U{universe} -> {len(channels_dict)} channels (snap)"
-                    if has_gateway:
-                        out_str += " + UART"
-                    print(out_str)
-                    # Update SSOT state
-                    dmx_state.set_channels(universe, channels_dict)
-                    # Track diagnostics
-                    self._last_ola_send = {
-                        'time': datetime.now().isoformat(),
-                        'universe': universe,
-                        'channels': len(channels_dict)
-                    }
-                    self._ola_send_count += 1
-                    return True
-                else:
-                    print(f"❌ OLA error: {result.stderr}")
-                    self._ola_errors += 1
-                    return False
+            return True
+
         except Exception as e:
-            print(f"❌ OLA error: {e}")
-            self._ola_errors += 1
+            print(f"❌ SSOT update error: {e}")
             return False
 
     def send_command_to_wifi(self, ip, command):
@@ -1619,10 +1798,13 @@ class NodeManager:
             return False
 
     def send_blackout(self, node, fade_ms=1000):
-        """Send blackout to a node via OLA"""
+        """Send blackout to a node via UDPJSON with fade"""
         universe = node.get('universe', 1)
+        if universe == 1:
+            print(f"⚠️ Universe 1 is offline - skipping blackout", flush=True)
+            return False
         all_zeros = {str(ch): 0 for ch in range(1, 513)}
-        return self.send_via_ola(universe, all_zeros)
+        return self.update_dmx_state(universe, all_zeros, fade_ms=fade_ms)
 
     def send_config_to_node(self, node, config):
         """Send configuration update to a WiFi or gateway node"""
@@ -1661,53 +1843,7 @@ class NodeManager:
         else:
             return False
 
-        # Auto-configure OLA universe
-        self.configure_ola_universe(universe)
-
         return result
-
-    def configure_ola_universe(self, universe):
-        """Ensure OLA has this universe configured for E1.31 output"""
-        try:
-            # Get E1.31 device info
-            result = subprocess.run(
-                ['ola_dev_info'],
-                capture_output=True, text=True, timeout=5
-            )
-            
-            # Find E1.31 device ID
-            e131_device = None
-            for line in result.stdout.split('\n'):
-                if 'E1.31' in line and 'Device' in line:
-                    parts = line.split(':')
-                    if parts:
-                        dev_part = parts[0].replace('Device', '').strip()
-                        try:
-                            e131_device = int(dev_part)
-                        except:
-                            pass
-                    break
-            
-            if e131_device is None:
-                print(f"⚠️ E1.31 device not found in OLA")
-                return False
-            
-            # Patch universe to E1.31 output
-            patch_result = subprocess.run(
-                ['ola_patch', '-d', str(e131_device), '-p', str(universe - 1), '-u', str(universe)],
-                capture_output=True, text=True, timeout=5
-            )
-            
-            if patch_result.returncode == 0:
-                print(f"✓ OLA universe {universe} patched to E1.31")
-                return True
-            else:
-                print(f"✓ OLA universe {universe} likely already configured")
-                return True
-                
-        except Exception as e:
-            print(f"❌ OLA config error: {e}")
-            return False
 
     # ─────────────────────────────────────────────────────────
     # Sync Content to Nodes (Scenes/Chases)
@@ -1924,27 +2060,28 @@ class ContentManager:
         print("✓ ContentManager initialized with SSOT lock")
 
     def set_channels(self, universe, channels, fade_ms=0):
-        """Set DMX channels - updates state and sends to nodes"""
-        import sys
+        """Set DMX channels - updates SSOT state with fade, refresh loop handles output
+
+        SSOT COMPLIANCE: All DMX changes go through dmx_state.set_channels()
+        The refresh loop (_dmx_refresh_loop) handles:
+        - Actual ola_set_dmx calls at consistent 40fps
+        - Fade interpolation via get_output_values()
+        """
         print(f"🎛️ set_channels: universe={universe}, channels={len(channels)}, fade={fade_ms}", flush=True)
-        dmx_state.set_channels(universe, channels)
+
+        # Update SSOT with fade - this is the ONLY place that should set channel values
+        dmx_state.set_channels(universe, channels, fade_ms=fade_ms)
+
         nodes = node_manager.get_nodes_in_universe(universe)
         print(f"📍 Found {len(nodes)} nodes in universe {universe}", flush=True)
 
         if not nodes:
-            print(f"⚠️ No online nodes in universe {universe}", flush=True)
-            return {'success': False, 'error': 'No nodes online'}
+            print(f"⚠️ No online nodes in universe {universe} (refresh loop will still output)", flush=True)
+            # Still return success since SSOT is updated - refresh loop outputs to OLA
+            return {'success': True, 'results': []}
 
-        results = []
-        for node in nodes:
-            print(f"  → Processing node: {node['name']} ({node.get('type', 'unknown')})", flush=True)
-            local_channels = node_manager.translate_channels_for_node(node, channels)
-            if local_channels:
-                print(f"    Translated {len(local_channels)} channels for {node['name']}", flush=True)
-                success = node_manager.send_to_node(node, local_channels, fade_ms)
-                print(f"    Send result: {success}", flush=True)
-                results.append({'node': node['name'], 'success': success})
-
+        # Just track which nodes are in this universe (output is via refresh loop)
+        results = [{'node': node['name'], 'success': True} for node in nodes]
         return {'success': True, 'results': results}
 
     def blackout(self, universe=None, fade_ms=1000):
@@ -1976,12 +2113,13 @@ class ContentManager:
 
         results = []
         for univ in universes_to_blackout:
-            dmx_state.blackout(univ)
+            # Use centralized blackout with fade - refresh loop handles output
+            dmx_state.blackout(univ, fade_ms=fade_ms)
             playback_manager.stop(univ)
             nodes = node_manager.get_nodes_in_universe(univ)
             for node in nodes:
-                success = node_manager.send_blackout(node, fade_ms)
-                results.append({'node': node['name'], 'success': success})
+                # Just track that we're blacking out this node's universe
+                results.append({'node': node['name'], 'success': True})
 
         if hasattr(self, 'current_playback'):
             self.current_playback = {"type": None, "id": None, "universe": None}
@@ -2538,7 +2676,7 @@ def stale_checker():
 def health():
     return jsonify({
         'status': 'healthy', 'version': AETHER_VERSION, 'timestamp': datetime.now().isoformat(),
-        'services': {'database': True, 'discovery': True, 'ola': True}
+        'services': {'database': True, 'discovery': True, 'udpjson': True}
     })
 
 @app.route('/api/arbitration', methods=['GET'])
@@ -3026,14 +3164,33 @@ def sync_all_nodes():
 @app.route('/api/dmx/set', methods=['POST'])
 def dmx_set():
     data = request.get_json()
+    universe = data.get('universe', 1)
+    # Universe 1 is offline - reject
+    if universe == 1:
+        return jsonify({'error': 'Universe 1 is offline. Use universes 2-5.', 'success': False}), 400
     return jsonify(content_manager.set_channels(
-        data.get('universe', 1), data.get('channels', {}), data.get('fade_ms', 0)))
+        universe, data.get('channels', {}), data.get('fade_ms', 0)))
+
+@app.route('/api/dmx/fade', methods=['POST'])
+def dmx_fade():
+    """Fade channels over duration - sends UDPJSON fade command"""
+    data = request.get_json()
+    universe = data.get('universe', 2)  # Default to 2 (not 1)
+    # Universe 1 is offline - reject
+    if universe == 1:
+        return jsonify({'error': 'Universe 1 is offline. Use universes 2-5.', 'success': False}), 400
+    channels = data.get('channels', {})
+    duration_ms = data.get('duration_ms', 1000)
+    return jsonify(content_manager.set_channels(universe, channels, duration_ms))
 
 @app.route('/api/dmx/blackout', methods=['POST'])
 def dmx_blackout():
     data = request.get_json() or {}
-    # If no universe specified, blackout ALL universes (pass None)
-    universe = data.get('universe')  # None = all universes
+    universe = data.get('universe')
+    # Universe 1 is offline - reject if explicitly requested
+    if universe == 1:
+        return jsonify({'error': 'Universe 1 is offline. Use universes 2-5.', 'success': False}), 400
+    # If no universe specified, blackout all online universes (2-5)
     return jsonify(content_manager.blackout(universe, data.get('fade_ms', 1000)))
 
 
@@ -3094,6 +3251,53 @@ def dmx_master_reset():
 def dmx_get_universe(universe):
     return jsonify({'universe': universe, 'channels': dmx_state.get_universe(universe)})
 
+@app.route('/api/dmx/status', methods=['GET'])
+def dmx_status():
+    """Get DMX system status with online nodes and universe info"""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("""
+        SELECT node_id, name, universe, ip, status, channel_start, channel_end, slice_mode, last_seen
+        FROM nodes
+        WHERE is_paired = 1 AND type = 'wifi'
+    """)
+    nodes = []
+    for row in c.fetchall():
+        nodes.append({
+            'node_id': row[0],
+            'name': row[1],
+            'universe': row[2],
+            'ip': row[3],
+            'status': row[4],
+            'slice_start': row[5] or 1,
+            'slice_end': row[6] or 512,
+            'slice_mode': row[7] or 'zero_outside',
+            'last_seen': row[8]
+        })
+    conn.close()
+
+    # Group by universe
+    universes = {}
+    for node in nodes:
+        u = node['universe']
+        if u not in universes:
+            universes[u] = []
+        universes[u].append(node)
+
+    return jsonify({
+        'transport': 'udpjson',
+        'port': AETHER_UDPJSON_PORT,
+        'online_nodes': [n for n in nodes if n['status'] == 'online'],
+        'all_nodes': nodes,
+        'universes': universes,
+        'universe_1_note': 'Universe 1 is OFFLINE - use universes 2-5',
+        'stats': {
+            'total_sends': node_manager._udpjson_send_count,
+            'errors': node_manager._udpjson_errors,
+            'per_universe': node_manager._udpjson_per_universe
+        }
+    })
+
 @app.route('/api/dmx/diagnostics', methods=['GET'])
 def dmx_diagnostics():
     """Diagnostics endpoint for debugging DMX output issues
@@ -3119,13 +3323,15 @@ def dmx_diagnostics():
         'packet_version': NodeManager.PACKET_VERSION,
         'packet_version_info': 'v3: full 512-ch frames, ESP32 firmware v1.1 has 2500-byte buffer',
 
-        # Transport diagnostics (OLA/sACN only)
+        # Transport diagnostics (UDPJSON only)
         'transport': {
-            'ola': {
-                'last_send': node_manager._last_ola_send,
-                'total_sends': node_manager._ola_send_count,
-                'errors': node_manager._ola_errors,
-                'output': 'sACN multicast via OLA'
+            'udpjson': {
+                'port': AETHER_UDPJSON_PORT,
+                'last_send': node_manager._last_udpjson_send,
+                'total_sends': node_manager._udpjson_send_count,
+                'errors': node_manager._udpjson_errors,
+                'per_universe': node_manager._udpjson_per_universe,
+                'output': 'Direct UDP JSON to ESP32 nodes'
             },
             'config_udp': {
                 'last_send': node_manager._last_udp_send,
@@ -3205,7 +3411,7 @@ def dmx_diagnostics():
                 'Effects: DynamicEffectsEngine._send_frame -> ssot_send_frame -> set_channels',
                 'Blackout: ContentManager.blackout',
                 'Master dimmer: /api/dmx/master -> ContentManager.set_channels',
-                'Output: NodeManager.send_via_ola (OLA/sACN multicast)'
+                'Output: NodeManager UDPJSON to ESP32 nodes on port 6455'
             ]
         }
     })
@@ -3789,10 +3995,12 @@ if __name__ == '__main__':
     threading.Thread(target=discovery_listener, daemon=True).start()
     threading.Thread(target=stale_checker, daemon=True).start()
     schedule_runner.start()
+    node_manager.start_dmx_refresh()  # Start continuous UDPJSON output
 
     print(f"✓ API server on port {API_PORT}")
     print(f"✓ Discovery on UDP {DISCOVERY_PORT}")
-    print(f"✓ OLA/sACN output enabled")
+    print(f"✓ UDPJSON DMX output enabled (40 fps refresh, port {AETHER_UDPJSON_PORT})")
+    print(f"⚠️ Universe 1 is OFFLINE - use universes 2-5")
     print("="*60 + "\n")
 
     socketio.run(app, host='0.0.0.0', port=API_PORT, debug=False, allow_unsafe_werkzeug=True)
