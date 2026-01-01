@@ -536,14 +536,21 @@ class ChaseEngine:
                 print(f"🔄 Chase '{chase['name']}' step {step_index}/{len(steps)-1} (loop {loop_count}): "
                       f"{len(channels)} channels, duration={step_duration_ms}ms, fade={fade_ms}ms", flush=True)
 
-                # Send step to all universes with fade
-                for univ in universes:
+                # Send step to all universes in parallel for synchronized playback
+                # TODO: Future improvement - store chase data on ESP nodes and trigger playback
+                # locally for perfect sync. See: sync_chase_to_node() infrastructure already exists.
+                # Would need ESP firmware to handle local chase playback with 'play_chase' command.
+                def send_to_universe(univ):
                     try:
                         self._send_step(univ, channels, fade_ms)
                     except Exception as e:
                         print(f"❌ Chase step send error (U{univ}): {e}", flush=True)
-                        import traceback
-                        traceback.print_exc()
+
+                threads = [threading.Thread(target=send_to_universe, args=(univ,)) for univ in universes]
+                for t in threads:
+                    t.start()
+                for t in threads:
+                    t.join()  # Wait for all sends to complete before timing next step
 
                 # Wait for step duration (in seconds)
                 stop_flag.wait(step_duration_ms / 1000.0)
@@ -1611,10 +1618,19 @@ class NodeManager:
             firmware_str = f"{firmware_str} ({transport_str})"
 
         if existing:
-            # Check if node was offline before updating
-            c.execute('SELECT status FROM nodes WHERE node_id = ?', (node_id,))
+            # Check if node was offline before updating, and current paired state
+            c.execute('SELECT status, is_paired FROM nodes WHERE node_id = ?', (node_id,))
             row = c.fetchone()
             was_offline = row and row[0] == 'offline'
+            pi_thinks_paired = row and row[1] == 1
+
+            # Check if node reports unpaired status (intentional unpair or NVS wipe)
+            node_reports_unpaired = data.get('is_paired') == False or data.get('waiting_for_config') == True
+
+            # If Pi thinks node is paired but node reports unpaired, sync Pi's state
+            if pi_thinks_paired and node_reports_unpaired:
+                print(f"Node {node_id} reports unpaired - syncing Pi database")
+                c.execute('UPDATE nodes SET is_paired = 0 WHERE node_id = ?', (node_id,))
 
             c.execute('''UPDATE nodes SET hostname = COALESCE(?, hostname), mac = COALESCE(?, mac),
                 ip = COALESCE(?, ip), uptime = COALESCE(?, uptime), rssi = COALESCE(?, rssi),
@@ -2080,8 +2096,19 @@ class ContentManager:
             # Still return success since SSOT is updated - refresh loop outputs to OLA
             return {'success': True, 'results': []}
 
-        # Just track which nodes are in this universe (output is via refresh loop)
-        results = [{'node': node['name'], 'success': True} for node in nodes]
+        # Send UDPJSON directly to each node (on-demand, no refresh loop)
+        results = []
+        for node in nodes:
+            node_ip = node.get('ip')
+            if not node_ip or node_ip == 'localhost':
+                continue
+            if fade_ms > 0:
+                success = node_manager.send_udpjson_fade(node_ip, universe, channels, fade_ms)
+            else:
+                success = node_manager.send_udpjson_set(node_ip, universe, channels)
+            results.append({'node': node['name'], 'success': success})
+            print(f"UDPJSON {'fade' if fade_ms else 'set'} to {node['name']} ({node_ip}): {success}", flush=True)
+
         return {'success': True, 'results': results}
 
     def blackout(self, universe=None, fade_ms=1000):
@@ -2113,13 +2140,14 @@ class ContentManager:
 
         results = []
         for univ in universes_to_blackout:
-            # Use centralized blackout with fade - refresh loop handles output
             dmx_state.blackout(univ, fade_ms=fade_ms)
             playback_manager.stop(univ)
             nodes = node_manager.get_nodes_in_universe(univ)
             for node in nodes:
-                # Just track that we're blacking out this node's universe
-                results.append({'node': node['name'], 'success': True})
+                node_ip = node.get('ip')
+                if node_ip and node_ip != 'localhost':
+                    success = node_manager.send_udpjson_blackout(node_ip, univ)
+                    results.append({'node': node['name'], 'success': success})
 
         if hasattr(self, 'current_playback'):
             self.current_playback = {"type": None, "id": None, "universe": None}
@@ -3995,7 +4023,7 @@ if __name__ == '__main__':
     threading.Thread(target=discovery_listener, daemon=True).start()
     threading.Thread(target=stale_checker, daemon=True).start()
     schedule_runner.start()
-    node_manager.start_dmx_refresh()  # Start continuous UDPJSON output
+    # node_manager.start_dmx_refresh()  # Disabled - UDPJSON is on-demand
 
     print(f"✓ API server on port {API_PORT}")
     print(f"✓ Discovery on UDP {DISCOVERY_PORT}")
