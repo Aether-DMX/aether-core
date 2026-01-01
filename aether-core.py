@@ -282,10 +282,13 @@ class DMXStateManager:
     def set_channels(self, universe, channels_dict, fade_ms=0):
         """Update specific channels with optional fade
 
+        Since the refresh loop is disabled and ESPs handle fades locally via UDPJSON,
+        we update SSOT to the TARGET values immediately. The ESP fade engine handles
+        the actual interpolation on the hardware side.
+
         If fade_ms > 0:
-          - Current values become start state
-          - Target values are set from channels_dict
-          - Interpolation happens in get_output_values()
+          - SSOT updated to target values immediately (ESP fades locally)
+          - fade_info stored for any components that need it
 
         If fade_ms == 0:
           - Immediate snap to new values
@@ -296,25 +299,22 @@ class DMXStateManager:
             if universe not in self.targets:
                 self.targets[universe] = [0] * 512
 
+            # Update both current and target values for all cases
+            # ESP handles fades locally, so SSOT should reflect final state
+            for ch_str, value in channels_dict.items():
+                ch = int(ch_str)
+                if 1 <= ch <= 512:
+                    self.universes[universe][ch - 1] = int(value)
+                    self.targets[universe][ch - 1] = int(value)
+
             if fade_ms > 0:
-                # Start a fade: capture current as start, set new as target
+                # Store fade info for any components that need it
                 self.fade_info[universe] = {
                     'start_time': time.time(),
                     'duration': fade_ms / 1000.0,
-                    'start_values': list(self.universes[universe])
+                    'start_values': list(self.universes[universe])  # Already updated to target
                 }
-                # Update targets only for specified channels
-                for ch_str, value in channels_dict.items():
-                    ch = int(ch_str)
-                    if 1 <= ch <= 512:
-                        self.targets[universe][ch - 1] = int(value)
             else:
-                # Immediate snap - update both current and target
-                for ch_str, value in channels_dict.items():
-                    ch = int(ch_str)
-                    if 1 <= ch <= 512:
-                        self.universes[universe][ch - 1] = int(value)
-                        self.targets[universe][ch - 1] = int(value)
                 # Clear any fade in progress
                 self.fade_info.pop(universe, None)
 
