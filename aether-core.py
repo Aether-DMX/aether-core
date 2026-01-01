@@ -2272,8 +2272,18 @@ class ContentManager:
         print(f"🔄 Replicated {len(channels)} channels -> {len(replicated)} channels (pattern size: {fixture_size})")
         return replicated
 
-    def play_scene(self, scene_id, fade_ms=None, use_local=True, target_channels=None, universe=None, skip_ssot=False, replicate=True):
-        """Play a scene - broadcasts to ALL online nodes across all universes
+    def play_scene(self, scene_id, fade_ms=None, use_local=True, target_channels=None, universe=None, universes=None, skip_ssot=False, replicate=True):
+        """Play a scene - broadcasts to specified or all online nodes
+
+        Args:
+            scene_id: ID of the scene to play
+            fade_ms: Fade time override
+            use_local: Use local playback
+            target_channels: Optional list of specific channels
+            universe: Single universe (legacy, use universes instead)
+            universes: List of universes to target (preferred)
+            skip_ssot: Skip SSOT lock (internal use)
+            replicate: Replicate scene across fixtures
 
         SSOT COMPLIANCE: All DMX writes go through set_channels which updates dmx_state.
         """
@@ -2318,17 +2328,19 @@ class ContentManager:
             target_set = set(target_channels)
             channels_to_apply = {k: v for k, v in channels_to_apply.items() if int(k) in target_set}
 
-        # FIX: When a specific universe is requested, use it even if no nodes are detected
-        # This allows SSOT state update for scenes targeting specific universes
-        if universe is not None:
+        # Get target universes - priority: universes array > single universe > all online paired nodes
+        if universes is not None and len(universes) > 0:
+            universes_with_nodes = set(universes)
+        elif universe is not None:
             universes_with_nodes = {universe}
             if universe not in all_universes:
                 print(f"⚠️ Universe {universe} requested but no online nodes detected - will still update SSOT", flush=True)
         else:
-            # "All" button: Get ALL configured universes from database
-            all_configured_nodes = node_manager.get_all_nodes(include_offline=True)
-            all_configured_universes = set(node.get('universe', 1) for node in all_configured_nodes)
-            universes_with_nodes = all_configured_universes if all_configured_universes else {1}
+            # Default: all online PAIRED universes only
+            all_nodes = node_manager.get_all_nodes(include_offline=False)
+            universes_with_nodes = set(node.get('universe', 1) for node in all_nodes if node.get('is_paired'))
+            if not universes_with_nodes:
+                universes_with_nodes = {1}
 
         # Early warning if no universes available
         if not universes_with_nodes:
@@ -2453,8 +2465,16 @@ class ContentManager:
             return chase
         return None
 
-    def play_chase(self, chase_id, target_channels=None, universe=None, fade_ms=None):
-        """Start chase playback - streams steps via OLA to ALL online nodes"""
+    def play_chase(self, chase_id, target_channels=None, universe=None, universes=None, fade_ms=None):
+        """Start chase playback - streams steps via UDPJSON to specified or all online nodes
+
+        Args:
+            chase_id: ID of the chase to play
+            target_channels: Optional list of specific channels to target
+            universe: Single universe (legacy, use universes instead)
+            universes: List of universes to target (preferred)
+            fade_ms: Fade time override
+        """
         chase = self.get_chase(chase_id)
         if not chase:
             return {'success': False, 'error': 'Chase not found'}
@@ -2463,13 +2483,15 @@ class ContentManager:
         effective_fade_ms = fade_ms if fade_ms is not None else chase.get('fade_ms', 0)
         print(f"🎚️ Chase fade: requested={fade_ms}, chase_default={chase.get('fade_ms')}, effective={effective_fade_ms}", flush=True)
 
-        # Get target universes - if universe specified, use only that one
-        if universe is not None:
+        # Get target universes - priority: universes array > single universe > all online paired nodes
+        if universes is not None and len(universes) > 0:
+            universes_with_nodes = list(universes)
+        elif universe is not None:
             universes_with_nodes = [universe]
         else:
-            # Default: all online universes
+            # Default: all online PAIRED universes only
             all_nodes = node_manager.get_all_nodes(include_offline=False)
-            universes_with_nodes = list(set(node.get('universe', 1) for node in all_nodes))
+            universes_with_nodes = list(set(node.get('universe', 1) for node in all_nodes if node.get('is_paired')))
         print(f"🎬 Playing chase '{chase['name']}' on universes: {sorted(universes_with_nodes)}, fade={effective_fade_ms}ms", flush=True)
 
         # SSOT: Acquire lock and stop everything cleanly
@@ -3473,7 +3495,8 @@ def play_scene(scene_id):
         fade_ms=data.get('fade_ms'),
         use_local=data.get('use_local', True),
         target_channels=data.get('target_channels'),
-        universe=data.get('universe')
+        universe=data.get('universe'),
+        universes=data.get('universes')  # NEW: Accept universes array
     ))
 
 # ─────────────────────────────────────────────────────────
@@ -3504,6 +3527,7 @@ def play_chase(chase_id):
         chase_id,
         target_channels=data.get('target_channels'),
         universe=data.get('universe'),
+        universes=data.get('universes'),  # NEW: Accept universes array
         fade_ms=data.get('fade_ms')
     ))
 
