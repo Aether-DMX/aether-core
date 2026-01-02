@@ -624,21 +624,123 @@ Simple channel numbers (e.g., `"1": 255`) apply to the scene/chase's default uni
 
 | Service | Port | Protocol | Description |
 |---------|------|----------|-------------|
-| Flask API | 8891 | HTTP | Main backend API |
-| React Frontend | 3000 | HTTP | Web dashboard |
-| OLA Web | 9090 | HTTP | OLA admin interface |
-| sACN/E1.31 | 5568 | UDP Multicast | DMX over IP |
-| ESP32 Config | 5555 | UDP | Node configuration |
-| ESP32 Discovery | 5556 | UDP Broadcast | Node discovery |
+| Flask API | 8891 | HTTP | Main backend API (SSOT) |
+| React Frontend | 3000 | HTTP | Web dashboard + Express proxy |
+| **UDPJSON DMX** | **6455** | **UDP** | **DMX transport to ESP32 nodes** |
+| Node Config | 8888 | UDP | Node configuration commands |
+| Node Discovery | 9999 | UDP | Node registration/heartbeat |
+| SSH | 22 | TCP | Remote access |
+| mDNS | 5353 | UDP | .local domain discovery |
 
-**sACN Multicast Groups:**
-- Universe 1: `239.255.0.1:5568`
-- Universe 2: `239.255.0.2:5568`
-- Universe N: `239.255.0.N:5568`
+**Network Topology:**
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      Raspberry Pi (AP Mode)                      │
+│                         192.168.50.1                             │
+│                                                                  │
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐          │
+│  │ aether-core │    │   Portal    │    │   System    │          │
+│  │   :8891     │    │   :3000     │    │   :22       │          │
+│  │   (API)     │    │   (Web)     │    │   (SSH)     │          │
+│  └──────┬──────┘    └─────────────┘    └─────────────┘          │
+│         │                                                        │
+│         │ UDP :6455 (DMX commands)                               │
+│         │ UDP :8888 (Config commands)                            │
+│         ▼                                                        │
+└─────────────────────────────────────────────────────────────────┘
+          │ WiFi (AetherDMX network)
+          │
+    ┌─────┴─────┐
+    │           │
+┌───▼───┐   ┌───▼───┐
+│ Node1 │   │ Node2 │     ... more nodes
+│ .16   │   │ .28   │
+│ U:2   │   │ U:3   │
+│ 1-128 │   │ 1-128 │     (slice config)
+└───────┘   └───────┘
+```
 
 ---
 
-## ESP32 Pulse Node Commands (UDP port 5555)
+## UDPJSON Protocol v2 (Port 6455)
+
+The UDPJSON v2 protocol is used for all DMX communication between aether-core and ESP32 nodes.
+
+### Message Types
+
+| Type | Direction | Description |
+|------|-----------|-------------|
+| `set` | Pi → Node | Set specific channels |
+| `fill` | Pi → Node | Fill channel ranges |
+| `frame` | Pi → Node | Full 512-byte frame (base64) |
+| `blackout` | Pi → Node | All channels to 0 |
+| `panic` | Pi → Node | Immediate blackout (no fade) |
+| `ping` | Pi → Node | Health check |
+| `pong` | Node → Pi | Health response with telemetry |
+
+### Set Channels (v2 compact format)
+
+```json
+{
+  "v": 2,
+  "type": "set",
+  "u": 2,
+  "seq": 12345,
+  "ch": [[1, 255], [2, 128], [3, 64]],
+  "fade": 500
+}
+```
+
+### Fill Ranges
+
+```json
+{
+  "v": 2,
+  "type": "fill",
+  "u": 2,
+  "seq": 12346,
+  "ranges": [[1, 128, 0], [129, 256, 255]],
+  "fade": 1000
+}
+```
+
+### Ping/Pong
+
+```json
+// Request
+{"v": 2, "type": "ping", "seq": 1}
+
+// Response
+{
+  "v": 2,
+  "type": "pong",
+  "seq": 1,
+  "id": "pulse-422C",
+  "u": 2,
+  "ip": "192.168.50.16",
+  "rssi": -45,
+  "uptime": 3600,
+  "heap": 180000,
+  "rx": 1234,
+  "rx_bad": 0,
+  "dmx_fps": 40,
+  "stale": false,
+  "slice": [1, 128],
+  "caps": ["dmx", "fade", "split", "frame", "rdm_stub", "ota"]
+}
+```
+
+### Protocol Rules
+
+1. **Sequence Numbers**: Used for duplicate detection. Packets with seq ≤ last_seq are dropped (within 256 window).
+2. **Universe Filtering**: Nodes only process packets matching their configured universe (or `u: 0` for broadcast).
+3. **MTU Safety**: Payloads must be < 1200 bytes. Use chunking for large channel sets.
+4. **No Blackout on Silence**: Nodes hold last values indefinitely; `stale` flag indicates no recent packets.
+5. **Fade Engine**: Per-channel non-blocking fades at 50Hz resolution.
+
+---
+
+## ESP32 Pulse Node Commands (UDP port 8888)
 
 ### Configure Node
 

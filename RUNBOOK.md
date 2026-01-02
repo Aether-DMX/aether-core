@@ -1,4 +1,4 @@
-# AETHER DMX RUNBOOK - UDPJSON Transport
+# AETHER DMX RUNBOOK - UDPJSON Transport v5.0
 
 ## System Architecture
 
@@ -12,18 +12,27 @@ Portal Backend (Node.js, Port 3000) ──► proxies to ──►
 AETHER Core (Python Flask, Port 8891)
     │
     ├── DMX State Manager (SSOT)
-    ├── 40fps Refresh Loop
+    ├── Event-driven output (no refresh loop)
     │
     ▼ UDPJSON (Port 6455)
     │
 ESP32 Nodes (WiFi, Port 6455)
+    │
+    ├── Local DMX buffer (holds values)
+    ├── Continuous RS-485/DMX output @ 40Hz
     │
     ▼ RS-485/DMX
     │
 DMX Fixtures
 ```
 
-## Transport: UDPJSON (No OLA, No sACN)
+## Transport: UDPJSON Only
+
+**Event-driven model:**
+- Backend sends packets ONLY when values change (scene/chase/effect)
+- Nodes hold last received values indefinitely
+- No continuous refresh required to maintain output
+- Silence = "nothing changed" (NOT blackout)
 
 All DMX output uses direct UDP JSON commands on port **6455**.
 
