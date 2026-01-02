@@ -1233,6 +1233,12 @@ class NodeManager:
                 payload_dict['ts'] = int(time.time())
 
             json_data = json.dumps(payload_dict, separators=(',', ':'))
+
+            # Debug: log exactly what we're sending
+            msg_type = payload_dict.get('type', 'unknown')
+            ch_count = len(payload_dict.get('channels', {}))
+            print(f"📡 UDP SEND: {ip}:{port} type={msg_type} channels={ch_count} bytes={len(json_data)}", flush=True)
+
             self.udp_socket.sendto(json_data.encode(), (ip, port))
 
             # Track diagnostics
