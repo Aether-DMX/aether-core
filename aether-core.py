@@ -2108,12 +2108,22 @@ class ContentManager:
             node_ip = node.get('ip')
             if not node_ip or node_ip == 'localhost':
                 continue
+
+            # Filter channels to node's slice to reduce UDP packet size
+            slice_start = node.get('slice_start') or node.get('channel_start') or 1
+            slice_end = node.get('slice_end') or (slice_start + (node.get('channel_count') or 512) - 1)
+            node_channels = {k: v for k, v in channels.items() if slice_start <= int(k) <= slice_end}
+
+            if not node_channels:
+                # No channels in this node's range, skip
+                continue
+
             if fade_ms > 0:
-                success = node_manager.send_udpjson_fade(node_ip, universe, channels, fade_ms)
+                success = node_manager.send_udpjson_fade(node_ip, universe, node_channels, fade_ms)
             else:
-                success = node_manager.send_udpjson_set(node_ip, universe, channels)
+                success = node_manager.send_udpjson_set(node_ip, universe, node_channels)
             results.append({'node': node['name'], 'success': success})
-            print(f"UDPJSON {'fade' if fade_ms else 'set'} to {node['name']} ({node_ip}): {success}", flush=True)
+            print(f"UDPJSON {'fade' if fade_ms else 'set'} to {node['name']} ({node_ip}): {success} ({len(node_channels)} ch)", flush=True)
 
         return {'success': True, 'results': results}
 
