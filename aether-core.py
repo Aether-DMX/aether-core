@@ -2110,8 +2110,8 @@ class ContentManager:
                 continue
 
             # Filter channels to node's slice to reduce UDP packet size
-            slice_start = node.get('slice_start') or node.get('channel_start') or 1
-            slice_end = node.get('slice_end') or (slice_start + (node.get('channel_count') or 512) - 1)
+            slice_start = node.get('channel_start') or 1
+            slice_end = node.get('channel_end') or 512
             node_channels = {k: v for k, v in channels.items() if slice_start <= int(k) <= slice_end}
 
             if not node_channels:
