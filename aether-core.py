@@ -1,21 +1,19 @@
 #!/usr/bin/env python3
 """
-AETHER Core v4.3 - Hybrid UDP JSON + sACN DMX Control System
+AETHER Core v5.0 - UDP JSON DMX Control System
 Single source of truth for ALL system functionality
 
 Transport:
-- Direct UDP JSON commands to ESP32 nodes (more reliable on WiFi)
-- Optional sACN/E1.31 multicast (fallback)
-- UART gateway for direct wired ESP32 connection (Pi GPIO)
+- UDP JSON commands to ESP32 nodes on port 6455
+- All 512 channels per universe
+- Event-driven updates (no continuous refresh required)
 
 Features:
-- UDP JSON DMX output ({"cmd":"dmx","ch":[...]}) - bypasses sACN for reliable WiFi
-- Direct sACN/E1.31 multicast DMX output via Python sacn library
-- UART gateway for reliable wired DMX output
-- Scene/Chase management and playback
+- UDP JSON DMX output (set, fade, blackout)
+- Scene/Chase/Effect management and playback
 - Universe splitting (multiple nodes per universe via channel slices)
 - Coordinated play/stop across all nodes
-- Gateway + WiFi nodes can share the same universe
+- RDM-ready architecture (future)
 """
 
 import socket
@@ -41,8 +39,9 @@ except ImportError:
     SERIAL_AVAILABLE = False
     print("⚠️ pyserial not installed - UART gateway disabled")
 
-# UDPJSON DMX Transport - No OLA or sACN required
-# All DMX output goes directly to ESP32 nodes via UDP JSON
+# UDPJSON DMX Transport - SSOT
+# All DMX output goes directly to ESP32 nodes via UDP JSON on port 6455
+# Event-driven: packets sent on value change, no continuous refresh required
 AETHER_UDPJSON_PORT = 6455  # SSOT: Primary port for UDPJSON DMX commands
 
 # ============================================================
@@ -56,7 +55,7 @@ WIFI_COMMAND_PORT = 8888
 UART_GATEWAY_PORT = "/dev/serial0"  # Pi GPIO 14/15
 UART_GATEWAY_BAUD = 115200
 
-# DMX Transport Mode - UDPJSON only (OLA and sACN removed)
+# DMX Transport Mode - UDPJSON only
 DMX_TRANSPORT_MODE = "udp_json"  # Only supported mode
 
 # Dynamic paths - works for any user
@@ -68,7 +67,7 @@ DMX_STATE_FILE = os.path.join(HOME_DIR, "aether-dmx-state.json")
 # ============================================================
 # Version/Runtime Info - For SSOT verification
 # ============================================================
-AETHER_VERSION = "4.3.0"
+AETHER_VERSION = "5.0.0"
 AETHER_START_TIME = datetime.now()
 AETHER_FILE_PATH = os.path.abspath(__file__)
 
@@ -96,10 +95,9 @@ def ssot_integrity_check():
     Startup check that scans for forbidden DMX send patterns outside the SSOT pipeline.
 
     The ONLY valid DMX output path is:
-    ContentManager.set_channels() -> NodeManager.send_to_node() -> dmx_state -> UDPJSON
+    ContentManager.set_channels() -> dmx_state -> UDPJSON to nodes
 
     All DMX goes through UDP JSON commands directly to ESP32 nodes on port 6455.
-    No OLA, sACN, UART, or ESP-NOW transports are used.
     """
     violations = []
 
@@ -139,8 +137,10 @@ def ssot_integrity_check():
             continue
 
         # Check for forbidden patterns
-        if 'ola_set_dmx' in line and 'subprocess' in line:
-            violations.append(f"Line {i}: Direct ola_set_dmx outside NodeManager")
+        # Check for forbidden direct socket operations outside allowed locations
+        if 'udp_socket.sendto' in line and 'send_udpjson' not in current_method:
+            if current_method not in ALLOWED_METHODS:
+                violations.append(f"Line {i}: Direct UDP send outside SSOT pipeline")
 
     return violations
 
@@ -165,7 +165,7 @@ def ssot_startup_verify():
 
 # Timing configuration
 STALE_TIMEOUT = 60
-SACN_OUTPUT_FPS = 40  # Max frames per second for sACN output
+DMX_OUTPUT_FPS = 40  # Max frames per second for DMX output
 
 app = Flask(__name__)
 CORS(app, resources={r"/api/*": {"origins": "*"}})
@@ -1148,7 +1148,6 @@ def init_database():
         conn.commit()
     except:
         pass
-    # Add built-in OLA node
     # Add fixture_ids to groups
     try:
         c.execute('ALTER TABLE groups ADD COLUMN fixture_ids TEXT')
@@ -1164,14 +1163,7 @@ def init_database():
     except:
         pass  # Column already exists
 
-    c.execute('SELECT * FROM nodes WHERE node_id = ?', ('universe-1-builtin',))
-    if not c.fetchone():
-        c.execute('''INSERT INTO nodes (node_id, name, hostname, mac, ip, universe, channel_start, type, channel_end,
-            mode, type, connection, firmware, status, is_builtin, is_paired, can_delete, first_seen)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-            ('universe-1-builtin', 'Universe 1 (Built-in)', 'aether-pi', 'sACN', 'localhost', 1, 1, 512,
-             'output', 'sacn', 'Direct sACN', 'AETHER v4.2', 'online', True, True, False, datetime.now().isoformat()))
-        conn.commit()
+    # NOTE: Universe 1 built-in node removed - all nodes are WiFi ESP32 via UDPJSON
 
     print("✓ Database initialized")
     conn.close()
@@ -1183,18 +1175,25 @@ class NodeManager:
     """Node management with UDPJSON DMX output.
 
     DMX data is sent via UDP JSON commands to ESP32 nodes on port 6455.
-    Protocol: {"type":"set","universe":N,"channels":{...},"ts":...}
+    Protocol v2: {"v":2,"type":"set","u":N,"seq":M,"ch":[[ch,val],...]}
+    Legacy v1:   {"type":"set","universe":N,"channels":{...},"ts":...}
 
-    OLA and sACN are NOT used. All output goes directly to nodes.
+    Event-driven: packets sent on value change, no continuous refresh required.
+    Nodes hold last values until next update.
     """
 
-    # Protocol version for debugging
-    PACKET_VERSION = 4  # v4: UDPJSON only, no OLA/sACN
+    # Protocol version
+    PROTOCOL_VERSION = 2  # v2: Compact ch/fill/frame encodings
+    MAX_PAYLOAD_SIZE = 1200  # MTU-safe payload limit
 
     def __init__(self):
         self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         self.lock = threading.Lock()
+
+        # Sequence number for duplicate detection
+        self._seq = 0
+        self._seq_lock = threading.Lock()
 
         # Diagnostics tracking - UDPJSON DMX output
         self._last_udpjson_send = None
@@ -1211,7 +1210,25 @@ class NodeManager:
         self._refresh_thread = None
         self._refresh_rate = 40  # Hz (frames per second)
 
-        print(f"✅ DMX Transport: UDPJSON mode (port {AETHER_UDPJSON_PORT})")
+        print(f"✅ DMX Transport: UDPJSON v{self.PROTOCOL_VERSION} (port {AETHER_UDPJSON_PORT})")
+
+    def _next_seq(self):
+        """Get next sequence number (thread-safe, wraps at 2^32)"""
+        with self._seq_lock:
+            self._seq = (self._seq + 1) & 0xFFFFFFFF
+            return self._seq
+
+    def _channels_to_compact(self, channels_dict):
+        """Convert {channel: value} dict to compact [[ch,val],...] array.
+
+        This is the v2 protocol format - much more compact than object keys.
+        """
+        return [[int(ch), int(val)] for ch, val in channels_dict.items()]
+
+    def _estimate_payload_size(self, ch_pairs):
+        """Estimate JSON payload size for channel pairs."""
+        # Rough estimate: "[[1,255]," = 9 chars per pair average
+        return 50 + len(ch_pairs) * 9  # 50 for header overhead
 
     # ─────────────────────────────────────────────────────────
     # UDPJSON DMX Protocol - Primary output method
@@ -1228,16 +1245,20 @@ class NodeManager:
             True on success, False on error
         """
         try:
-            # Add timestamp if not present
-            if 'ts' not in payload_dict:
-                payload_dict['ts'] = int(time.time())
-
             json_data = json.dumps(payload_dict, separators=(',', ':'))
 
-            # Debug: log exactly what we're sending
+            # Debug: log what we're sending (format depends on v1 or v2)
             msg_type = payload_dict.get('type', 'unknown')
-            ch_count = len(payload_dict.get('channels', {}))
-            print(f"📡 UDP SEND: {ip}:{port} type={msg_type} channels={ch_count} bytes={len(json_data)}", flush=True)
+            version = payload_dict.get('v', 1)
+            seq = payload_dict.get('seq', 0)
+            universe = payload_dict.get('u') or payload_dict.get('universe', 0)
+
+            # Count channels from either format
+            ch_count = len(payload_dict.get('ch', [])) or len(payload_dict.get('channels', {}))
+
+            # Rate-limited logging (only log every 100th packet or first few)
+            if self._udpjson_send_count < 10 or self._udpjson_send_count % 100 == 0:
+                print(f"📡 UDP v{version}: {ip}:{port} type={msg_type} u={universe} ch={ch_count} seq={seq} bytes={len(json_data)}", flush=True)
 
             self.udp_socket.sendto(json_data.encode(), (ip, port))
 
@@ -1245,7 +1266,6 @@ class NodeManager:
             self._udpjson_send_count += 1
             self._last_udpjson_send = time.time()
 
-            universe = payload_dict.get('universe')
             if universe:
                 self._udpjson_per_universe[universe] = self._udpjson_per_universe.get(universe, 0) + 1
 
@@ -1255,57 +1275,131 @@ class NodeManager:
             print(f"❌ UDPJSON send error to {ip}:{port}: {e}")
             return False
 
-    def send_udpjson_set(self, node_ip, universe, channels_dict, source="backend"):
-        """Send a 'set' command to a node via UDPJSON.
+    def send_udpjson_set(self, node_ip, universe, channels_dict, source="backend", fade_ms=0):
+        """Send a 'set' command to a node via UDPJSON v2 protocol.
+
+        Uses compact [[ch,val],...] format instead of {"ch":val,...} for smaller payloads.
+        Automatically splits large payloads into multiple packets to stay under MTU.
 
         Args:
             node_ip: Node IP address
             universe: Universe number
             channels_dict: {channel: value, ...} dictionary
             source: Source identifier (e.g., "frontend", "chase", "scene")
+            fade_ms: Optional fade duration in milliseconds
         """
+        ch_pairs = self._channels_to_compact(channels_dict)
+
+        # Check if we need to split the payload
+        estimated_size = self._estimate_payload_size(ch_pairs)
+        if estimated_size > self.MAX_PAYLOAD_SIZE and len(ch_pairs) > 50:
+            # Split into multiple packets
+            return self._send_chunked(node_ip, universe, ch_pairs, fade_ms, source)
+
         payload = {
+            "v": self.PROTOCOL_VERSION,
             "type": "set",
-            "universe": universe,
-            "channels": channels_dict,
-            "source": source
+            "u": universe,
+            "seq": self._next_seq(),
+            "ch": ch_pairs
         }
+        if fade_ms > 0:
+            payload["fade"] = fade_ms
+
         return self.send_udpjson(node_ip, AETHER_UDPJSON_PORT, payload)
 
+    def _send_chunked(self, node_ip, universe, ch_pairs, fade_ms, source):
+        """Send channel updates in multiple packets to stay under MTU."""
+        chunk_size = 100  # ~900 bytes per chunk
+        success = True
+        for i in range(0, len(ch_pairs), chunk_size):
+            chunk = ch_pairs[i:i + chunk_size]
+            payload = {
+                "v": self.PROTOCOL_VERSION,
+                "type": "set",
+                "u": universe,
+                "seq": self._next_seq(),
+                "ch": chunk
+            }
+            if fade_ms > 0:
+                payload["fade"] = fade_ms
+            if not self.send_udpjson(node_ip, AETHER_UDPJSON_PORT, payload):
+                success = False
+        return success
+
     def send_udpjson_fade(self, node_ip, universe, channels_dict, duration_ms, easing="linear", source="backend"):
-        """Send a 'fade' command to a node via UDPJSON.
+        """Send a 'set' command with fade to a node via UDPJSON v2 protocol.
+
+        Note: v2 protocol uses 'fade' field on 'set' type, not separate 'fade' type.
+        Nodes handle fading locally based on the fade duration.
 
         Args:
             node_ip: Node IP address
             universe: Universe number
             channels_dict: {channel: target_value, ...}
             duration_ms: Fade duration in milliseconds
-            easing: Easing function (e.g., "linear", "ease-in", "ease-out")
+            easing: Easing function (ignored in v2 - linear only for now)
             source: Source identifier
         """
+        # v2 protocol: use set with fade parameter
+        return self.send_udpjson_set(node_ip, universe, channels_dict, source, fade_ms=duration_ms)
+
+    def send_udpjson_fill(self, node_ip, universe, ranges, fade_ms=0):
+        """Send a 'fill' command for efficient range fills.
+
+        Efficiently sets contiguous channel ranges to the same value.
+        Ideal for blackouts, full-on, or wipes.
+
+        Args:
+            node_ip: Node IP address
+            universe: Universe number
+            ranges: List of [start, end, value] tuples
+            fade_ms: Optional fade duration in milliseconds
+        """
         payload = {
-            "type": "fade",
-            "universe": universe,
-            "duration_ms": duration_ms,
-            "channels": channels_dict,
-            "easing": easing,
-            "source": source
+            "v": self.PROTOCOL_VERSION,
+            "type": "fill",
+            "u": universe,
+            "seq": self._next_seq(),
+            "ranges": ranges
         }
+        if fade_ms > 0:
+            payload["fade"] = fade_ms
+
         return self.send_udpjson(node_ip, AETHER_UDPJSON_PORT, payload)
 
-    def send_udpjson_blackout(self, node_ip, universe, source="backend"):
-        """Send a 'blackout' command to a node via UDPJSON."""
+    def send_udpjson_blackout(self, node_ip, universe, fade_ms=0, source="backend"):
+        """Send a 'blackout' command to a node via UDPJSON v2 protocol.
+
+        Uses efficient fill command: ranges=[[1,512,0]] instead of sending 512 zeros.
+        """
         payload = {
+            "v": self.PROTOCOL_VERSION,
             "type": "blackout",
-            "universe": universe,
-            "source": source
+            "u": universe,
+            "seq": self._next_seq()
+        }
+        if fade_ms > 0:
+            payload["fade"] = fade_ms
+
+        return self.send_udpjson(node_ip, AETHER_UDPJSON_PORT, payload)
+
+    def send_udpjson_panic(self, node_ip, universe):
+        """Send a 'panic' command - immediate blackout with no fade."""
+        payload = {
+            "v": self.PROTOCOL_VERSION,
+            "type": "panic",
+            "u": universe,
+            "seq": self._next_seq()
         }
         return self.send_udpjson(node_ip, AETHER_UDPJSON_PORT, payload)
 
     def send_udpjson_ping(self, node_ip):
         """Send a 'ping' command to a node and expect a 'pong' response."""
         payload = {
-            "type": "ping"
+            "v": self.PROTOCOL_VERSION,
+            "type": "ping",
+            "seq": self._next_seq()
         }
         return self.send_udpjson(node_ip, AETHER_UDPJSON_PORT, payload)
 
@@ -1587,7 +1681,7 @@ class NodeManager:
     def get_nodes_in_universe(self, universe):
         """Get all paired/builtin nodes in a universe
 
-        All nodes receive DMX via sACN multicast from OLA.
+        All nodes receive DMX via UDPJSON on port 6455.
         """
         conn = get_db()
         c = conn.cursor()
@@ -1617,7 +1711,6 @@ class NodeManager:
 
         was_offline = False
         # Build firmware string: prefer 'firmware' field, fall back to 'version'
-        # Also include transport if provided (e.g., "pulse-sacn (sACN)")
         firmware_str = data.get('firmware') or data.get('version')
         transport_str = data.get('transport', '')
         if transport_str and firmware_str:
@@ -2082,48 +2175,62 @@ class ContentManager:
         print("✓ ContentManager initialized with SSOT lock")
 
     def set_channels(self, universe, channels, fade_ms=0):
-        """Set DMX channels - updates SSOT state with fade, refresh loop handles output
+        """Set DMX channels - builds full 512-channel frame and sends via UDPJSON
 
-        SSOT COMPLIANCE: All DMX changes go through dmx_state.set_channels()
-        The refresh loop (_dmx_refresh_loop) handles:
-        - Actual ola_set_dmx calls at consistent 40fps
-        - Fade interpolation via get_output_values()
+        SSOT COMPLIANCE:
+        1. Updates dmx_state with the requested channel changes
+        2. Builds full 512-channel frame from SSOT
+        3. Sends to each node via UDPJSON (filtered by node's slice)
+
+        All nodes receive complete universe data for their slice.
+        Missing channels default to their SSOT value (or 0 if never set).
         """
-        print(f"🎛️ set_channels: universe={universe}, channels={len(channels)}, fade={fade_ms}", flush=True)
+        print(f"🎛️ set_channels: U{universe}, {len(channels)} ch update, fade={fade_ms}ms", flush=True)
 
-        # Update SSOT with fade - this is the ONLY place that should set channel values
+        # Update SSOT with the channel changes
         dmx_state.set_channels(universe, channels, fade_ms=fade_ms)
+
+        # Build full 512-channel frame from SSOT
+        full_frame = dmx_state.get_output_values(universe)
+
+        # Count non-zero for logging
+        non_zero_count = sum(1 for v in full_frame if v > 0)
+        print(f"📤 SSOT U{universe}: 512 ch frame ({non_zero_count} non-zero)", flush=True)
 
         nodes = node_manager.get_nodes_in_universe(universe)
         print(f"📍 Found {len(nodes)} nodes in universe {universe}", flush=True)
 
         if not nodes:
-            print(f"⚠️ No online nodes in universe {universe} (refresh loop will still output)", flush=True)
-            # Still return success since SSOT is updated - refresh loop outputs to OLA
+            print(f"⚠️ No online nodes in universe {universe}", flush=True)
             return {'success': True, 'results': []}
 
-        # Send UDPJSON directly to each node (on-demand, no refresh loop)
+        # Send full frame to each node via UDPJSON
         results = []
         for node in nodes:
             node_ip = node.get('ip')
             if not node_ip or node_ip == 'localhost':
                 continue
 
-            # Filter channels to node's slice to reduce UDP packet size
+            # Get node's channel slice (default: full 512)
             slice_start = node.get('channel_start') or 1
             slice_end = node.get('channel_end') or 512
-            node_channels = {k: v for k, v in channels.items() if slice_start <= int(k) <= slice_end}
 
-            if not node_channels:
-                # No channels in this node's range, skip
-                continue
+            # Build channels dict for this node's slice from the full frame
+            # Channels are 1-indexed, full_frame is 0-indexed
+            node_channels = {}
+            for ch in range(slice_start, slice_end + 1):
+                value = full_frame[ch - 1] if ch <= 512 else 0
+                node_channels[str(ch)] = value
+
+            node_non_zero = sum(1 for v in node_channels.values() if v > 0)
+            print(f"  📡 {node['name']} ({node_ip}): ch {slice_start}-{slice_end} ({node_non_zero} non-zero)", flush=True)
 
             if fade_ms > 0:
                 success = node_manager.send_udpjson_fade(node_ip, universe, node_channels, fade_ms)
             else:
                 success = node_manager.send_udpjson_set(node_ip, universe, node_channels)
-            results.append({'node': node['name'], 'success': success})
-            print(f"UDPJSON {'fade' if fade_ms else 'set'} to {node['name']} ({node_ip}): {success} ({len(node_channels)} ch)", flush=True)
+
+            results.append({'node': node['name'], 'success': success, 'channels': len(node_channels)})
 
         return {'success': True, 'results': results}
 
@@ -2162,7 +2269,7 @@ class ContentManager:
             for node in nodes:
                 node_ip = node.get('ip')
                 if node_ip and node_ip != 'localhost':
-                    success = node_manager.send_udpjson_blackout(node_ip, univ)
+                    success = node_manager.send_udpjson_blackout(node_ip, univ, fade_ms=fade_ms)
                     results.append({'node': node['name'], 'success': success})
 
         if hasattr(self, 'current_playback'):
@@ -2672,7 +2779,7 @@ content_manager = ContentManager()
 def ssot_send_frame(universe, channels_array, owner_type='effect'):
     """
     Unified output function for all DMX writes.
-    Routes through ContentManager to reach ALL nodes via OLA/sACN.
+    Routes through ContentManager to reach ALL nodes via UDPJSON.
 
     This is the ONLY function that should send DMX output.
     All subsystems (Scenes, Chases, Effects) must go through here.
@@ -2691,7 +2798,7 @@ def ssot_send_frame(universe, channels_array, owner_type='effect'):
         if not channels_dict:
             return
 
-        # Route through ContentManager - sends to OLA for sACN output
+        # Route through ContentManager - sends to nodes via UDPJSON
         content_manager.set_channels(universe, channels_dict, fade_ms=0)
 
     except Exception as e:
