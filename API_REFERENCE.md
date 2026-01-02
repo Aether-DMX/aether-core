@@ -1,8 +1,9 @@
 # AETHER Core API Reference
+## Source of Truth - Last Updated: 2026-01-02
 
-**Base URL:** `http://localhost:8891` (or `http://aether-portal.local:8891`)
-**Port:** 8891 (Python Flask backend)
-**Frontend:** Port 3000 (Node.js React app)
+**Base URL:** `http://localhost:8891` (or `http://192.168.50.1:8891`)
+**Port:** 8891 (Python Flask backend - SSOT)
+**Frontend:** Port 3000 (Express proxy + React app)
 
 ---
 
@@ -10,48 +11,52 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                           AETHER System                                  │
+│                    Raspberry Pi (192.168.50.1)                           │
+│                         Access Point Mode                                │
 ├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────────────────┐  │
-│  │   Frontend   │───▶│  Flask API   │───▶│     ContentManager       │  │
-│  │  (port 3000) │    │ (port 8891)  │    │   (SSOT Controller)      │  │
-│  └──────────────┘    └──────────────┘    └────────────┬─────────────┘  │
-│                                                        │                │
-│                              ┌─────────────────────────┼────────────────┤
-│                              │                         │                │
-│                              ▼                         ▼                │
-│                    ┌──────────────┐          ┌──────────────┐          │
-│                    │   DMXState   │          │  NodeManager │          │
-│                    │  (in-memory) │          │  (UDP comms) │          │
-│                    └──────┬───────┘          └──────┬───────┘          │
-│                           │                         │                   │
-│                           ▼                         ▼                   │
-│                    ┌──────────────┐          ┌──────────────┐          │
-│                    │     OLA      │          │  ESP32 Nodes │          │
-│                    │  (olad)      │          │  (sACN/UDP)  │          │
-│                    └──────┬───────┘          └──────────────┘          │
-│                           │                                             │
-│                           ▼                                             │
-│                    ┌──────────────┐                                    │
-│                    │  sACN/E1.31  │───▶ Multicast 239.255.0.x:5568    │
-│                    │  (port 5568) │                                    │
-│                    └──────────────┘                                    │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
+│                                                                          │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────────────────┐   │
+│  │   Frontend   │───▶│Express Proxy │───▶│      Flask API           │   │
+│  │  (port 3000) │    │  (port 3000) │    │     (port 8891)          │   │
+│  │    React     │    │    Node.js   │    │   SSOT Controller        │   │
+│  └──────────────┘    └──────────────┘    └────────────┬─────────────┘   │
+│                                                        │                 │
+│                              ┌─────────────────────────┼─────────────────┤
+│                              │                         │                 │
+│                              ▼                         ▼                 │
+│                    ┌──────────────┐          ┌──────────────┐           │
+│                    │   DMXState   │          │  NodeManager │           │
+│                    │  (in-memory) │          │  (UDPJSON)   │           │
+│                    └──────────────┘          └──────┬───────┘           │
+│                                                      │                   │
+│                                    UDP Port 6455     │                   │
+│                                    (UDPJSON v2)      ▼                   │
+└──────────────────────────────────────────────────────────────────────────┘
+                                         │
+                                         │ WiFi (SSID: AetherDMX)
+                                         │
+            ┌────────────────────────────┼────────────────────────────┐
+            │                            │                            │
+     ┌──────▼──────┐              ┌──────▼──────┐              ┌──────▼──────┐
+     │  pulse-422C │              │  pulse-76E4 │              │  pulse-4690 │ ...
+     │  U:2  .16   │              │  U:3  .28   │              │  U:4  .68   │
+     └──────┬──────┘              └──────┬──────┘              └──────┬──────┘
+            │                            │                            │
+           DMX                          DMX                          DMX
+         Fixtures                     Fixtures                     Fixtures
 ```
 
 ---
 
 ## Data Flow: DMX Output
 
-1. **API Request** → `/api/dmx/set`, `/api/scenes/<id>/play`, `/api/chases/<id>/play`
+1. **API Request** → `/api/dmx/set`, `/api/scenes/:id/apply`, `/api/chases/:id/play`
 2. **ContentManager.set_channels()** → Single Source of Truth (SSOT)
 3. **DMXState.set_channel()** → Updates in-memory DMX buffer
-4. **NodeManager.send_dmx()** → Sends to ESP32 nodes via UDP
-5. **DMX Refresh Loop** → Continuously calls `ola_set_dmx` at 40fps
-6. **OLA (olad)** → Outputs sACN/E1.31 multicast packets
-7. **ESP32 Nodes** → Receive sACN, output physical DMX
+4. **NodeManager.send_udpjson()** → Sends UDPJSON v2 to ESP32 nodes (port 6455)
+5. **ESP32 Node** → Receives UDP, updates local buffer, outputs DMX at 40Hz
+
+**No OLA, no sACN** - Direct UDPJSON transport only.
 
 ---
 
@@ -185,10 +190,39 @@ Content-Type: application/json
 
 {
   "name": "My Scene",
-  "universe": 2,
-  "channels": {"1": 255, "2": 128},
+  "channels": {"1": 255, "2": 128, "3": 0, "4": 0},
   "fade_ms": 500,
   "color": "#ff0000"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "scene_id": "scene_1767384997"
+}
+```
+
+### Update Scene
+
+```bash
+PUT /api/scenes/{scene_id}
+Content-Type: application/json
+
+{
+  "name": "Updated Scene Name",
+  "channels": {"1": 255, "2": 128, "3": 64, "4": 0},
+  "fade_ms": 1000,
+  "color": "#00ff00"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "scene_id": "scene_1767384997"
 }
 ```
 

@@ -138,8 +138,8 @@ def ssot_integrity_check():
 
         # Check for forbidden patterns
         # Check for forbidden direct socket operations outside allowed locations
-        if 'udp_socket.sendto' in line and 'send_udpjson' not in current_method:
-            if current_method not in ALLOWED_METHODS:
+        if 'udp_socket.sendto' in line:
+            if current_method is None or ('send_udpjson' not in current_method and current_method not in ALLOWED_METHODS):
                 violations.append(f"Line {i}: Direct UDP send outside SSOT pipeline")
 
     return violations
@@ -3604,6 +3604,13 @@ def create_scene():
 def get_scene(scene_id):
     scene = content_manager.get_scene(scene_id)
     return jsonify(scene) if scene else (jsonify({'error': 'Scene not found'}), 404)
+
+@app.route('/api/scenes/<scene_id>', methods=['PUT'])
+def update_scene(scene_id):
+    """Update an existing scene"""
+    data = request.get_json() or {}
+    data['scene_id'] = scene_id  # Ensure scene_id is set for the update
+    return jsonify(content_manager.create_scene(data))
 
 @app.route('/api/scenes/<scene_id>', methods=['DELETE'])
 def delete_scene(scene_id):
