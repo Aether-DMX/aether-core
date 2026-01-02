@@ -293,13 +293,47 @@ Content-Type: application/json
 
 {
   "name": "My Chase",
-  "universe": 2,
   "bpm": 120,
-  "loop": 1,
+  "loop": true,
+  "color": "#ff0000",
   "steps": [
-    {"channels": {"1": 255}, "fade_ms": 500, "hold_ms": 500},
-    {"channels": {"1": 0}, "fade_ms": 500, "hold_ms": 500}
+    {"channels": {"1": 255, "2": 0, "3": 0}, "fade_ms": 500, "hold_ms": 500},
+    {"channels": {"1": 0, "2": 255, "3": 0}, "fade_ms": 500, "hold_ms": 500}
   ]
+}
+```
+
+**Note:** Chases are universe-agnostic. Universe is selected at playback time via the modal.
+
+**Response:**
+```json
+{
+  "success": true,
+  "chase_id": "chase_1767384997"
+}
+```
+
+### Update Chase
+
+```bash
+PUT /api/chases/{chase_id}
+Content-Type: application/json
+
+{
+  "name": "Updated Chase Name",
+  "bpm": 140,
+  "loop": true,
+  "steps": [
+    {"channels": {"1": 255, "2": 128, "3": 0}, "fade_ms": 300, "hold_ms": 200}
+  ]
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "chase_id": "chase_1767384997"
 }
 ```
 

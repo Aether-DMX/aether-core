@@ -3645,13 +3645,6 @@ def get_chase(chase_id):
     chase = content_manager.get_chase(chase_id)
     return jsonify(chase) if chase else (jsonify({'error': 'Chase not found'}), 404)
 
-@app.route('/api/chases/<chase_id>', methods=['PUT'])
-def update_chase(chase_id):
-    """Update an existing chase"""
-    data = request.get_json() or {}
-    data['chase_id'] = chase_id  # Ensure chase_id is set for the update
-    return jsonify(content_manager.create_chase(data))
-
 @app.route('/api/chases/<chase_id>', methods=['DELETE'])
 def delete_chase(chase_id):
     return jsonify(content_manager.delete_chase(chase_id))
