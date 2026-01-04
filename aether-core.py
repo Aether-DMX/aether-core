@@ -402,9 +402,22 @@ class PlaybackManager:
     
     def get_status(self, universe=None):
         with self.lock:
+            status = self.current.copy()
+            # Include running effects
+            if effects_engine and effects_engine.running:
+                for effect_id in effects_engine.running.keys():
+                    # Extract effect type from id (e.g., "strobe_1234" -> "strobe")
+                    effect_type = effect_id.split('_')[0] if '_' in effect_id else effect_id
+                    # Add to status as type 'effect'
+                    status['effect'] = {
+                        'type': 'effect',
+                        'id': effect_id,
+                        'name': effect_type.capitalize(),
+                        'started': None
+                    }
             if universe:
-                return self.current.get(universe)
-            return self.current.copy()
+                return status.get(universe)
+            return status
 
 playback_manager = PlaybackManager()
 
