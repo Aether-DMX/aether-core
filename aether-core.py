@@ -3742,6 +3742,60 @@ def start_wave_effect():
     )
     return jsonify({'success': True, 'effect_id': effect_id})
 
+@app.route('/api/effects/strobe', methods=['POST'])
+def start_strobe_effect():
+    data = request.get_json() or {}
+    universes = data.get('universes', [2, 4])
+    effect_id = effects_engine.strobe(
+        universes,
+        data.get('fixtures_per_universe', 2),
+        data.get('channels_per_fixture', 4),
+        data.get('color', [255, 255, 255, 0]),
+        data.get('on_ms', 50),
+        data.get('off_ms', 50)
+    )
+    return jsonify({'success': True, 'effect_id': effect_id})
+
+@app.route('/api/effects/pulse', methods=['POST'])
+def start_pulse_effect():
+    data = request.get_json() or {}
+    universes = data.get('universes', [2, 4])
+    effect_id = effects_engine.pulse(
+        universes,
+        data.get('fixtures_per_universe', 2),
+        data.get('channels_per_fixture', 4),
+        data.get('color', [255, 255, 255, 0]),
+        data.get('pulse_ms', 2000),
+        data.get('min_brightness', 0),
+        data.get('max_brightness', 255)
+    )
+    return jsonify({'success': True, 'effect_id': effect_id})
+
+@app.route('/api/effects/fade', methods=['POST'])
+def start_fade_effect():
+    data = request.get_json() or {}
+    universes = data.get('universes', [2, 4])
+    effect_id = effects_engine.fade(
+        universes,
+        data.get('fixtures_per_universe', 2),
+        data.get('channels_per_fixture', 4),
+        data.get('colors'),
+        data.get('cycle_ms', 10000)
+    )
+    return jsonify({'success': True, 'effect_id': effect_id})
+
+@app.route('/api/effects/fire', methods=['POST'])
+def start_fire_effect():
+    data = request.get_json() or {}
+    universes = data.get('universes', [2, 4])
+    effect_id = effects_engine.fire(
+        universes,
+        data.get('fixtures_per_universe', 2),
+        data.get('channels_per_fixture', 4),
+        data.get('intensity', 0.8)
+    )
+    return jsonify({'success': True, 'effect_id': effect_id})
+
 @app.route('/api/effects/stop', methods=['POST'])
 def stop_effects():
     data = request.get_json() or {}

@@ -397,3 +397,254 @@ class DynamicEffectsEngine:
         thread.start()
         print(f"🌊 Wave effect started on universes {universes}")
         return effect_id
+
+    def strobe(self, universes, fixtures_per_universe=2, channels_per_fixture=4,
+               color=[255, 255, 255, 0], on_ms=50, off_ms=50):
+        """Strobe effect - fast on/off flashing"""
+        effect_id = f"strobe_{int(time.time())}"
+
+        if not self._acquire_arbitration(effect_id):
+            return None
+
+        stop_flag = threading.Event()
+        self.running[effect_id] = stop_flag
+        self.current_effect = effect_id
+
+        def run():
+            on = True
+            while not stop_flag.is_set():
+                for univ in universes:
+                    frame = [0] * 512
+                    if on:
+                        for fix in range(fixtures_per_universe):
+                            start_ch = fix * channels_per_fixture
+                            for ch in range(channels_per_fixture):
+                                frame[start_ch + ch] = color[ch] if ch < len(color) else 0
+                    self._send_frame(univ, frame)
+
+                delay = on_ms if on else off_ms
+                on = not on
+                stop_flag.wait(delay / 1000.0)
+
+            print(f"⏹️ Effect strobe stopped")
+            self.running.pop(effect_id, None)
+            if self.current_effect == effect_id:
+                self.current_effect = None
+
+        thread = threading.Thread(target=run, daemon=True)
+        self.threads[effect_id] = thread
+        thread.start()
+        print(f"⚡ Strobe effect started on universes {universes}")
+        return effect_id
+
+    def pulse(self, universes, fixtures_per_universe=2, channels_per_fixture=4,
+              color=[255, 255, 255, 0], pulse_ms=2000, min_brightness=0, max_brightness=255):
+        """Pulse/breathing effect - smooth fade up and down"""
+        effect_id = f"pulse_{int(time.time())}"
+
+        if not self._acquire_arbitration(effect_id):
+            return None
+
+        stop_flag = threading.Event()
+        self.running[effect_id] = stop_flag
+        self.current_effect = effect_id
+
+        def run():
+            import math
+            frame_interval = 1.0 / self.fps
+            phase = 0.0
+
+            while not stop_flag.is_set():
+                frame_start = time.monotonic()
+
+                # Sine wave for smooth breathing
+                brightness = (math.sin(phase) + 1) / 2  # 0 to 1
+                brightness = min_brightness + brightness * (max_brightness - min_brightness)
+                brightness = brightness / 255.0  # Normalize
+
+                for univ in universes:
+                    frame = [0] * 512
+                    for fix in range(fixtures_per_universe):
+                        start_ch = fix * channels_per_fixture
+                        for ch in range(channels_per_fixture):
+                            val = color[ch] if ch < len(color) else 0
+                            frame[start_ch + ch] = int(val * brightness)
+                    self._send_frame(univ, frame)
+
+                # Advance phase (full cycle = 2*pi)
+                phase += (2 * math.pi) / ((pulse_ms / 1000.0) * self.fps)
+                if phase >= 2 * math.pi:
+                    phase -= 2 * math.pi
+
+                elapsed = time.monotonic() - frame_start
+                sleep_time = frame_interval - elapsed
+                if sleep_time > 0:
+                    time.sleep(sleep_time)
+
+            print(f"⏹️ Effect pulse stopped")
+            self.running.pop(effect_id, None)
+            if self.current_effect == effect_id:
+                self.current_effect = None
+
+        thread = threading.Thread(target=run, daemon=True)
+        self.threads[effect_id] = thread
+        thread.start()
+        print(f"💫 Pulse effect started on universes {universes}")
+        return effect_id
+
+    def fade(self, universes, fixtures_per_universe=2, channels_per_fixture=4,
+             colors=None, cycle_ms=10000):
+        """Color fade - slowly cycle through colors"""
+        effect_id = f"fade_{int(time.time())}"
+
+        if not self._acquire_arbitration(effect_id):
+            return None
+
+        stop_flag = threading.Event()
+        self.running[effect_id] = stop_flag
+        self.current_effect = effect_id
+
+        if colors is None:
+            colors = [
+                [255, 0, 0, 0],    # Red
+                [255, 128, 0, 0],  # Orange
+                [255, 255, 0, 0],  # Yellow
+                [0, 255, 0, 0],    # Green
+                [0, 255, 255, 0],  # Cyan
+                [0, 0, 255, 0],    # Blue
+                [128, 0, 255, 0],  # Purple
+                [255, 0, 255, 0],  # Magenta
+            ]
+
+        def run():
+            frame_interval = 1.0 / self.fps
+            color_index = 0
+            current_color = list(colors[0])
+
+            # Time per color transition
+            transition_ms = cycle_ms / len(colors)
+            fade_frames = max(1, int((transition_ms / 1000.0) * self.fps))
+
+            while not stop_flag.is_set():
+                target_color = colors[(color_index + 1) % len(colors)]
+
+                for f in range(fade_frames):
+                    if stop_flag.is_set():
+                        break
+
+                    frame_start = time.monotonic()
+                    progress = f / fade_frames
+
+                    interp = []
+                    for ch in range(channels_per_fixture):
+                        curr = current_color[ch] if ch < len(current_color) else 0
+                        tgt = target_color[ch] if ch < len(target_color) else 0
+                        interp.append(int(curr + (tgt - curr) * progress))
+
+                    for univ in universes:
+                        frame = [0] * 512
+                        for fix in range(fixtures_per_universe):
+                            start_ch = fix * channels_per_fixture
+                            for ch in range(channels_per_fixture):
+                                frame[start_ch + ch] = interp[ch] if ch < len(interp) else 0
+                        self._send_frame(univ, frame)
+
+                    elapsed = time.monotonic() - frame_start
+                    sleep_time = frame_interval - elapsed
+                    if sleep_time > 0:
+                        time.sleep(sleep_time)
+
+                current_color = list(target_color)
+                color_index = (color_index + 1) % len(colors)
+
+            print(f"⏹️ Effect fade stopped")
+            self.running.pop(effect_id, None)
+            if self.current_effect == effect_id:
+                self.current_effect = None
+
+        thread = threading.Thread(target=run, daemon=True)
+        self.threads[effect_id] = thread
+        thread.start()
+        print(f"🌙 Color fade effect started on universes {universes}")
+        return effect_id
+
+    def fire(self, universes, fixtures_per_universe=2, channels_per_fixture=4,
+             intensity=0.8):
+        """Fire flicker effect - realistic fire simulation"""
+        effect_id = f"fire_{int(time.time())}"
+
+        if not self._acquire_arbitration(effect_id):
+            return None
+
+        stop_flag = threading.Event()
+        self.running[effect_id] = stop_flag
+        self.current_effect = effect_id
+
+        def run():
+            frame_interval = 1.0 / self.fps
+
+            # Fire colors (red/orange/yellow)
+            fire_colors = [
+                [255, 30, 0, 0],   # Deep red
+                [255, 60, 0, 0],   # Red-orange
+                [255, 100, 0, 0],  # Orange
+                [255, 150, 10, 0], # Yellow-orange
+            ]
+
+            # Track each fixture's current state
+            fixture_states = {}
+            for univ in universes:
+                for fix in range(fixtures_per_universe):
+                    fixture_states[(univ, fix)] = {
+                        'brightness': random.uniform(0.5, 1.0),
+                        'color_idx': random.randint(0, len(fire_colors) - 1),
+                        'flicker_timer': 0,
+                        'next_flicker': random.uniform(0.05, 0.2),
+                    }
+
+            while not stop_flag.is_set():
+                frame_start = time.monotonic()
+
+                for univ in universes:
+                    frame = [0] * 512
+                    for fix in range(fixtures_per_universe):
+                        key = (univ, fix)
+                        state = fixture_states[key]
+                        start_ch = fix * channels_per_fixture
+
+                        # Random flicker
+                        state['flicker_timer'] += frame_interval
+                        if state['flicker_timer'] >= state['next_flicker']:
+                            state['flicker_timer'] = 0
+                            state['next_flicker'] = random.uniform(0.03, 0.15)
+                            # Random brightness change
+                            state['brightness'] += random.uniform(-0.3, 0.3)
+                            state['brightness'] = max(0.2, min(1.0, state['brightness']))
+                            # Occasionally change color
+                            if random.random() < 0.3:
+                                state['color_idx'] = random.randint(0, len(fire_colors) - 1)
+
+                        color = fire_colors[state['color_idx']]
+                        bright = state['brightness'] * intensity
+
+                        for ch in range(channels_per_fixture):
+                            val = color[ch] if ch < len(color) else 0
+                            frame[start_ch + ch] = int(val * bright)
+
+                    self._send_frame(univ, frame)
+
+                elapsed = time.monotonic() - frame_start
+                sleep_time = frame_interval - elapsed
+                if sleep_time > 0:
+                    time.sleep(sleep_time)
+
+            print(f"⏹️ Effect fire stopped")
+            self.running.pop(effect_id, None)
+            if self.current_effect == effect_id:
+                self.current_effect = None
+
+        thread = threading.Thread(target=run, daemon=True)
+        self.threads[effect_id] = thread
+        thread.start()
+        print(f"🔥 Fire flicker effect started on universes {universes}")
+        return effect_id
