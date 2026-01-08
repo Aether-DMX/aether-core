@@ -51,6 +51,10 @@ from merge_layer import (
     merge_layer, channel_classifier, MergeLayer,
     ChannelClassifier, ChannelType, get_priority,
 )
+from preview_service import (
+    preview_service, PreviewService, PreviewSession,
+    PreviewMode, PreviewFrame,
+)
 
 # Optional serial support for UART gateway
 try:
@@ -2948,6 +2952,44 @@ playback_controller.set_look_resolver(resolve_look)
 threading.Timer(2.0, load_fixtures_into_classifier).start()
 
 # ============================================================
+# Preview Service Integration (Phase 6)
+# ============================================================
+# Preview service allows live editing preview without affecting output
+
+# Set modifier renderer for preview
+preview_service.set_modifier_renderer(ModifierRenderer())
+
+# Preview live output callback (only used when session is ARMED)
+def preview_live_output(universe, channels):
+    """Callback for armed preview sessions to output to live universes"""
+    # Register as a preview source in merge layer with high priority
+    source_id = f"preview_armed_{universe}"
+    source = merge_layer.get_source(source_id)
+    if not source:
+        merge_layer.register_source(source_id, 'manual', [universe])  # manual = priority 80
+    merge_layer.set_source_channels(source_id, universe, channels)
+    # Output merged result
+    merged = merge_layer.compute_merge(universe)
+    if merged:
+        merge_layer_output(universe, merged)
+
+preview_service.set_live_output_callback(preview_live_output)
+
+# WebSocket streaming for preview frames
+def stream_preview_frame(session_id, frame):
+    """Stream preview frame to UI via WebSocket"""
+    socketio.emit('preview_frame', {
+        'session_id': session_id,
+        'frame_number': frame.frame_number,
+        'channels': frame.channels,
+        'universes': frame.universes,
+        'elapsed_ms': frame.elapsed_ms,
+        'modifier_count': frame.modifier_count,
+    })
+
+preview_service.set_frame_callback(stream_preview_frame)
+
+# ============================================================
 # Background Services
 # ============================================================
 def discovery_listener():
@@ -4362,6 +4404,214 @@ def reload_fixture_classifier():
         'success': True,
         'message': 'Fixture classifier reloaded'
     })
+
+
+# ─────────────────────────────────────────────────────────
+# Preview Service API (Phase 6 - Live editing preview)
+# ─────────────────────────────────────────────────────────
+
+@app.route('/api/preview/sessions', methods=['GET'])
+def list_preview_sessions():
+    """List all preview sessions"""
+    return jsonify({
+        'sessions': preview_service.list_sessions(),
+        'status': preview_service.get_status()
+    })
+
+
+@app.route('/api/preview/session', methods=['POST'])
+def create_preview_session():
+    """
+    Create a new preview session for editing.
+
+    POST body:
+    {
+        "session_id": "edit_look_123",     // Unique session ID
+        "preview_type": "look",             // look or sequence
+        "channels": {"1": 255, "2": 128},   // Base channels
+        "modifiers": [...],                 // Modifier configs
+        "universes": [1, 2],                // Target universes
+        "fixture_filter": ["fixture_1"]     // Optional: specific fixtures
+    }
+    """
+    data = request.get_json() or {}
+
+    session_id = data.get('session_id', f"preview_{int(time.time() * 1000)}")
+    preview_type = data.get('preview_type', 'look')
+    channels = data.get('channels', {})
+    modifiers = data.get('modifiers', [])
+    universes = data.get('universes', [1])
+    fixture_filter = data.get('fixture_filter')
+
+    session = preview_service.create_session(
+        session_id=session_id,
+        preview_type=preview_type,
+        channels=channels,
+        modifiers=modifiers,
+        universes=universes,
+        fixture_filter=fixture_filter,
+    )
+
+    return jsonify({
+        'success': True,
+        'session_id': session.session_id,
+        'mode': session.mode.value,
+        'universes': session.universes,
+    })
+
+
+@app.route('/api/preview/session/<session_id>', methods=['GET'])
+def get_preview_session(session_id):
+    """Get a preview session's current state"""
+    session = preview_service.get_session(session_id)
+    if not session:
+        return jsonify({'error': 'Session not found'}), 404
+
+    return jsonify({
+        'session_id': session.session_id,
+        'preview_type': session.preview_type,
+        'mode': session.mode.value,
+        'running': session.running,
+        'channels': session.channels,
+        'modifiers': session.modifiers,
+        'universes': session.universes,
+        'frame_count': session.frame_count,
+        'last_frame': {
+            'channels': session.last_frame.channels,
+            'elapsed_ms': session.last_frame.elapsed_ms,
+        } if session.last_frame else None,
+    })
+
+
+@app.route('/api/preview/session/<session_id>', methods=['PUT'])
+def update_preview_session(session_id):
+    """
+    Update preview session content (immediate re-render).
+
+    PUT body:
+    {
+        "channels": {"1": 255},    // Optional: update base channels
+        "modifiers": [...],         // Optional: update modifiers
+        "universes": [1, 2]         // Optional: update targets
+    }
+    """
+    data = request.get_json() or {}
+
+    success = preview_service.update_session(
+        session_id=session_id,
+        channels=data.get('channels'),
+        modifiers=data.get('modifiers'),
+        universes=data.get('universes'),
+    )
+
+    if not success:
+        return jsonify({'error': 'Session not found'}), 404
+
+    return jsonify({'success': True, 'session_id': session_id})
+
+
+@app.route('/api/preview/session/<session_id>', methods=['DELETE'])
+def delete_preview_session(session_id):
+    """Delete a preview session"""
+    success = preview_service.delete_session(session_id)
+    if not success:
+        return jsonify({'error': 'Session not found'}), 404
+    return jsonify({'success': True, 'session_id': session_id})
+
+
+@app.route('/api/preview/session/<session_id>/start', methods=['POST'])
+def start_preview_session(session_id):
+    """Start preview playback (begins rendering and streaming)"""
+    success = preview_service.start_session(session_id)
+    if not success:
+        return jsonify({'error': 'Session not found'}), 404
+    return jsonify({'success': True, 'session_id': session_id, 'running': True})
+
+
+@app.route('/api/preview/session/<session_id>/stop', methods=['POST'])
+def stop_preview_session(session_id):
+    """Stop preview playback"""
+    success = preview_service.stop_session(session_id)
+    if not success:
+        return jsonify({'error': 'Session not found'}), 404
+    return jsonify({'success': True, 'session_id': session_id, 'running': False})
+
+
+@app.route('/api/preview/session/<session_id>/arm', methods=['POST'])
+def arm_preview_session(session_id):
+    """
+    Arm a preview session for live output.
+    WARNING: Armed sessions output to real universes!
+    """
+    success = preview_service.arm_session(session_id)
+    if not success:
+        return jsonify({'error': 'Session not found'}), 404
+    return jsonify({
+        'success': True,
+        'session_id': session_id,
+        'mode': 'armed',
+        'warning': 'Session is now outputting to live universes!'
+    })
+
+
+@app.route('/api/preview/session/<session_id>/disarm', methods=['POST'])
+def disarm_preview_session(session_id):
+    """Disarm a preview session (return to sandbox mode)"""
+    success = preview_service.disarm_session(session_id)
+    if not success:
+        return jsonify({'error': 'Session not found'}), 404
+    return jsonify({
+        'success': True,
+        'session_id': session_id,
+        'mode': 'sandbox'
+    })
+
+
+@app.route('/api/preview/frame', methods=['POST'])
+def render_single_preview_frame():
+    """
+    Render a single preview frame without creating a session.
+    Useful for instant feedback when editing params.
+
+    POST body:
+    {
+        "channels": {"1": 255, "2": 128},
+        "modifiers": [...],
+        "elapsed_time": 0.0,     // Optional: time offset for animation
+        "seed": 12345            // Optional: random seed
+    }
+
+    Returns:
+    {
+        "success": true,
+        "channels": {1: 255, 2: 128, ...},  // Rendered channel values
+    }
+    """
+    data = request.get_json() or {}
+
+    channels = data.get('channels', {})
+    modifiers = data.get('modifiers', [])
+    elapsed_time = data.get('elapsed_time', 0.0)
+    seed = data.get('seed', 0)
+
+    rendered = preview_service.render_preview_frame(
+        channels=channels,
+        modifiers=modifiers,
+        elapsed_time=elapsed_time,
+        seed=seed,
+    )
+
+    return jsonify({
+        'success': True,
+        'channels': rendered,
+        'modifier_count': len([m for m in modifiers if m.get('enabled', True)]),
+    })
+
+
+@app.route('/api/preview/status', methods=['GET'])
+def get_preview_status():
+    """Get preview service status"""
+    return jsonify(preview_service.get_status())
 
 
 # ─────────────────────────────────────────────────────────
