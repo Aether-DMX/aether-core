@@ -30,6 +30,15 @@ from flask_socketio import SocketIO, emit
 import ai_ssot
 import ai_ops_registry
 from effects_engine import DynamicEffectsEngine
+from looks_sequences import (
+    LooksSequencesManager, Look, Sequence, SequenceStep, Modifier,
+    get_modifier_schemas, validate_look_data, validate_sequence_data,
+    run_full_migration,
+)
+from modifier_registry import (
+    modifier_registry, validate_modifier, normalize_modifier,
+    get_modifier_presets,
+)
 
 # Optional serial support for UART gateway
 try:
@@ -2787,6 +2796,11 @@ class ContentManager:
 content_manager = ContentManager()
 
 # ============================================================
+# Looks & Sequences Manager (new unified architecture)
+# ============================================================
+looks_sequences_manager = LooksSequencesManager(DATABASE)
+
+# ============================================================
 # SSOT Output Router - Unified output path for all DMX writes
 # ============================================================
 def ssot_send_frame(universe, channels_array, owner_type='effect'):
@@ -3695,6 +3709,236 @@ def get_chase_health():
         'health': chase_engine.chase_health,
         'timestamp': datetime.now().isoformat()
     })
+
+# ─────────────────────────────────────────────────────────
+# Looks Routes (New unified architecture - replaces Scenes)
+# ─────────────────────────────────────────────────────────
+@app.route('/api/looks', methods=['GET'])
+def get_looks():
+    """Get all Looks"""
+    looks = looks_sequences_manager.get_all_looks()
+    return jsonify([l.to_dict() for l in looks])
+
+@app.route('/api/looks', methods=['POST'])
+def create_look():
+    """Create a new Look"""
+    data = request.get_json() or {}
+
+    # Validate
+    valid, error = validate_look_data(data)
+    if not valid:
+        return jsonify({'success': False, 'error': error}), 400
+
+    # Create Look object
+    look = Look(
+        look_id=data.get('look_id', f"look_{int(time.time() * 1000)}"),
+        name=data['name'],
+        channels=data['channels'],
+        modifiers=[Modifier.from_dict(m) for m in data.get('modifiers', [])],
+        fade_ms=data.get('fade_ms', 0),
+        color=data.get('color', 'blue'),
+        icon=data.get('icon', 'lightbulb'),
+        description=data.get('description', ''),
+    )
+
+    result = looks_sequences_manager.create_look(look)
+    return jsonify({'success': True, 'look': result.to_dict()})
+
+@app.route('/api/looks/<look_id>', methods=['GET'])
+def get_look(look_id):
+    """Get a Look by ID"""
+    look = looks_sequences_manager.get_look(look_id)
+    if not look:
+        return jsonify({'error': 'Look not found'}), 404
+    return jsonify(look.to_dict())
+
+@app.route('/api/looks/<look_id>', methods=['PUT'])
+def update_look(look_id):
+    """Update an existing Look"""
+    data = request.get_json() or {}
+
+    # Validate if full replacement
+    if 'channels' in data:
+        valid, error = validate_look_data(data)
+        if not valid:
+            return jsonify({'success': False, 'error': error}), 400
+
+    result = looks_sequences_manager.update_look(look_id, data)
+    if not result:
+        return jsonify({'error': 'Look not found'}), 404
+    return jsonify({'success': True, 'look': result.to_dict()})
+
+@app.route('/api/looks/<look_id>', methods=['DELETE'])
+def delete_look(look_id):
+    """Delete a Look"""
+    success = looks_sequences_manager.delete_look(look_id)
+    if not success:
+        return jsonify({'error': 'Look not found'}), 404
+    return jsonify({'success': True, 'look_id': look_id})
+
+# ─────────────────────────────────────────────────────────
+# Sequences Routes (New unified architecture - replaces Chases)
+# ─────────────────────────────────────────────────────────
+@app.route('/api/sequences', methods=['GET'])
+def get_sequences():
+    """Get all Sequences"""
+    sequences = looks_sequences_manager.get_all_sequences()
+    return jsonify([s.to_dict() for s in sequences])
+
+@app.route('/api/sequences', methods=['POST'])
+def create_sequence():
+    """Create a new Sequence"""
+    data = request.get_json() or {}
+
+    # Validate
+    valid, error = validate_sequence_data(data)
+    if not valid:
+        return jsonify({'success': False, 'error': error}), 400
+
+    # Create Sequence object
+    steps = [SequenceStep.from_dict(s) for s in data.get('steps', [])]
+    sequence = Sequence(
+        sequence_id=data.get('sequence_id', f"sequence_{int(time.time() * 1000)}"),
+        name=data['name'],
+        steps=steps,
+        bpm=data.get('bpm', 120),
+        loop=data.get('loop', True),
+        color=data.get('color', 'green'),
+        description=data.get('description', ''),
+    )
+
+    result = looks_sequences_manager.create_sequence(sequence)
+    return jsonify({'success': True, 'sequence': result.to_dict()})
+
+@app.route('/api/sequences/<sequence_id>', methods=['GET'])
+def get_sequence(sequence_id):
+    """Get a Sequence by ID"""
+    sequence = looks_sequences_manager.get_sequence(sequence_id)
+    if not sequence:
+        return jsonify({'error': 'Sequence not found'}), 404
+    return jsonify(sequence.to_dict())
+
+@app.route('/api/sequences/<sequence_id>', methods=['PUT'])
+def update_sequence(sequence_id):
+    """Update an existing Sequence"""
+    data = request.get_json() or {}
+
+    # Validate if steps are being updated
+    if 'steps' in data:
+        valid, error = validate_sequence_data(data)
+        if not valid:
+            return jsonify({'success': False, 'error': error}), 400
+
+    result = looks_sequences_manager.update_sequence(sequence_id, data)
+    if not result:
+        return jsonify({'error': 'Sequence not found'}), 404
+    return jsonify({'success': True, 'sequence': result.to_dict()})
+
+@app.route('/api/sequences/<sequence_id>', methods=['DELETE'])
+def delete_sequence(sequence_id):
+    """Delete a Sequence"""
+    success = looks_sequences_manager.delete_sequence(sequence_id)
+    if not success:
+        return jsonify({'error': 'Sequence not found'}), 404
+    return jsonify({'success': True, 'sequence_id': sequence_id})
+
+# ─────────────────────────────────────────────────────────
+# Modifier Registry API (schemas, presets, validation)
+# ─────────────────────────────────────────────────────────
+@app.route('/api/modifiers/schemas', methods=['GET'])
+def get_modifier_schemas_route():
+    """
+    Get all modifier schemas for UI generation.
+    Returns complete schema definitions including params, presets, and categories.
+    """
+    return jsonify(modifier_registry.to_api_response())
+
+@app.route('/api/modifiers/types', methods=['GET'])
+def get_modifier_types_route():
+    """Get list of available modifier types"""
+    return jsonify({
+        'types': modifier_registry.get_types(),
+        'categories': modifier_registry.get_categories()
+    })
+
+@app.route('/api/modifiers/<modifier_type>/presets', methods=['GET'])
+def get_modifier_presets_route(modifier_type):
+    """Get all presets for a specific modifier type"""
+    presets = modifier_registry.get_presets(modifier_type)
+    if not presets and modifier_type not in modifier_registry.get_types():
+        return jsonify({'error': f'Unknown modifier type: {modifier_type}'}), 404
+    return jsonify({
+        'modifier_type': modifier_type,
+        'presets': presets
+    })
+
+@app.route('/api/modifiers/<modifier_type>/presets/<preset_id>', methods=['GET'])
+def get_modifier_preset_route(modifier_type, preset_id):
+    """Get a specific preset and create a modifier from it"""
+    modifier_data = modifier_registry.create_from_preset(modifier_type, preset_id)
+    if not modifier_data:
+        return jsonify({'error': f'Preset not found: {modifier_type}/{preset_id}'}), 404
+    return jsonify({
+        'success': True,
+        'modifier': modifier_data
+    })
+
+@app.route('/api/modifiers/validate', methods=['POST'])
+def validate_modifier_route():
+    """
+    Validate a modifier against its schema.
+    Returns validation result with detailed error if invalid.
+    """
+    data = request.get_json() or {}
+    is_valid, error = validate_modifier(data)
+    if not is_valid:
+        return jsonify({
+            'valid': False,
+            'error': error
+        }), 400
+    return jsonify({
+        'valid': True,
+        'normalized': normalize_modifier(data)
+    })
+
+@app.route('/api/modifiers/normalize', methods=['POST'])
+def normalize_modifier_route():
+    """
+    Normalize a modifier by applying defaults and generating ID.
+    Use this before saving a modifier to ensure all fields are populated.
+    """
+    data = request.get_json() or {}
+    # Validate first
+    is_valid, error = validate_modifier(data)
+    if not is_valid:
+        return jsonify({'success': False, 'error': error}), 400
+    return jsonify({
+        'success': True,
+        'modifier': normalize_modifier(data)
+    })
+
+# ─────────────────────────────────────────────────────────
+# Migration Routes (legacy scenes/chases to looks/sequences)
+# ─────────────────────────────────────────────────────────
+@app.route('/api/migrate/scenes-to-looks', methods=['POST'])
+def migrate_scenes_to_looks_route():
+    """Migrate legacy scenes to new looks format"""
+    from looks_sequences import migrate_scenes_to_looks
+    report = migrate_scenes_to_looks(DATABASE, looks_sequences_manager)
+    return jsonify({'success': True, 'report': report})
+
+@app.route('/api/migrate/chases-to-sequences', methods=['POST'])
+def migrate_chases_to_sequences_route():
+    """Migrate legacy chases to new sequences format"""
+    from looks_sequences import migrate_chases_to_sequences
+    report = migrate_chases_to_sequences(DATABASE, looks_sequences_manager)
+    return jsonify({'success': True, 'report': report})
+
+@app.route('/api/migrate/all', methods=['POST'])
+def migrate_all_route():
+    """Run full migration from legacy to new format"""
+    report = run_full_migration(DATABASE)
+    return jsonify({'success': True, 'report': report})
 
 # ─────────────────────────────────────────────────────────
 # Dynamic Effects Routes (smooth fades, staggered patterns)
