@@ -43,6 +43,10 @@ from render_engine import (
     render_engine, render_look_frame, RenderEngine,
     ModifierRenderer, TimeContext, MergeMode,
 )
+from playback_controller import (
+    playback_controller, UnifiedPlaybackController,
+    LoopMode, PlaybackState,
+)
 
 # Optional serial support for UART gateway
 try:
@@ -2849,6 +2853,29 @@ def render_engine_output(universe: int, channels: dict):
 
 render_engine.set_output_callback(render_engine_output)
 
+# Hook up unified playback controller to SSOT
+def playback_output(universe: int, channels: dict):
+    """Callback for unified playback controller to send frames through SSOT"""
+    # Check arbitration - playback uses 'look' priority for Look playback
+    # and 'sequence' priority for Sequence playback
+    if not arbitration.can_write('look') and not arbitration.can_write('sequence'):
+        return
+    # Convert dict to format expected by set_channels
+    content_manager.set_channels(universe, {str(k): v for k, v in channels.items()}, fade_ms=0)
+
+playback_controller.set_output_callback(playback_output)
+playback_controller.set_modifier_renderer(ModifierRenderer())
+
+# Set look resolver for Sequence playback (to resolve Look references in steps)
+def resolve_look(look_id: str):
+    """Resolve a Look ID to Look data"""
+    look = looks_sequences_manager.get_look(look_id)
+    if look:
+        return look.to_dict()
+    return None
+
+playback_controller.set_look_resolver(resolve_look)
+
 # ============================================================
 # Background Services
 # ============================================================
@@ -4013,6 +4040,160 @@ def delete_sequence(sequence_id):
     if not success:
         return jsonify({'error': 'Sequence not found'}), 404
     return jsonify({'success': True, 'sequence_id': sequence_id})
+
+# ─────────────────────────────────────────────────────────
+# Unified Playback API (Phase 4)
+# ─────────────────────────────────────────────────────────
+
+@app.route('/api/sequences/<sequence_id>/play', methods=['POST'])
+def play_sequence(sequence_id):
+    """
+    Play a Sequence with step timing and modifiers.
+
+    POST body:
+    {
+        "universes": [1, 2],        // Target universes (default: all online)
+        "loop_mode": "loop",        // one_shot, loop, bounce (default: from sequence)
+        "bpm": 120,                 // BPM override (optional)
+        "start_step": 0,            // Starting step index (default: 0)
+        "seed": 12345               // Random seed for determinism (optional)
+    }
+    """
+    data = request.get_json() or {}
+
+    # Get the sequence
+    sequence = looks_sequences_manager.get_sequence(sequence_id)
+    if not sequence:
+        return jsonify({'error': 'Sequence not found'}), 404
+
+    if not sequence.steps:
+        return jsonify({'error': 'Sequence has no steps'}), 400
+
+    # Acquire arbitration
+    if not arbitration.acquire('sequence', sequence_id):
+        return jsonify({
+            'success': False,
+            'error': 'Cannot play sequence - arbitration denied',
+            'current_owner': arbitration.current_owner
+        }), 409
+
+    # Stop any existing playback
+    render_engine.stop_rendering()
+    playback_controller.stop()
+    chase_engine.stop_all()
+
+    # Determine target universes
+    universes = data.get('universes')
+    if not universes:
+        universes = list(set(
+            n.get('universe', 1) for n in node_manager.get_nodes()
+            if n.get('is_paired') and n.get('status') == 'online'
+        ))
+        if not universes:
+            universes = [1]
+
+    # Parse loop mode
+    loop_mode_str = data.get('loop_mode', 'loop' if sequence.loop else 'one_shot')
+    try:
+        loop_mode = LoopMode(loop_mode_str)
+    except ValueError:
+        loop_mode = LoopMode.LOOP
+
+    # Get BPM (override or sequence default)
+    bpm = data.get('bpm', sequence.bpm)
+
+    # Convert sequence steps to playback format
+    steps = []
+    for step in sequence.steps:
+        step_data = {
+            'step_id': step.step_id,
+            'name': step.name,
+            'look_id': step.look_id,
+            'channels': step.channels or {},
+            'modifiers': [m.to_dict() for m in step.modifiers],
+            'fade_ms': step.fade_ms,
+            'hold_ms': step.hold_ms,
+        }
+        steps.append(step_data)
+
+    # Start playback
+    result = playback_controller.play_sequence(
+        sequence_id=sequence_id,
+        steps=steps,
+        universes=universes,
+        bpm=bpm,
+        loop_mode=loop_mode,
+        seed=data.get('seed'),
+        start_step=data.get('start_step', 0),
+    )
+
+    if result.get('success'):
+        print(f"🎬 Playing sequence '{sequence.name}' on universes {universes}", flush=True)
+
+    return jsonify({
+        **result,
+        'name': sequence.name,
+    })
+
+
+@app.route('/api/sequences/<sequence_id>/stop', methods=['POST'])
+def stop_sequence(sequence_id):
+    """Stop sequence playback"""
+    status = playback_controller.get_status()
+    if status.get('sequence_id') == sequence_id:
+        result = playback_controller.stop()
+        arbitration.release('sequence')
+        return jsonify({**result, 'sequence_id': sequence_id})
+    return jsonify({'success': True, 'message': 'Sequence was not playing'})
+
+
+@app.route('/api/playback/status', methods=['GET'])
+def get_playback_status():
+    """Get unified playback controller status"""
+    return jsonify(playback_controller.get_status())
+
+
+@app.route('/api/playback/stop', methods=['POST'])
+def stop_all_playback():
+    """Stop all playback (Look, Sequence, Chase, Effect)"""
+    # Stop unified playback controller
+    playback_result = playback_controller.stop()
+
+    # Stop render engine
+    render_engine.stop_rendering()
+
+    # Stop legacy chase engine
+    chase_engine.stop_all()
+
+    # Stop effects engine
+    effects_engine.stop_effect()
+
+    # Release all arbitration
+    arbitration.release('look')
+    arbitration.release('sequence')
+    arbitration.release('chase')
+    arbitration.release('effect')
+
+    return jsonify({
+        'success': True,
+        'stopped': {
+            'playback': playback_result.get('stopped'),
+            'message': 'All playback stopped'
+        }
+    })
+
+
+@app.route('/api/playback/pause', methods=['POST'])
+def pause_playback():
+    """Pause current playback"""
+    return jsonify(playback_controller.pause())
+
+
+@app.route('/api/playback/resume', methods=['POST'])
+def resume_playback():
+    """Resume paused playback"""
+    return jsonify(playback_controller.resume())
+
 
 # ─────────────────────────────────────────────────────────
 # Modifier Registry API (schemas, presets, validation)
