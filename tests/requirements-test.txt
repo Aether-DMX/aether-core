@@ -1,0 +1,4 @@
+# Test dependencies for Phase 8 Hardening
+pytest>=7.0.0
+pytest-timeout>=2.0.0
+psutil>=5.9.0
