@@ -39,6 +39,10 @@ from modifier_registry import (
     modifier_registry, validate_modifier, normalize_modifier,
     get_modifier_presets,
 )
+from render_engine import (
+    render_engine, render_look_frame, RenderEngine,
+    ModifierRenderer, TimeContext, MergeMode,
+)
 
 # Optional serial support for UART gateway
 try:
@@ -645,7 +649,7 @@ class ArbitrationManager:
     SSOT ENFORCEMENT: All DMX write attempts must check arbitration first.
     Rejected writes are tracked for diagnostics.
     """
-    PRIORITY = {'blackout': 100, 'manual': 80, 'effect': 60, 'chase': 40, 'scene': 20, 'idle': 0}
+    PRIORITY = {'blackout': 100, 'manual': 80, 'effect': 60, 'look': 50, 'sequence': 45, 'chase': 40, 'scene': 20, 'idle': 0}
 
     def __init__(self):
         self.current_owner = 'idle'
@@ -2834,6 +2838,17 @@ def ssot_send_frame(universe, channels_array, owner_type='effect'):
 # Hook up effects engine to SSOT with arbitration
 effects_engine.set_ssot_hooks(dmx_state, ssot_send_frame, arbitration)
 
+# Hook up render engine to SSOT for Look playback
+def render_engine_output(universe: int, channels: dict):
+    """Callback for render engine to send frames through SSOT"""
+    # Check arbitration
+    if not arbitration.can_write('look'):
+        return
+    # Convert dict to format expected by set_channels
+    content_manager.set_channels(universe, {str(k): v for k, v in channels.items()}, fade_ms=0)
+
+render_engine.set_output_callback(render_engine_output)
+
 # ============================================================
 # Background Services
 # ============================================================
@@ -3775,6 +3790,163 @@ def delete_look(look_id):
     if not success:
         return jsonify({'error': 'Look not found'}), 404
     return jsonify({'success': True, 'look_id': look_id})
+
+@app.route('/api/looks/<look_id>/play', methods=['POST'])
+def play_look(look_id):
+    """
+    Play a Look with real-time modifier rendering.
+
+    POST body:
+    {
+        "universes": [1, 2],       // Target universes (default: all online)
+        "fade_ms": 500,            // Initial fade time (optional)
+        "seed": 12345              // Random seed for determinism (optional)
+    }
+    """
+    data = request.get_json() or {}
+
+    # Get the look
+    look = looks_sequences_manager.get_look(look_id)
+    if not look:
+        return jsonify({'error': 'Look not found'}), 404
+
+    # Acquire arbitration
+    if not arbitration.acquire('look', look_id):
+        return jsonify({
+            'success': False,
+            'error': 'Cannot play look - arbitration denied',
+            'current_owner': arbitration.current_owner
+        }), 409
+
+    # Stop any existing renders
+    render_engine.stop_rendering()
+
+    # Determine target universes
+    universes = data.get('universes')
+    if not universes:
+        # Default to all online paired nodes
+        universes = list(set(
+            n.get('universe', 1) for n in node_manager.get_nodes()
+            if n.get('is_paired') and n.get('status') == 'online'
+        ))
+        if not universes:
+            universes = [1]
+
+    # Check if look has modifiers
+    has_modifiers = len(look.modifiers) > 0 and any(m.enabled for m in look.modifiers)
+
+    if has_modifiers:
+        # Start render engine for continuous modifier rendering
+        if not render_engine._running:
+            render_engine.start()
+
+        # Start rendering this look
+        render_engine.render_look(
+            look_id=look_id,
+            channels=look.channels,
+            modifiers=[m.to_dict() for m in look.modifiers],
+            universes=universes,
+            seed=data.get('seed'),
+        )
+
+        return jsonify({
+            'success': True,
+            'look_id': look_id,
+            'name': look.name,
+            'universes': universes,
+            'rendering': True,
+            'modifier_count': len([m for m in look.modifiers if m.enabled]),
+            'fps': render_engine.target_fps,
+        })
+    else:
+        # No modifiers - just set static channels (like a scene)
+        fade_ms = data.get('fade_ms', look.fade_ms or 0)
+
+        for universe in universes:
+            content_manager.set_channels(universe, look.channels, fade_ms=fade_ms)
+
+        return jsonify({
+            'success': True,
+            'look_id': look_id,
+            'name': look.name,
+            'universes': universes,
+            'rendering': False,
+            'fade_ms': fade_ms,
+        })
+
+@app.route('/api/looks/<look_id>/stop', methods=['POST'])
+def stop_look(look_id):
+    """Stop playing a Look"""
+    # Stop render engine
+    render_engine.stop_rendering()
+
+    # Release arbitration if we own it
+    if arbitration.current_owner == 'look' and arbitration.current_id == look_id:
+        arbitration.release('look')
+
+    return jsonify({
+        'success': True,
+        'look_id': look_id,
+        'stopped': True,
+    })
+
+@app.route('/api/looks/preview', methods=['POST'])
+def preview_look():
+    """
+    Preview a Look without saving - render a single frame.
+
+    POST body:
+    {
+        "channels": {"1": 255, "2": 128},
+        "modifiers": [...],
+        "elapsed_time": 0.5,    // Simulated time for preview
+        "seed": 12345           // Optional seed
+    }
+
+    Returns the computed channel values for preview.
+    """
+    data = request.get_json() or {}
+
+    channels = data.get('channels', {})
+    modifiers = data.get('modifiers', [])
+    elapsed_time = data.get('elapsed_time', 0.0)
+    seed = data.get('seed', 0)
+
+    if not channels:
+        return jsonify({'error': 'Channels required'}), 400
+
+    # Validate modifiers
+    for mod in modifiers:
+        valid, error = validate_modifier(mod)
+        if not valid:
+            return jsonify({'error': f'Invalid modifier: {error}'}), 400
+
+    # Render single frame
+    result = render_look_frame(
+        channels=channels,
+        modifiers=[normalize_modifier(m) for m in modifiers],
+        elapsed_time=elapsed_time,
+        seed=seed,
+    )
+
+    return jsonify({
+        'success': True,
+        'input_channels': channels,
+        'output_channels': result,
+        'elapsed_time': elapsed_time,
+        'modifier_count': len(modifiers),
+    })
+
+@app.route('/api/render/status', methods=['GET'])
+def get_render_status():
+    """Get current render engine status"""
+    return jsonify(render_engine.get_status())
+
+@app.route('/api/render/stop', methods=['POST'])
+def stop_render():
+    """Stop all rendering"""
+    render_engine.stop_rendering()
+    return jsonify({'success': True, 'stopped': True})
 
 # ─────────────────────────────────────────────────────────
 # Sequences Routes (New unified architecture - replaces Chases)
