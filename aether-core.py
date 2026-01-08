@@ -1157,6 +1157,13 @@ def init_database():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )''')
 
+    c.execute('''CREATE TABLE IF NOT EXISTS schedules (
+        schedule_id TEXT PRIMARY KEY, name TEXT NOT NULL, cron TEXT NOT NULL,
+        action_type TEXT NOT NULL, action_id TEXT,
+        enabled BOOLEAN DEFAULT 1, last_run TIMESTAMP, next_run TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )''')
+
     conn.commit()
 
     # Add synced_to_nodes column if missing (migration)
