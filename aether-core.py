@@ -47,6 +47,10 @@ from playback_controller import (
     playback_controller, UnifiedPlaybackController,
     LoopMode, PlaybackState,
 )
+from merge_layer import (
+    merge_layer, channel_classifier, MergeLayer,
+    ChannelClassifier, ChannelType, get_priority,
+)
 
 # Optional serial support for UART gateway
 try:
@@ -2853,15 +2857,79 @@ def render_engine_output(universe: int, channels: dict):
 
 render_engine.set_output_callback(render_engine_output)
 
-# Hook up unified playback controller to SSOT
-def playback_output(universe: int, channels: dict):
-    """Callback for unified playback controller to send frames through SSOT"""
-    # Check arbitration - playback uses 'look' priority for Look playback
-    # and 'sequence' priority for Sequence playback
-    if not arbitration.can_write('look') and not arbitration.can_write('sequence'):
+# ============================================================
+# Merge Layer Integration (Phase 5)
+# ============================================================
+# The merge layer allows multiple playback sources to run simultaneously
+# with HTP (Highest Takes Precedence) for dimmer channels and
+# LTP (Latest Takes Precedence) for color/other channels.
+
+# Load fixture profiles into channel classifier for HTP/LTP determination
+def load_fixtures_into_classifier():
+    """Load fixture definitions to classify channels as dimmer/color/etc"""
+    try:
+        fixtures = content_manager.get_fixtures()
+        channel_classifier.load_fixtures(fixtures)
+        dimmer_count = sum(len(channel_classifier.get_dimmer_channels(f.get('universe', 1)))
+                          for f in fixtures)
+        print(f"📊 MergeLayer: Loaded {len(fixtures)} fixtures, {dimmer_count} dimmer channels classified")
+    except Exception as e:
+        print(f"⚠️ MergeLayer: Could not load fixtures: {e}")
+
+# Merge layer output callback -> SSOT
+def merge_layer_output(universe: int, channels: dict):
+    """Final output from merge layer to SSOT"""
+    if not channels:
         return
     # Convert dict to format expected by set_channels
     content_manager.set_channels(universe, {str(k): v for k, v in channels.items()}, fade_ms=0)
+
+merge_layer.set_output_callback(merge_layer_output)
+
+# Active merge sources tracking
+_active_merge_sources = {}  # job_id -> source_id
+
+def register_playback_source(job_id, source_type, universes):
+    """Register a playback job as a merge source"""
+    source_id = f"{source_type}_{job_id}"
+    merge_layer.register_source(source_id, source_type, universes)
+    _active_merge_sources[job_id] = source_id
+    return source_id
+
+def unregister_playback_source(job_id):
+    """Unregister a playback job from merge layer"""
+    source_id = _active_merge_sources.pop(job_id, None)
+    if source_id:
+        merge_layer.unregister_source(source_id)
+
+def get_active_source_id(job_id):
+    """Get the merge source ID for a playback job"""
+    return _active_merge_sources.get(job_id)
+
+# Hook up unified playback controller to merge layer
+def playback_output(universe: int, channels: dict):
+    """Callback for playback controller - routes through merge layer"""
+    # Get the current job from playback controller
+    status = playback_controller.get_status()
+    job_id = status.get('job_id')
+
+    if not job_id:
+        return
+
+    source_id = get_active_source_id(job_id)
+    if not source_id:
+        # Auto-register if not registered (backward compatibility)
+        source_type = status.get('job_type', 'look')
+        universes = status.get('universes', [universe])
+        source_id = register_playback_source(job_id, source_type, universes)
+
+    # Update merge layer with new channel values
+    merge_layer.set_source_channels(source_id, universe, channels)
+
+    # Output merged result
+    merged = merge_layer.compute_merge(universe)
+    if merged:
+        merge_layer_output(universe, merged)
 
 playback_controller.set_output_callback(playback_output)
 playback_controller.set_modifier_renderer(ModifierRenderer())
@@ -2875,6 +2943,9 @@ def resolve_look(look_id: str):
     return None
 
 playback_controller.set_look_resolver(resolve_look)
+
+# Load fixtures on startup (deferred until content_manager is ready)
+threading.Timer(2.0, load_fixtures_into_classifier).start()
 
 # ============================================================
 # Background Services
@@ -4196,6 +4267,104 @@ def resume_playback():
 
 
 # ─────────────────────────────────────────────────────────
+# Merge Layer API (Phase 5 - Multi-source playback)
+# ─────────────────────────────────────────────────────────
+
+@app.route('/api/merge/status', methods=['GET'])
+def get_merge_status():
+    """
+    Get merge layer status including all active sources.
+
+    Returns:
+    {
+        "source_count": 2,
+        "active_count": 2,
+        "blackout_active": false,
+        "sources": [
+            {"source_id": "look_xxx", "source_type": "look", "priority": 50, ...},
+            {"source_id": "effect_yyy", "source_type": "effect", "priority": 60, ...}
+        ]
+    }
+    """
+    return jsonify(merge_layer.get_status())
+
+
+@app.route('/api/merge/channel/<int:universe>/<int:channel>', methods=['GET'])
+def get_channel_breakdown(universe, channel):
+    """
+    Debug endpoint: Show which sources contribute to a specific channel.
+
+    Returns the merge breakdown with:
+    - All contributing sources
+    - Channel type (dimmer/color/etc)
+    - Merge mode (HTP/LTP)
+    - Final merged value
+    """
+    return jsonify(merge_layer.get_source_breakdown(universe, channel))
+
+
+@app.route('/api/merge/blackout', methods=['POST'])
+def merge_blackout():
+    """
+    Activate merge layer blackout (highest priority override).
+
+    POST body:
+    {
+        "active": true,           // Enable/disable blackout
+        "universes": [1, 2]       // Optional: specific universes (null = all)
+    }
+    """
+    data = request.get_json() or {}
+    active = data.get('active', True)
+    universes = data.get('universes')
+
+    merge_layer.set_blackout(active, universes)
+
+    # Also trigger SSOT blackout for physical output
+    if active:
+        if universes:
+            for univ in universes:
+                content_manager.blackout(universe=univ, fade_ms=0)
+        else:
+            content_manager.blackout(fade_ms=0)
+
+    return jsonify({
+        'success': True,
+        'blackout_active': merge_layer.is_blackout(),
+        'universes': universes
+    })
+
+
+@app.route('/api/merge/sources', methods=['GET'])
+def get_merge_sources():
+    """List all registered merge sources with their priorities"""
+    status = merge_layer.get_status()
+    return jsonify({
+        'sources': status.get('sources', []),
+        'priority_levels': {
+            'blackout': 100,
+            'manual': 80,
+            'effect': 60,
+            'look': 50,
+            'sequence': 45,
+            'chase': 40,
+            'scene': 20,
+            'background': 10
+        }
+    })
+
+
+@app.route('/api/merge/classifier/reload', methods=['POST'])
+def reload_fixture_classifier():
+    """Reload fixture definitions into the channel classifier"""
+    load_fixtures_into_classifier()
+    return jsonify({
+        'success': True,
+        'message': 'Fixture classifier reloaded'
+    })
+
+
+# ─────────────────────────────────────────────────────────
 # Modifier Registry API (schemas, presets, validation)
 # ─────────────────────────────────────────────────────────
 @app.route('/api/modifiers/schemas', methods=['GET'])
@@ -4731,14 +4900,16 @@ def trigger_schedule(schedule_id):
     """Manually trigger a schedule"""
     return jsonify(schedule_runner.run_schedule(schedule_id))
 
-# Playback Routes
+# Legacy Playback Manager Routes (for backward compatibility)
 # ─────────────────────────────────────────────────────────
-@app.route('/api/playback/status', methods=['GET'])
-def playback_status():
+@app.route('/api/playback-manager/status', methods=['GET'])
+def playback_manager_status():
+    """Legacy: Get playback manager status (use /api/playback/status for unified controller)"""
     return jsonify(playback_manager.get_status())
 
-@app.route('/api/playback/stop', methods=['POST'])
-def stop_playback():
+@app.route('/api/playback-manager/stop', methods=['POST'])
+def stop_playback_manager():
+    """Legacy: Stop via playback manager (use /api/playback/stop for unified controller)"""
     data = request.get_json() or {}
     return jsonify(content_manager.stop_playback(data.get('universe')))
 
