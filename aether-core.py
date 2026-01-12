@@ -2267,8 +2267,8 @@ class RDMManager:
             dict with response data or error
         """
         try:
-            # Build the RDM command
-            payload = {"type": "rdm", "action": action}
+            # Build the RDM command (v:2 required for V2 protocol parser)
+            payload = {"v": 2, "type": "rdm", "action": action}
             if params:
                 payload.update(params)
 
