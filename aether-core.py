@@ -1076,7 +1076,8 @@ DEFAULT_SETTINGS = {
     "background": {"type": "gradient", "gradient": "purple-blue", "bubbles": True, "bubbleCount": 15, "bubbleSpeed": 1.0},
     "ai": {"enabled": True, "model": "claude-3-sonnet", "contextLength": 4096, "temperature": 0.7},
     "dmx": {"defaultFadeMs": 500, "refreshRate": 40, "maxUniverse": 64},
-    "security": {"pinEnabled": False, "sessionTimeout": 3600}
+    "security": {"pinEnabled": False, "sessionTimeout": 3600},
+    "setup": {"complete": False, "mode": None, "userProfile": {}}
 }
 
 def load_settings():
@@ -5524,6 +5525,39 @@ def screen_context():
                                       'action': data.get('action'),
                                       'timestamp': datetime.now().isoformat()})
     return jsonify({'success': True})
+
+# ─────────────────────────────────────────────────────────
+# Setup Complete Routes (for browser onboarding persistence)
+# ─────────────────────────────────────────────────────────
+@app.route('/api/settings/setup-complete', methods=['GET'])
+def get_setup_complete():
+    """Get setup completion status - shared across all browsers"""
+    setup = app_settings.get('setup', {'complete': False})
+    return jsonify(setup)
+
+@app.route('/api/settings/setup-complete', methods=['POST'])
+def set_setup_complete():
+    """Mark setup as complete - persists on server for all browsers"""
+    global app_settings
+    data = request.get_json() or {}
+    if 'setup' not in app_settings:
+        app_settings['setup'] = {'complete': False, 'mode': None, 'userProfile': {}}
+    app_settings['setup']['complete'] = data.get('complete', True)
+    if 'mode' in data:
+        app_settings['setup']['mode'] = data['mode']
+    if 'userProfile' in data:
+        app_settings['setup']['userProfile'].update(data['userProfile'])
+    save_settings(app_settings)
+    socketio.emit('settings_update', {'category': 'setup', 'data': app_settings['setup']})
+    return jsonify({'success': True, 'setup': app_settings['setup']})
+
+@app.route('/api/settings/setup-reset', methods=['POST'])
+def reset_setup():
+    """Reset setup (for debugging/testing)"""
+    global app_settings
+    app_settings['setup'] = {'complete': False, 'mode': None, 'userProfile': {}}
+    save_settings(app_settings)
+    return jsonify({'success': True, 'setup': app_settings['setup']})
 
 
 # ============================================================
