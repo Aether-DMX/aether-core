@@ -884,6 +884,87 @@ class ScheduleRunner:
             return {'success': False, 'error': str(e)}
 
 schedule_runner = ScheduleRunner()
+
+# ============================================================
+# Timer Runner (Countdown Timers)
+# ============================================================
+
+class TimerRunner:
+    """Background runner for countdown timers that can trigger actions"""
+
+    def __init__(self):
+        self.active_timers = {}  # timer_id -> threading.Timer
+        self.lock = threading.Lock()
+
+    def start_timer(self, timer_id, remaining_ms):
+        """Start a countdown timer in the background"""
+        with self.lock:
+            # Cancel existing timer if any
+            if timer_id in self.active_timers:
+                self.active_timers[timer_id].cancel()
+
+            # Schedule the completion callback
+            delay_seconds = remaining_ms / 1000.0
+            timer = threading.Timer(delay_seconds, self._on_timer_complete, args=[timer_id])
+            timer.daemon = True
+            timer.start()
+            self.active_timers[timer_id] = timer
+            print(f"⏱️ Timer '{timer_id}' started: {remaining_ms}ms")
+
+    def stop_timer(self, timer_id):
+        """Stop/cancel a running timer"""
+        with self.lock:
+            if timer_id in self.active_timers:
+                self.active_timers[timer_id].cancel()
+                del self.active_timers[timer_id]
+                print(f"⏱️ Timer '{timer_id}' stopped")
+
+    def _on_timer_complete(self, timer_id):
+        """Called when a timer completes"""
+        print(f"⏱️ Timer '{timer_id}' completed!")
+
+        # Update database status
+        conn = get_db()
+        c = conn.cursor()
+        c.execute('SELECT action_type, action_id, name FROM timers WHERE timer_id = ?', (timer_id,))
+        row = c.fetchone()
+
+        if row:
+            action_type, action_id, name = row
+            c.execute('''UPDATE timers SET status='completed', remaining_ms=0
+                WHERE timer_id=?''', (timer_id,))
+            conn.commit()
+
+            # Execute action if defined
+            if action_type and action_id:
+                try:
+                    if action_type == 'look':
+                        looks_sequences_manager.get_look(action_id)
+                        # Trigger look playback (simplified - would need playback integration)
+                        print(f"⏱️ Timer '{name}' triggering look: {action_id}")
+                    elif action_type == 'sequence':
+                        print(f"⏱️ Timer '{name}' triggering sequence: {action_id}")
+                    elif action_type == 'blackout':
+                        print(f"⏱️ Timer '{name}' triggering blackout")
+                except Exception as e:
+                    print(f"❌ Timer action error: {e}")
+
+            # Broadcast completion via WebSocket
+            broadcast_ws({
+                'type': 'timer_complete',
+                'timer_id': timer_id,
+                'name': name
+            })
+
+        conn.close()
+
+        # Remove from active timers
+        with self.lock:
+            if timer_id in self.active_timers:
+                del self.active_timers[timer_id]
+
+timer_runner = TimerRunner()
+
 # ============================================================
 # Show Engine (Timeline Playback)
 # ============================================================
@@ -1159,13 +1240,26 @@ def init_database():
         manufacturer TEXT, model TEXT, universe INTEGER DEFAULT 1,
         start_channel INTEGER NOT NULL, channel_count INTEGER DEFAULT 1,
         channel_map TEXT, color TEXT DEFAULT '#8b5cf6', notes TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        rdm_uid TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )''')
 
     c.execute('''CREATE TABLE IF NOT EXISTS schedules (
         schedule_id TEXT PRIMARY KEY, name TEXT NOT NULL, cron TEXT NOT NULL,
         action_type TEXT NOT NULL, action_id TEXT,
         enabled BOOLEAN DEFAULT 1, last_run TIMESTAMP, next_run TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )''')
+
+    # Timers table (countdown timers that trigger actions)
+    c.execute('''CREATE TABLE IF NOT EXISTS timers (
+        timer_id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        duration_ms INTEGER NOT NULL,
+        remaining_ms INTEGER,
+        action_type TEXT,
+        action_id TEXT,
+        status TEXT DEFAULT 'stopped',
+        started_at TIMESTAMP,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )''')
 
@@ -2950,13 +3044,13 @@ class ContentManager:
         conn = get_db()
         c = conn.cursor()
         c.execute('''INSERT OR REPLACE INTO fixtures (fixture_id, name, type, manufacturer, model,
-            universe, start_channel, channel_count, channel_map, color, notes, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+            universe, start_channel, channel_count, channel_map, color, notes, rdm_uid, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
             (fixture_id, data.get('name', 'Untitled Fixture'), data.get('type', 'generic'),
              data.get('manufacturer', ''), data.get('model', ''),
              data.get('universe', 1), data.get('start_channel', 1), data.get('channel_count', 1),
              json.dumps(channel_map), data.get('color', '#8b5cf6'),
-             data.get('notes', ''), datetime.now().isoformat()))
+             data.get('notes', ''), data.get('rdm_uid'), datetime.now().isoformat()))
         conn.commit()
         conn.close()
 
@@ -4273,6 +4367,20 @@ def delete_look(look_id):
         return jsonify({'error': 'Look not found'}), 404
     return jsonify({'success': True, 'look_id': look_id})
 
+@app.route('/api/looks/<look_id>/versions', methods=['GET'])
+def get_look_versions(look_id):
+    """Get version history for a Look"""
+    versions = looks_sequences_manager.get_versions(look_id, 'look')
+    return jsonify({'success': True, 'versions': versions})
+
+@app.route('/api/looks/<look_id>/versions/<version_id>/revert', methods=['POST'])
+def revert_look_version(look_id, version_id):
+    """Revert a Look to a specific version"""
+    result = looks_sequences_manager.revert_to_version(version_id)
+    if not result:
+        return jsonify({'error': 'Version not found or revert failed'}), 404
+    return jsonify({'success': True, 'look': result})
+
 @app.route('/api/looks/<look_id>/play', methods=['POST'])
 def play_look(look_id):
     """
@@ -4495,6 +4603,20 @@ def delete_sequence(sequence_id):
     if not success:
         return jsonify({'error': 'Sequence not found'}), 404
     return jsonify({'success': True, 'sequence_id': sequence_id})
+
+@app.route('/api/sequences/<sequence_id>/versions', methods=['GET'])
+def get_sequence_versions(sequence_id):
+    """Get version history for a Sequence"""
+    versions = looks_sequences_manager.get_versions(sequence_id, 'sequence')
+    return jsonify({'success': True, 'versions': versions})
+
+@app.route('/api/sequences/<sequence_id>/versions/<version_id>/revert', methods=['POST'])
+def revert_sequence_version(sequence_id, version_id):
+    """Revert a Sequence to a specific version"""
+    result = looks_sequences_manager.revert_to_version(version_id)
+    if not result:
+        return jsonify({'error': 'Version not found or revert failed'}), 404
+    return jsonify({'success': True, 'sequence': result})
 
 # ─────────────────────────────────────────────────────────
 # Unified Playback API (Phase 4)
@@ -5807,6 +5929,214 @@ def delete_schedule(schedule_id):
 def trigger_schedule(schedule_id):
     """Manually trigger a schedule"""
     return jsonify(schedule_runner.run_schedule(schedule_id))
+
+# Timers Routes
+# ─────────────────────────────────────────────────────────
+@app.route('/api/timers', methods=['GET'])
+def get_timers():
+    """Get all timers with current remaining time"""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('SELECT * FROM timers ORDER BY created_at DESC')
+    rows = c.fetchall()
+    conn.close()
+
+    timers = []
+    now = time.time() * 1000
+
+    for row in rows:
+        timer_id, name, duration_ms, remaining_ms, action_type, action_id, status, started_at, created_at = row
+
+        # Calculate actual remaining time for running timers
+        actual_remaining = remaining_ms
+        if status == 'running' and started_at:
+            started_timestamp = datetime.fromisoformat(started_at).timestamp() * 1000
+            elapsed = now - started_timestamp
+            actual_remaining = max(0, remaining_ms - elapsed)
+            if actual_remaining <= 0:
+                # Timer completed, update status
+                status = 'completed'
+
+        timers.append({
+            'timer_id': timer_id,
+            'name': name,
+            'duration_ms': duration_ms,
+            'remaining_ms': int(actual_remaining),
+            'action_type': action_type,
+            'action_id': action_id,
+            'status': status,
+            'started_at': started_at,
+            'created_at': created_at,
+            'running': status == 'running'
+        })
+
+    return jsonify(timers)
+
+@app.route('/api/timers', methods=['POST'])
+def create_timer():
+    """Create a new timer"""
+    data = request.get_json() or {}
+    timer_id = data.get('timer_id', f"timer_{int(time.time() * 1000)}")
+    name = data.get('name', 'New Timer')
+    duration_ms = data.get('duration_ms', 60000)  # Default 1 minute
+
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('''INSERT INTO timers
+        (timer_id, name, duration_ms, remaining_ms, action_type, action_id, status)
+        VALUES (?, ?, ?, ?, ?, ?, 'stopped')''',
+        (timer_id, name, duration_ms, duration_ms,
+         data.get('action_type'), data.get('action_id')))
+    conn.commit()
+    conn.close()
+
+    return jsonify({
+        'success': True,
+        'timer_id': timer_id,
+        'name': name,
+        'duration_ms': duration_ms,
+        'remaining_ms': duration_ms,
+        'status': 'stopped'
+    })
+
+@app.route('/api/timers/<timer_id>', methods=['GET'])
+def get_timer(timer_id):
+    """Get a single timer"""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('SELECT * FROM timers WHERE timer_id = ?', (timer_id,))
+    row = c.fetchone()
+    conn.close()
+
+    if not row:
+        return jsonify({'error': 'Timer not found'}), 404
+
+    timer_id, name, duration_ms, remaining_ms, action_type, action_id, status, started_at, created_at = row
+    return jsonify({
+        'timer_id': timer_id,
+        'name': name,
+        'duration_ms': duration_ms,
+        'remaining_ms': remaining_ms,
+        'action_type': action_type,
+        'action_id': action_id,
+        'status': status,
+        'started_at': started_at,
+        'created_at': created_at
+    })
+
+@app.route('/api/timers/<timer_id>', methods=['PUT'])
+def update_timer(timer_id):
+    """Update a timer"""
+    data = request.get_json() or {}
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('''UPDATE timers SET name=?, duration_ms=?, action_type=?, action_id=?
+        WHERE timer_id=?''',
+        (data.get('name'), data.get('duration_ms'),
+         data.get('action_type'), data.get('action_id'), timer_id))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+
+@app.route('/api/timers/<timer_id>', methods=['DELETE'])
+def delete_timer(timer_id):
+    """Delete a timer"""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('DELETE FROM timers WHERE timer_id = ?', (timer_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+
+@app.route('/api/timers/<timer_id>/start', methods=['POST'])
+def start_timer(timer_id):
+    """Start/resume a timer"""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('SELECT remaining_ms, status FROM timers WHERE timer_id = ?', (timer_id,))
+    row = c.fetchone()
+
+    if not row:
+        conn.close()
+        return jsonify({'error': 'Timer not found'}), 404
+
+    remaining_ms, current_status = row
+
+    if current_status == 'running':
+        conn.close()
+        return jsonify({'success': True, 'message': 'Timer already running'})
+
+    # If completed, reset to full duration
+    if remaining_ms <= 0 or current_status == 'completed':
+        c.execute('SELECT duration_ms FROM timers WHERE timer_id = ?', (timer_id,))
+        remaining_ms = c.fetchone()[0]
+
+    now = datetime.now().isoformat()
+    c.execute('''UPDATE timers SET status='running', started_at=?, remaining_ms=?
+        WHERE timer_id=?''', (now, remaining_ms, timer_id))
+    conn.commit()
+    conn.close()
+
+    # Start background timer check
+    timer_runner.start_timer(timer_id, remaining_ms)
+
+    return jsonify({'success': True, 'status': 'running', 'remaining_ms': remaining_ms})
+
+@app.route('/api/timers/<timer_id>/pause', methods=['POST'])
+def pause_timer(timer_id):
+    """Pause a running timer"""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('SELECT remaining_ms, started_at, status FROM timers WHERE timer_id = ?', (timer_id,))
+    row = c.fetchone()
+
+    if not row:
+        conn.close()
+        return jsonify({'error': 'Timer not found'}), 404
+
+    remaining_ms, started_at, status = row
+
+    if status != 'running':
+        conn.close()
+        return jsonify({'success': True, 'message': 'Timer not running'})
+
+    # Calculate actual remaining
+    if started_at:
+        started_timestamp = datetime.fromisoformat(started_at).timestamp() * 1000
+        elapsed = (time.time() * 1000) - started_timestamp
+        remaining_ms = max(0, remaining_ms - elapsed)
+
+    c.execute('''UPDATE timers SET status='paused', remaining_ms=?, started_at=NULL
+        WHERE timer_id=?''', (int(remaining_ms), timer_id))
+    conn.commit()
+    conn.close()
+
+    timer_runner.stop_timer(timer_id)
+
+    return jsonify({'success': True, 'status': 'paused', 'remaining_ms': int(remaining_ms)})
+
+@app.route('/api/timers/<timer_id>/reset', methods=['POST'])
+def reset_timer(timer_id):
+    """Reset a timer to its full duration"""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('SELECT duration_ms FROM timers WHERE timer_id = ?', (timer_id,))
+    row = c.fetchone()
+
+    if not row:
+        conn.close()
+        return jsonify({'error': 'Timer not found'}), 404
+
+    duration_ms = row[0]
+
+    c.execute('''UPDATE timers SET status='stopped', remaining_ms=?, started_at=NULL
+        WHERE timer_id=?''', (duration_ms, timer_id))
+    conn.commit()
+    conn.close()
+
+    timer_runner.stop_timer(timer_id)
+
+    return jsonify({'success': True, 'status': 'stopped', 'remaining_ms': duration_ms})
 
 # Legacy Playback Manager Routes (for backward compatibility)
 # ─────────────────────────────────────────────────────────

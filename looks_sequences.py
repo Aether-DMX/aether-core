@@ -352,6 +352,18 @@ def init_looks_sequences_tables(db_path: str):
         migrated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )''')
 
+    # Artifact version history for looks and sequences
+    c.execute('''CREATE TABLE IF NOT EXISTS artifact_versions (
+        version_id TEXT PRIMARY KEY,
+        artifact_id TEXT NOT NULL,
+        artifact_type TEXT NOT NULL,
+        version_number INTEGER NOT NULL,
+        data_json TEXT NOT NULL,
+        author TEXT DEFAULT 'user',
+        message TEXT DEFAULT '',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )''')
+
     # Record schema version
     c.execute('''INSERT OR REPLACE INTO schema_versions (module, version, migrated_at)
                  VALUES ('looks_sequences', ?, CURRENT_TIMESTAMP)''', (SCHEMA_VERSION,))
@@ -361,6 +373,8 @@ def init_looks_sequences_tables(db_path: str):
     c.execute('CREATE INDEX IF NOT EXISTS idx_looks_migrated_from ON looks(migrated_from)')
     c.execute('CREATE INDEX IF NOT EXISTS idx_sequences_name ON sequences(name)')
     c.execute('CREATE INDEX IF NOT EXISTS idx_sequences_migrated_from ON sequences(migrated_from)')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_artifact_versions_artifact ON artifact_versions(artifact_id, artifact_type)')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_artifact_versions_created ON artifact_versions(created_at DESC)')
 
     conn.commit()
     conn.close()
@@ -438,7 +452,7 @@ class LooksSequencesManager:
 
         return [self._row_to_look(row) for row in rows]
 
-    def update_look(self, look_id: str, updates: dict) -> Optional[Look]:
+    def update_look(self, look_id: str, updates: dict, save_version: bool = True) -> Optional[Look]:
         """Update a Look"""
         with self.lock:
             conn = self._get_conn()
@@ -452,6 +466,14 @@ class LooksSequencesManager:
                 return None
 
             existing = self._row_to_look(row)
+
+            # Save version before modifying (outside lock to avoid deadlock)
+            if save_version:
+                conn.close()
+                self._save_version(look_id, 'look', existing.to_dict(), 'Auto-save before update')
+                self.cleanup_old_versions(look_id, 'look')
+                conn = self._get_conn()
+                c = conn.cursor()
 
             # Apply updates
             if "name" in updates:
@@ -568,7 +590,7 @@ class LooksSequencesManager:
 
         return [self._row_to_sequence(row) for row in rows]
 
-    def update_sequence(self, sequence_id: str, updates: dict) -> Optional[Sequence]:
+    def update_sequence(self, sequence_id: str, updates: dict, save_version: bool = True) -> Optional[Sequence]:
         """Update a Sequence"""
         with self.lock:
             conn = self._get_conn()
@@ -582,6 +604,14 @@ class LooksSequencesManager:
                 return None
 
             existing = self._row_to_sequence(row)
+
+            # Save version before modifying (outside lock to avoid deadlock)
+            if save_version:
+                conn.close()
+                self._save_version(sequence_id, 'sequence', existing.to_dict(), 'Auto-save before update')
+                self.cleanup_old_versions(sequence_id, 'sequence')
+                conn = self._get_conn()
+                c = conn.cursor()
 
             # Apply updates
             if "name" in updates:
@@ -641,6 +671,139 @@ class LooksSequencesManager:
             updated_at=row["updated_at"],
             migrated_from=row["migrated_from"],
         )
+
+    # ---- Version History ----
+
+    def _save_version(self, artifact_id: str, artifact_type: str, data: dict, message: str = "") -> str:
+        """Save a version snapshot of an artifact before modification"""
+        conn = self._get_conn()
+        c = conn.cursor()
+
+        # Get next version number for this artifact
+        c.execute('''SELECT COALESCE(MAX(version_number), 0) + 1
+                    FROM artifact_versions
+                    WHERE artifact_id = ? AND artifact_type = ?''',
+                  (artifact_id, artifact_type))
+        version_number = c.fetchone()[0]
+
+        version_id = f"ver_{artifact_id}_{version_number}_{int(time.time() * 1000)}"
+        now = datetime.now().isoformat()
+
+        c.execute('''INSERT INTO artifact_versions
+                    (version_id, artifact_id, artifact_type, version_number, data_json, author, message, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
+                  (version_id, artifact_id, artifact_type, version_number,
+                   json.dumps(data), 'user', message, now))
+
+        conn.commit()
+        conn.close()
+        print(f"📜 Saved version {version_number} of {artifact_type} {artifact_id}")
+        return version_id
+
+    def get_versions(self, artifact_id: str, artifact_type: str) -> List[dict]:
+        """Get all versions of an artifact"""
+        conn = self._get_conn()
+        c = conn.cursor()
+        c.execute('''SELECT version_id, artifact_id, artifact_type, version_number,
+                           data_json, author, message, created_at
+                    FROM artifact_versions
+                    WHERE artifact_id = ? AND artifact_type = ?
+                    ORDER BY version_number DESC''',
+                  (artifact_id, artifact_type))
+        rows = c.fetchall()
+        conn.close()
+
+        return [{
+            'version_id': row['version_id'],
+            'artifact_id': row['artifact_id'],
+            'artifact_type': row['artifact_type'],
+            'version_number': row['version_number'],
+            'data': json.loads(row['data_json']),
+            'author': row['author'],
+            'message': row['message'],
+            'created_at': row['created_at']
+        } for row in rows]
+
+    def get_version(self, version_id: str) -> Optional[dict]:
+        """Get a specific version by ID"""
+        conn = self._get_conn()
+        c = conn.cursor()
+        c.execute('''SELECT version_id, artifact_id, artifact_type, version_number,
+                           data_json, author, message, created_at
+                    FROM artifact_versions
+                    WHERE version_id = ?''',
+                  (version_id,))
+        row = c.fetchone()
+        conn.close()
+
+        if not row:
+            return None
+
+        return {
+            'version_id': row['version_id'],
+            'artifact_id': row['artifact_id'],
+            'artifact_type': row['artifact_type'],
+            'version_number': row['version_number'],
+            'data': json.loads(row['data_json']),
+            'author': row['author'],
+            'message': row['message'],
+            'created_at': row['created_at']
+        }
+
+    def revert_to_version(self, version_id: str) -> Optional[dict]:
+        """Revert an artifact to a specific version"""
+        version = self.get_version(version_id)
+        if not version:
+            return None
+
+        artifact_type = version['artifact_type']
+        artifact_id = version['artifact_id']
+        data = version['data']
+
+        if artifact_type == 'look':
+            # Save current state before reverting
+            current = self.get_look(artifact_id)
+            if current:
+                self._save_version(artifact_id, 'look', current.to_dict(),
+                                   f"Before revert to v{version['version_number']}")
+            # Apply version data
+            result = self.update_look(artifact_id, data)
+            return result.to_dict() if result else None
+
+        elif artifact_type == 'sequence':
+            # Save current state before reverting
+            current = self.get_sequence(artifact_id)
+            if current:
+                self._save_version(artifact_id, 'sequence', current.to_dict(),
+                                   f"Before revert to v{version['version_number']}")
+            # Apply version data
+            result = self.update_sequence(artifact_id, data)
+            return result.to_dict() if result else None
+
+        return None
+
+    def cleanup_old_versions(self, artifact_id: str, artifact_type: str, keep_count: int = 20):
+        """Keep only the most recent N versions of an artifact"""
+        with self.lock:
+            conn = self._get_conn()
+            c = conn.cursor()
+
+            # Get version IDs to delete (all except the most recent keep_count)
+            c.execute('''SELECT version_id FROM artifact_versions
+                        WHERE artifact_id = ? AND artifact_type = ?
+                        ORDER BY version_number DESC
+                        LIMIT -1 OFFSET ?''',
+                      (artifact_id, artifact_type, keep_count))
+            to_delete = [row['version_id'] for row in c.fetchall()]
+
+            if to_delete:
+                placeholders = ','.join('?' * len(to_delete))
+                c.execute(f'DELETE FROM artifact_versions WHERE version_id IN ({placeholders})',
+                          to_delete)
+                conn.commit()
+                print(f"🧹 Cleaned up {len(to_delete)} old versions of {artifact_type} {artifact_id}")
+
+            conn.close()
 
 
 # ============================================================
