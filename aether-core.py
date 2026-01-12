@@ -1164,6 +1164,34 @@ def init_database():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )''')
 
+    # RDM (Remote Device Management) tables
+    c.execute('''CREATE TABLE IF NOT EXISTS rdm_devices (
+        uid TEXT PRIMARY KEY,
+        node_id TEXT NOT NULL,
+        universe INTEGER,
+        manufacturer_id INTEGER,
+        device_model_id INTEGER,
+        device_label TEXT,
+        dmx_address INTEGER,
+        dmx_footprint INTEGER,
+        personality_id INTEGER,
+        personality_count INTEGER,
+        software_version TEXT,
+        sensor_count INTEGER DEFAULT 0,
+        last_seen TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (node_id) REFERENCES nodes(node_id)
+    )''')
+
+    c.execute('''CREATE TABLE IF NOT EXISTS rdm_personalities (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        device_uid TEXT,
+        personality_id INTEGER,
+        slot_count INTEGER,
+        description TEXT,
+        FOREIGN KEY (device_uid) REFERENCES rdm_devices(uid)
+    )''')
+
     conn.commit()
 
     # Add synced_to_nodes column if missing (migration)
@@ -2208,6 +2236,194 @@ class NodeManager:
         return results
 
 node_manager = NodeManager()
+
+# ============================================================
+# RDM Manager - Remote Device Management
+# ============================================================
+class RDMManager:
+    """RDM (Remote Device Management) for fixture discovery and configuration.
+
+    Sends RDM commands to ESP32 nodes via UDPJSON and processes responses.
+    Commands go to nodes, which forward to fixtures via RS485/DMX.
+    """
+
+    def __init__(self):
+        self.discovery_tasks = {}  # node_id -> discovery status
+        self.response_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.response_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.response_socket.settimeout(10.0)  # 10 second timeout for RDM responses
+        self.pending_requests = {}  # request_id -> callback
+        print("✓ RDMManager initialized")
+
+    def _send_rdm_command(self, node_ip, action, params=None):
+        """Send RDM command to a node and wait for response.
+
+        Args:
+            node_ip: IP address of the ESP32 node
+            action: RDM action (discover, get_info, identify, set_address, etc.)
+            params: Additional parameters for the action
+
+        Returns:
+            dict with response data or error
+        """
+        try:
+            # Build the RDM command
+            payload = {"type": "rdm", "action": action}
+            if params:
+                payload.update(params)
+
+            # Create a socket for sending and receiving
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            sock.settimeout(15.0 if action == 'discover' else 5.0)  # Discovery takes longer
+
+            # Send the command
+            json_data = json.dumps(payload, separators=(',', ':'))
+            sock.sendto(json_data.encode(), (node_ip, AETHER_UDPJSON_PORT))
+            print(f"📡 RDM: {action} -> {node_ip}")
+
+            # Wait for response
+            try:
+                data, addr = sock.recvfrom(4096)
+                response = json.loads(data.decode())
+                sock.close()
+                return response
+            except socket.timeout:
+                sock.close()
+                return {"success": False, "error": "Response timeout"}
+
+        except Exception as e:
+            print(f"❌ RDM error: {e}")
+            return {"success": False, "error": str(e)}
+
+    def discover_devices(self, node_id):
+        """Start RDM discovery on a node.
+
+        Args:
+            node_id: The node to scan for RDM devices
+
+        Returns:
+            dict with discovery results
+        """
+        node = node_manager.get_node(node_id)
+        if not node or node.get('status') != 'online':
+            return {"success": False, "error": "Node not found or offline"}
+
+        self.discovery_tasks[node_id] = {"status": "scanning", "started_at": datetime.now().isoformat()}
+
+        # Send discover command
+        result = self._send_rdm_command(node['ip'], 'discover')
+
+        # Update status
+        self.discovery_tasks[node_id] = {"status": "complete", "result": result}
+
+        # Save discovered devices to database
+        if result.get('success') and result.get('devices'):
+            self._save_devices(node_id, node.get('universe', 1), result['devices'])
+
+        return result
+
+    def _save_devices(self, node_id, universe, devices):
+        """Save discovered devices to database."""
+        conn = get_db()
+        c = conn.cursor()
+
+        for device in devices:
+            uid = device.get('uid')
+            if not uid:
+                continue
+
+            c.execute('''INSERT OR REPLACE INTO rdm_devices
+                (uid, node_id, universe, manufacturer_id, device_model_id, last_seen)
+                VALUES (?, ?, ?, ?, ?, ?)''',
+                (uid, node_id, universe,
+                 device.get('manufacturer', 0), device.get('device_id', 0),
+                 datetime.now().isoformat()))
+
+        conn.commit()
+        print(f"✓ Saved {len(devices)} RDM devices to database")
+
+    def get_device_info(self, node_id, uid):
+        """Get detailed info for a specific RDM device."""
+        node = node_manager.get_node(node_id)
+        if not node or node.get('status') != 'online':
+            return {"success": False, "error": "Node not found or offline"}
+
+        result = self._send_rdm_command(node['ip'], 'get_info', {"uid": uid})
+
+        # Update database with new info
+        if result.get('success'):
+            self._update_device_info(uid, result)
+
+        return result
+
+    def _update_device_info(self, uid, info):
+        """Update device info in database."""
+        conn = get_db()
+        c = conn.cursor()
+
+        c.execute('''UPDATE rdm_devices SET
+            dmx_address = ?, dmx_footprint = ?, personality_id = ?, personality_count = ?,
+            software_version = ?, sensor_count = ?, last_seen = ?
+            WHERE uid = ?''',
+            (info.get('dmx_address', 0), info.get('footprint', 0),
+             info.get('personality_current', 0), info.get('personality_count', 0),
+             info.get('software_version', ''), info.get('sensor_count', 0),
+             datetime.now().isoformat(), uid))
+
+        conn.commit()
+
+    def identify_device(self, node_id, uid, state):
+        """Set identify mode on a device (flashes LED)."""
+        node = node_manager.get_node(node_id)
+        if not node or node.get('status') != 'online':
+            return {"success": False, "error": "Node not found or offline"}
+
+        return self._send_rdm_command(node['ip'], 'identify', {"uid": uid, "state": state})
+
+    def set_dmx_address(self, node_id, uid, address):
+        """Set DMX start address for a device."""
+        node = node_manager.get_node(node_id)
+        if not node or node.get('status') != 'online':
+            return {"success": False, "error": "Node not found or offline"}
+
+        result = self._send_rdm_command(node['ip'], 'set_address', {"uid": uid, "address": address})
+
+        # Update database
+        if result.get('success'):
+            conn = get_db()
+            c = conn.cursor()
+            c.execute('UPDATE rdm_devices SET dmx_address = ?, last_seen = ? WHERE uid = ?',
+                     (address, datetime.now().isoformat(), uid))
+            conn.commit()
+
+        return result
+
+    def get_devices_for_node(self, node_id):
+        """Get all RDM devices for a node from database."""
+        conn = get_db()
+        c = conn.cursor()
+        c.execute('SELECT * FROM rdm_devices WHERE node_id = ? ORDER BY dmx_address', (node_id,))
+        columns = [d[0] for d in c.description]
+        return [dict(zip(columns, row)) for row in c.fetchall()]
+
+    def get_all_devices(self):
+        """Get all RDM devices from database."""
+        conn = get_db()
+        c = conn.cursor()
+        c.execute('SELECT * FROM rdm_devices ORDER BY node_id, dmx_address')
+        columns = [d[0] for d in c.description]
+        return [dict(zip(columns, row)) for row in c.fetchall()]
+
+    def delete_device(self, uid):
+        """Remove a device from the database."""
+        conn = get_db()
+        c = conn.cursor()
+        c.execute('DELETE FROM rdm_devices WHERE uid = ?', (uid,))
+        c.execute('DELETE FROM rdm_personalities WHERE device_uid = ?', (uid,))
+        conn.commit()
+        return {"success": True}
+
+rdm_manager = RDMManager()
 
 # ============================================================
 # Content Manager
@@ -3519,6 +3735,102 @@ def sync_all_nodes():
     """Force sync content to all nodes"""
     threading.Thread(target=node_manager.sync_all_content, daemon=True).start()
     return jsonify({'success': True, 'message': 'Full sync started'})
+
+# ─────────────────────────────────────────────────────────
+# RDM Routes - Remote Device Management
+# ─────────────────────────────────────────────────────────
+@app.route('/api/nodes/<node_id>/rdm/discover', methods=['POST'])
+def rdm_discover(node_id):
+    """Start RDM discovery on a node - finds all RDM fixtures on DMX bus"""
+    result = rdm_manager.discover_devices(node_id)
+    return jsonify(result)
+
+@app.route('/api/nodes/<node_id>/rdm/discover/status', methods=['GET'])
+def rdm_discover_status(node_id):
+    """Get RDM discovery status for a node"""
+    status = rdm_manager.discovery_tasks.get(node_id, {"status": "idle"})
+    return jsonify(status)
+
+@app.route('/api/nodes/<node_id>/rdm/devices', methods=['GET'])
+def rdm_devices_for_node(node_id):
+    """List all RDM devices discovered on a node"""
+    devices = rdm_manager.get_devices_for_node(node_id)
+    return jsonify(devices)
+
+@app.route('/api/rdm/devices', methods=['GET'])
+def rdm_all_devices():
+    """List all RDM devices across all nodes"""
+    devices = rdm_manager.get_all_devices()
+    return jsonify(devices)
+
+@app.route('/api/rdm/devices/<uid>', methods=['GET'])
+def rdm_device_detail(uid):
+    """Get detailed info for a specific RDM device"""
+    # Find which node has this device
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('SELECT node_id FROM rdm_devices WHERE uid = ?', (uid,))
+    row = c.fetchone()
+    if not row:
+        return jsonify({'error': 'Device not found'}), 404
+
+    result = rdm_manager.get_device_info(row[0], uid)
+    return jsonify(result)
+
+@app.route('/api/rdm/devices/<uid>/identify', methods=['POST'])
+def rdm_identify(uid):
+    """Identify a device (flash its LED)"""
+    data = request.get_json() or {}
+    state = data.get('state', True)
+
+    # Find which node has this device
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('SELECT node_id FROM rdm_devices WHERE uid = ?', (uid,))
+    row = c.fetchone()
+    if not row:
+        return jsonify({'error': 'Device not found'}), 404
+
+    result = rdm_manager.identify_device(row[0], uid, state)
+    return jsonify(result)
+
+@app.route('/api/rdm/devices/<uid>/address', methods=['POST'])
+def rdm_set_address(uid):
+    """Set DMX start address for a device"""
+    data = request.get_json() or {}
+    address = data.get('address')
+    if not address or address < 1 or address > 512:
+        return jsonify({'error': 'Address must be between 1 and 512'}), 400
+
+    # Find which node has this device
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('SELECT node_id FROM rdm_devices WHERE uid = ?', (uid,))
+    row = c.fetchone()
+    if not row:
+        return jsonify({'error': 'Device not found'}), 404
+
+    result = rdm_manager.set_dmx_address(row[0], uid, address)
+    return jsonify(result)
+
+@app.route('/api/rdm/devices/<uid>/label', methods=['POST'])
+def rdm_set_label(uid):
+    """Set device label (stored in database, not on fixture)"""
+    data = request.get_json() or {}
+    label = data.get('label', '')
+
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('UPDATE rdm_devices SET device_label = ? WHERE uid = ?', (label, uid))
+    conn.commit()
+
+    return jsonify({'success': True, 'uid': uid, 'label': label})
+
+@app.route('/api/rdm/devices/<uid>', methods=['DELETE'])
+def rdm_delete_device(uid):
+    """Remove a stale RDM device from database"""
+    result = rdm_manager.delete_device(uid)
+    return jsonify(result)
 
 # ─────────────────────────────────────────────────────────
 # DMX Routes
