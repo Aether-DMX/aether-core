@@ -169,6 +169,7 @@ PRIORITY_LEVELS = {
     'manual': 80,
     'fader': 80,
     'effect': 60,
+    'cue_stack': 55,  # Cue stacks slightly higher than looks (theatrical priority)
     'look': 50,
     'sequence': 45,
     'chase': 40,

@@ -55,6 +55,10 @@ from preview_service import (
     preview_service, PreviewService, PreviewSession,
     PreviewMode, PreviewFrame,
 )
+from cue_stacks import (
+    CueStacksManager, CueStack, Cue,
+    validate_cue_stack_data, validate_cue_data,
+)
 
 # Optional serial support for UART gateway
 try:
@@ -3054,6 +3058,11 @@ content_manager = ContentManager()
 looks_sequences_manager = LooksSequencesManager(DATABASE)
 
 # ============================================================
+# Cue Stacks Manager (theatrical manual cueing)
+# ============================================================
+cue_stacks_manager = CueStacksManager(DATABASE)
+
+# ============================================================
 # SSOT Output Router - Unified output path for all DMX writes
 # ============================================================
 def ssot_send_frame(universe, channels_array, owner_type='effect'):
@@ -4639,6 +4648,313 @@ def pause_playback():
 def resume_playback():
     """Resume paused playback"""
     return jsonify(playback_controller.resume())
+
+
+# ─────────────────────────────────────────────────────────
+# Cue Stacks API (Manual Theatrical Cueing)
+# ─────────────────────────────────────────────────────────
+
+@app.route('/api/cue-stacks', methods=['GET'])
+def get_cue_stacks():
+    """Get all Cue Stacks"""
+    stacks = cue_stacks_manager.get_all_cue_stacks()
+    return jsonify([s.to_dict() for s in stacks])
+
+@app.route('/api/cue-stacks', methods=['POST'])
+def create_cue_stack():
+    """Create a new Cue Stack"""
+    data = request.get_json() or {}
+
+    # Validate
+    valid, error = validate_cue_stack_data(data)
+    if not valid:
+        return jsonify({'success': False, 'error': error}), 400
+
+    # Create CueStack object
+    cues = [Cue.from_dict(c) for c in data.get('cues', [])]
+    stack = CueStack(
+        stack_id=data.get('stack_id', f"stack_{int(time.time() * 1000)}"),
+        name=data['name'],
+        cues=cues,
+        color=data.get('color', 'purple'),
+        description=data.get('description', ''),
+    )
+
+    result = cue_stacks_manager.create_cue_stack(stack)
+    return jsonify({'success': True, 'cue_stack': result.to_dict()})
+
+@app.route('/api/cue-stacks/<stack_id>', methods=['GET'])
+def get_cue_stack(stack_id):
+    """Get a Cue Stack by ID"""
+    stack = cue_stacks_manager.get_cue_stack(stack_id)
+    if not stack:
+        return jsonify({'error': 'Cue Stack not found'}), 404
+    return jsonify(stack.to_dict())
+
+@app.route('/api/cue-stacks/<stack_id>', methods=['PUT'])
+def update_cue_stack(stack_id):
+    """Update an existing Cue Stack"""
+    data = request.get_json() or {}
+
+    # Validate if cues are being updated
+    if 'cues' in data:
+        valid, error = validate_cue_stack_data({**data, 'name': data.get('name', 'temp')})
+        if not valid:
+            return jsonify({'success': False, 'error': error}), 400
+
+    result = cue_stacks_manager.update_cue_stack(stack_id, data)
+    if not result:
+        return jsonify({'error': 'Cue Stack not found'}), 404
+    return jsonify({'success': True, 'cue_stack': result.to_dict()})
+
+@app.route('/api/cue-stacks/<stack_id>', methods=['DELETE'])
+def delete_cue_stack(stack_id):
+    """Delete a Cue Stack"""
+    success = cue_stacks_manager.delete_cue_stack(stack_id)
+    if not success:
+        return jsonify({'error': 'Cue Stack not found'}), 404
+    return jsonify({'success': True, 'stack_id': stack_id})
+
+@app.route('/api/cue-stacks/<stack_id>/go', methods=['POST'])
+def cue_stack_go(stack_id):
+    """
+    Execute the next cue (Go button).
+    Manually triggers the next cue in the stack.
+    """
+    # Helper to resolve look_id to channels
+    def look_resolver(look_id):
+        look = looks_sequences_manager.get_look(look_id)
+        if look:
+            return look.channels
+        return {}
+
+    result = cue_stacks_manager.go(stack_id, look_resolver=look_resolver)
+
+    if not result.get('success'):
+        return jsonify(result), 404
+
+    # If we got channels, send them to DMX output
+    channels = result.get('channels')
+    fade_time_ms = result.get('fade_time_ms', 1000)
+
+    if channels:
+        # Acquire arbitration for cue stack
+        if not arbitration.acquire('cue_stack', stack_id):
+            return jsonify({
+                'success': False,
+                'error': 'Cannot execute cue - arbitration denied',
+                'current_owner': arbitration.current_owner
+            }), 409
+
+        # Determine target universes from channel keys
+        universes = set()
+        flat_channels = {}
+
+        for key, value in channels.items():
+            if ':' in str(key):
+                # Universe:channel format
+                parts = str(key).split(':')
+                univ = int(parts[0])
+                ch = int(parts[1])
+                universes.add(univ)
+                if univ not in flat_channels:
+                    flat_channels[univ] = {}
+                flat_channels[univ][ch] = value
+            else:
+                # Just channel number, assume universe 1
+                universes.add(1)
+                if 1 not in flat_channels:
+                    flat_channels[1] = {}
+                flat_channels[1][int(key)] = value
+
+        # If no explicit universes, use all online nodes
+        if not universes:
+            universes = list(set(
+                n.get('universe', 1) for n in node_manager.get_nodes()
+                if n.get('is_paired') and n.get('status') == 'online'
+            ))
+            if not universes:
+                universes = [1]
+
+        # Apply the cue with fade
+        for univ in universes:
+            univ_channels = flat_channels.get(univ, channels)
+            # Convert to array format
+            channel_array = [0] * 512
+            for ch_str, val in univ_channels.items():
+                ch = int(ch_str) if not isinstance(ch_str, int) else ch_str
+                if 1 <= ch <= 512:
+                    channel_array[ch - 1] = val
+
+            # Send to merge layer with cue_stack priority
+            merge_layer.set_source(
+                source_id=f"cue_stack_{stack_id}",
+                source_type='cue_stack',
+                universe=univ,
+                channels=channel_array,
+                fade_ms=fade_time_ms
+            )
+
+    return jsonify(result)
+
+@app.route('/api/cue-stacks/<stack_id>/back', methods=['POST'])
+def cue_stack_back(stack_id):
+    """
+    Go back to previous cue (Back button).
+    """
+    def look_resolver(look_id):
+        look = looks_sequences_manager.get_look(look_id)
+        if look:
+            return look.channels
+        return {}
+
+    result = cue_stacks_manager.back(stack_id, look_resolver=look_resolver)
+
+    if not result.get('success'):
+        return jsonify(result), 404
+
+    # If we got channels, send them to DMX output (same logic as go)
+    channels = result.get('channels')
+    fade_time_ms = result.get('fade_time_ms', 1000)
+
+    if channels:
+        universes = set()
+        flat_channels = {}
+
+        for key, value in channels.items():
+            if ':' in str(key):
+                parts = str(key).split(':')
+                univ = int(parts[0])
+                ch = int(parts[1])
+                universes.add(univ)
+                if univ not in flat_channels:
+                    flat_channels[univ] = {}
+                flat_channels[univ][ch] = value
+            else:
+                universes.add(1)
+                if 1 not in flat_channels:
+                    flat_channels[1] = {}
+                flat_channels[1][int(key)] = value
+
+        if not universes:
+            universes = list(set(
+                n.get('universe', 1) for n in node_manager.get_nodes()
+                if n.get('is_paired') and n.get('status') == 'online'
+            ))
+            if not universes:
+                universes = [1]
+
+        for univ in universes:
+            univ_channels = flat_channels.get(univ, channels)
+            channel_array = [0] * 512
+            for ch_str, val in univ_channels.items():
+                ch = int(ch_str) if not isinstance(ch_str, int) else ch_str
+                if 1 <= ch <= 512:
+                    channel_array[ch - 1] = val
+
+            merge_layer.set_source(
+                source_id=f"cue_stack_{stack_id}",
+                source_type='cue_stack',
+                universe=univ,
+                channels=channel_array,
+                fade_ms=fade_time_ms
+            )
+
+    return jsonify(result)
+
+@app.route('/api/cue-stacks/<stack_id>/goto/<cue_number>', methods=['POST'])
+def cue_stack_goto(stack_id, cue_number):
+    """
+    Jump to a specific cue by number.
+    """
+    def look_resolver(look_id):
+        look = looks_sequences_manager.get_look(look_id)
+        if look:
+            return look.channels
+        return {}
+
+    result = cue_stacks_manager.goto(stack_id, cue_number, look_resolver=look_resolver)
+
+    if not result.get('success'):
+        return jsonify(result), 404
+
+    # If we got channels, send them to DMX output
+    channels = result.get('channels')
+    fade_time_ms = result.get('fade_time_ms', 1000)
+
+    if channels:
+        if not arbitration.acquire('cue_stack', stack_id):
+            return jsonify({
+                'success': False,
+                'error': 'Cannot execute cue - arbitration denied',
+                'current_owner': arbitration.current_owner
+            }), 409
+
+        universes = set()
+        flat_channels = {}
+
+        for key, value in channels.items():
+            if ':' in str(key):
+                parts = str(key).split(':')
+                univ = int(parts[0])
+                ch = int(parts[1])
+                universes.add(univ)
+                if univ not in flat_channels:
+                    flat_channels[univ] = {}
+                flat_channels[univ][ch] = value
+            else:
+                universes.add(1)
+                if 1 not in flat_channels:
+                    flat_channels[1] = {}
+                flat_channels[1][int(key)] = value
+
+        if not universes:
+            universes = list(set(
+                n.get('universe', 1) for n in node_manager.get_nodes()
+                if n.get('is_paired') and n.get('status') == 'online'
+            ))
+            if not universes:
+                universes = [1]
+
+        for univ in universes:
+            univ_channels = flat_channels.get(univ, channels)
+            channel_array = [0] * 512
+            for ch_str, val in univ_channels.items():
+                ch = int(ch_str) if not isinstance(ch_str, int) else ch_str
+                if 1 <= ch <= 512:
+                    channel_array[ch - 1] = val
+
+            merge_layer.set_source(
+                source_id=f"cue_stack_{stack_id}",
+                source_type='cue_stack',
+                universe=univ,
+                channels=channel_array,
+                fade_ms=fade_time_ms
+            )
+
+    return jsonify(result)
+
+@app.route('/api/cue-stacks/<stack_id>/stop', methods=['POST'])
+def cue_stack_stop(stack_id):
+    """Stop cue stack playback and release output"""
+    result = cue_stacks_manager.stop(stack_id)
+
+    # Release merge layer source
+    merge_layer.remove_source(f"cue_stack_{stack_id}")
+
+    # Release arbitration
+    if arbitration.current_owner == ('cue_stack', stack_id):
+        arbitration.release()
+
+    return jsonify(result)
+
+@app.route('/api/cue-stacks/<stack_id>/status', methods=['GET'])
+def cue_stack_status(stack_id):
+    """Get current playback status for a cue stack"""
+    result = cue_stacks_manager.get_status(stack_id)
+    if not result.get('success'):
+        return jsonify(result), 404
+    return jsonify(result)
 
 
 # ─────────────────────────────────────────────────────────
