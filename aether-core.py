@@ -2323,20 +2323,33 @@ class RDMManager:
         return result
 
     def _save_devices(self, node_id, universe, devices):
-        """Save discovered devices to database."""
+        """Save discovered devices to database.
+
+        Devices can be either:
+        - List of UID strings: ["02CA:C207DFA1", ...]
+        - List of dicts: [{"uid": "...", "manufacturer": ...}, ...]
+        """
         conn = get_db()
         c = conn.cursor()
 
         for device in devices:
-            uid = device.get('uid')
+            # Handle both string UIDs and dict format
+            if isinstance(device, str):
+                uid = device
+                manufacturer_id = 0
+                device_model_id = 0
+            else:
+                uid = device.get('uid')
+                manufacturer_id = device.get('manufacturer', 0)
+                device_model_id = device.get('device_id', 0)
+
             if not uid:
                 continue
 
             c.execute('''INSERT OR REPLACE INTO rdm_devices
                 (uid, node_id, universe, manufacturer_id, device_model_id, last_seen)
                 VALUES (?, ?, ?, ?, ?, ?)''',
-                (uid, node_id, universe,
-                 device.get('manufacturer', 0), device.get('device_id', 0),
+                (uid, node_id, universe, manufacturer_id, device_model_id,
                  datetime.now().isoformat()))
 
         conn.commit()
