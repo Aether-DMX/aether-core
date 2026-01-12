@@ -4776,24 +4776,27 @@ def cue_stack_go(stack_id):
             if not universes:
                 universes = [1]
 
-        # Apply the cue with fade
+        # Apply the cue with fade via merge layer
+        source_id = f"cue_stack_{stack_id}"
+
+        # Register source if not already registered
+        if not merge_layer.get_source(source_id):
+            merge_layer.register_source(source_id, 'cue_stack', list(universes))
+
         for univ in universes:
             univ_channels = flat_channels.get(univ, channels)
-            # Convert to array format
-            channel_array = [0] * 512
+            # Convert to int keys for merge layer
+            channel_dict = {}
             for ch_str, val in univ_channels.items():
                 ch = int(ch_str) if not isinstance(ch_str, int) else ch_str
                 if 1 <= ch <= 512:
-                    channel_array[ch - 1] = val
+                    channel_dict[ch] = val
 
-            # Send to merge layer with cue_stack priority
-            merge_layer.set_source(
-                source_id=f"cue_stack_{stack_id}",
-                source_type='cue_stack',
-                universe=univ,
-                channels=channel_array,
-                fade_ms=fade_time_ms
-            )
+            # Update merge layer and output
+            merge_layer.set_source_channels(source_id, univ, channel_dict)
+            merged = merge_layer.compute_merge(univ)
+            if merged:
+                merge_layer_output(univ, merged)
 
     return jsonify(result)
 
@@ -4844,21 +4847,24 @@ def cue_stack_back(stack_id):
             if not universes:
                 universes = [1]
 
+        source_id = f"cue_stack_{stack_id}"
+
+        # Register source if not already registered
+        if not merge_layer.get_source(source_id):
+            merge_layer.register_source(source_id, 'cue_stack', list(universes))
+
         for univ in universes:
             univ_channels = flat_channels.get(univ, channels)
-            channel_array = [0] * 512
+            channel_dict = {}
             for ch_str, val in univ_channels.items():
                 ch = int(ch_str) if not isinstance(ch_str, int) else ch_str
                 if 1 <= ch <= 512:
-                    channel_array[ch - 1] = val
+                    channel_dict[ch] = val
 
-            merge_layer.set_source(
-                source_id=f"cue_stack_{stack_id}",
-                source_type='cue_stack',
-                universe=univ,
-                channels=channel_array,
-                fade_ms=fade_time_ms
-            )
+            merge_layer.set_source_channels(source_id, univ, channel_dict)
+            merged = merge_layer.compute_merge(univ)
+            if merged:
+                merge_layer_output(univ, merged)
 
     return jsonify(result)
 
@@ -4916,21 +4922,24 @@ def cue_stack_goto(stack_id, cue_number):
             if not universes:
                 universes = [1]
 
+        source_id = f"cue_stack_{stack_id}"
+
+        # Register source if not already registered
+        if not merge_layer.get_source(source_id):
+            merge_layer.register_source(source_id, 'cue_stack', list(universes))
+
         for univ in universes:
             univ_channels = flat_channels.get(univ, channels)
-            channel_array = [0] * 512
+            channel_dict = {}
             for ch_str, val in univ_channels.items():
                 ch = int(ch_str) if not isinstance(ch_str, int) else ch_str
                 if 1 <= ch <= 512:
-                    channel_array[ch - 1] = val
+                    channel_dict[ch] = val
 
-            merge_layer.set_source(
-                source_id=f"cue_stack_{stack_id}",
-                source_type='cue_stack',
-                universe=univ,
-                channels=channel_array,
-                fade_ms=fade_time_ms
-            )
+            merge_layer.set_source_channels(source_id, univ, channel_dict)
+            merged = merge_layer.compute_merge(univ)
+            if merged:
+                merge_layer_output(univ, merged)
 
     return jsonify(result)
 
@@ -4940,7 +4949,7 @@ def cue_stack_stop(stack_id):
     result = cue_stacks_manager.stop(stack_id)
 
     # Release merge layer source
-    merge_layer.remove_source(f"cue_stack_{stack_id}")
+    merge_layer.unregister_source(f"cue_stack_{stack_id}")
 
     # Release arbitration
     if arbitration.current_owner == ('cue_stack', stack_id):
