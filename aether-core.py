@@ -1211,8 +1211,19 @@ def init_database():
         mode TEXT DEFAULT 'output', type TEXT DEFAULT 'wifi', connection TEXT, firmware TEXT,
         status TEXT DEFAULT 'offline', is_builtin BOOLEAN DEFAULT 0, is_paired BOOLEAN DEFAULT 0,
         can_delete BOOLEAN DEFAULT 1, uptime INTEGER DEFAULT 0, rssi INTEGER DEFAULT 0, fps REAL DEFAULT 0,
-        last_seen TIMESTAMP, first_seen TIMESTAMP, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        last_seen TIMESTAMP, first_seen TIMESTAMP, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        via_seance TEXT, seance_ip TEXT
     )''')
+
+    # Add via_seance columns if they don't exist (for existing databases)
+    try:
+        c.execute('ALTER TABLE nodes ADD COLUMN via_seance TEXT')
+    except:
+        pass
+    try:
+        c.execute('ALTER TABLE nodes ADD COLUMN seance_ip TEXT')
+    except:
+        pass
 
     c.execute('''CREATE TABLE IF NOT EXISTS scenes (
         scene_id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, universe INTEGER DEFAULT 1,
@@ -1622,20 +1633,23 @@ class NodeManager:
                         conn = get_db()
                         c = conn.cursor()
                         # Only get WiFi nodes with IPs (not built-in universe 1)
+                        # Include via_seance and seance_ip for Seance bridge routing
                         c.execute("""
-                            SELECT universe, ip, channel_start, channel_end
+                            SELECT universe, ip, channel_start, channel_end, via_seance, seance_ip
                             FROM nodes
                             WHERE is_paired = 1 AND ip IS NOT NULL AND type = 'wifi'
                         """)
                         universe_to_nodes = {}
                         for row in c.fetchall():
-                            u, ip, ch_start, ch_end = row
+                            u, ip, ch_start, ch_end, via_seance, seance_ip = row
                             # Skip universe 1 (offline)
                             if u == 1:
                                 continue
                             if u not in universe_to_nodes:
                                 universe_to_nodes[u] = []
-                            universe_to_nodes[u].append((ip, ch_start or 1, ch_end or 512))
+                            # Store target_ip: use seance_ip if via_seance is set, otherwise direct ip
+                            target_ip = seance_ip if via_seance and seance_ip else ip
+                            universe_to_nodes[u].append((target_ip, ch_start or 1, ch_end or 512, ip, via_seance))
                             active_universes.add(u)
                         conn.close()
                     except Exception as e:
@@ -1664,7 +1678,7 @@ class NodeManager:
 
                     # Send to each node in this universe via UDPJSON
                     nodes = universe_to_nodes.get(universe, [])
-                    for node_ip, slice_start, slice_end in nodes:
+                    for target_ip, slice_start, slice_end, original_ip, via_seance in nodes:
                         # Filter channels for this node's slice
                         node_channels = {}
                         for ch_str, val in channels_dict.items():
@@ -1675,7 +1689,8 @@ class NodeManager:
                         # Send UDPJSON set command
                         if node_channels or frame_count % self._refresh_rate == 0:
                             # Send either when there's data, or once per second for keepalive
-                            self.send_udpjson_set(node_ip, universe, node_channels, source="refresh")
+                            # Use target_ip which routes through Seance if via_seance is set
+                            self.send_udpjson_set(target_ip, universe, node_channels, source="refresh")
 
                 # Maintain consistent frame rate for fade interpolation
                 elapsed = time.time() - loop_start
@@ -1888,6 +1903,11 @@ class NodeManager:
         if transport_str and firmware_str:
             firmware_str = f"{firmware_str} ({transport_str})"
 
+        # Extract Seance routing info (if node is connected via Seance bridge)
+        via_seance = data.get('via_seance')  # Seance node ID or SSID
+        seance_ip = data.get('seance_ip')    # IP of Seance on Pi's network (192.168.50.x)
+        original_ip = data.get('original_ip') or data.get('ip')  # Node's IP on Seance's AP network
+
         if existing:
             # Check if node was offline before updating, and current paired state
             c.execute('SELECT status, is_paired FROM nodes WHERE node_id = ?', (node_id,))
@@ -1903,22 +1923,44 @@ class NodeManager:
                 print(f"Node {node_id} reports unpaired - syncing Pi database")
                 c.execute('UPDATE nodes SET is_paired = 0 WHERE node_id = ?', (node_id,))
 
+            # Update basic fields that always come from heartbeats/registrations
             c.execute('''UPDATE nodes SET hostname = COALESCE(?, hostname), mac = COALESCE(?, mac),
                 ip = COALESCE(?, ip), uptime = COALESCE(?, uptime), rssi = COALESCE(?, rssi),
-                fps = COALESCE(?, fps), firmware = COALESCE(?, firmware), status = 'online', last_seen = ?
+                fps = COALESCE(?, fps), firmware = COALESCE(?, firmware), status = 'online', last_seen = ?,
+                via_seance = ?, seance_ip = ?
                 WHERE node_id = ?''',
-                (data.get('hostname'), data.get('mac'), data.get('ip'), data.get('uptime'),
-                 data.get('rssi'), data.get('fps'), firmware_str, now, node_id))
+                (data.get('hostname'), data.get('mac'), original_ip, data.get('uptime'),
+                 data.get('rssi'), data.get('fps'), firmware_str, now, via_seance, seance_ip, node_id))
+
+            # Also update slice config if provided in heartbeat (nodes now send full config)
+            # This ensures Pi always has accurate slice info even for Seance-bridged nodes
+            slice_start = data.get('slice_start')
+            slice_end = data.get('slice_end')
+            slice_mode = data.get('slice_mode')
+            universe = data.get('u') or data.get('universe')
+
+            if slice_start is not None and slice_end is not None:
+                c.execute('''UPDATE nodes SET channel_start = ?, channel_end = ?,
+                    slice_mode = COALESCE(?, slice_mode), universe = COALESCE(?, universe)
+                    WHERE node_id = ?''',
+                    (slice_start, slice_end, slice_mode, universe, node_id))
+
+            # Log Seance routing changes
+            if via_seance:
+                print(f"📡 Node {node_id} via Seance: {via_seance} @ {seance_ip}")
         else:
             # Support both legacy (startChannel/channelCount) and new (slice_start/slice_end/slice_mode) fields
             slice_start = data.get('slice_start') or data.get('startChannel', 1)
             slice_end = data.get('slice_end') or data.get('channelCount', 512)
             slice_mode = data.get('slice_mode', 'zero_outside')
             c.execute('''INSERT INTO nodes (node_id, name, hostname, mac, ip, universe, channel_start, type,
-                channel_end, slice_mode, firmware, status, is_paired, first_seen, last_seen) VALUES (?, ?, ?, ?, ?, ?, ?, 'wifi', ?, ?, ?, ?, ?, ?, ?)''',
+                channel_end, slice_mode, firmware, status, is_paired, first_seen, last_seen, via_seance, seance_ip)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'wifi', ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
                 (node_id, data.get('hostname', f'Node-{node_id[-4:]}'), data.get('hostname'),
-                 data.get('mac'), data.get('ip'), data.get('universe', 1), slice_start,
-                 slice_end, slice_mode, firmware_str, 'online', False, now, now))
+                 data.get('mac'), original_ip, data.get('universe', 1), slice_start,
+                 slice_end, slice_mode, firmware_str, 'online', False, now, now, via_seance, seance_ip))
+            if via_seance:
+                print(f"📡 New node {node_id} via Seance: {via_seance} @ {seance_ip}")
         conn.commit()
         conn.close()
         # Re-send config to paired WiFi nodes ONLY on reconnect (was offline, now online)
@@ -1967,8 +2009,10 @@ class NodeManager:
 
         # Send unpair command to WiFi node to clear its config
         if node and node.get('type') == 'wifi' and node.get('ip'):
-            self.send_command_to_wifi(node['ip'], {'cmd': 'unpair'})
-            print(f"📤 Unpair sent to {node.get('name', node_id)} ({node['ip']})")
+            # Route through Seance if node is connected via Seance bridge
+            target_ip = node.get('seance_ip') if node.get('via_seance') else node.get('ip')
+            self.send_command_to_wifi(target_ip, {'cmd': 'unpair'})
+            print(f"📤 Unpair sent to {node.get('name', node_id)} ({target_ip})")
 
         conn = get_db()
         c = conn.cursor()
@@ -1983,8 +2027,10 @@ class NodeManager:
 
         # Send unpair command to WiFi node to clear its config
         if node and node.get('type') == 'wifi' and node.get('ip'):
-            self.send_command_to_wifi(node['ip'], {'cmd': 'unpair'})
-            print(f"📤 Unpair sent to {node.get('name', node_id)} ({node['ip']})")
+            # Route through Seance if node is connected via Seance bridge
+            target_ip = node.get('seance_ip') if node.get('via_seance') else node.get('ip')
+            self.send_command_to_wifi(target_ip, {'cmd': 'unpair'})
+            print(f"📤 Unpair sent to {node.get('name', node_id)} ({target_ip})")
 
         conn = get_db()
         c = conn.cursor()
@@ -2126,7 +2172,9 @@ class NodeManager:
                 'startChannel': channel_start,
                 'channelCount': channel_end
             }
-            result = self.send_command_to_wifi(node['ip'], command)
+            # Route through Seance if node is connected via Seance bridge
+            target_ip = node.get('seance_ip') if node.get('via_seance') else node.get('ip')
+            result = self.send_command_to_wifi(target_ip, command)
         else:
             return False
 
@@ -2139,7 +2187,10 @@ class NodeManager:
         """Send a scene to a WiFi node for local storage"""
         if node.get('type') != 'wifi':
             return False
-        
+
+        # Route through Seance if node is connected via Seance bridge
+        target_ip = node.get('seance_ip') if node.get('via_seance') else node.get('ip')
+
         # Filter channels for this node's range
         node_channels = self.translate_channels_for_node(node, scene.get('channels', {}))
         
@@ -2166,9 +2217,9 @@ class NodeManager:
                 'channels': {},
                 'fade_ms': scene.get('fade_ms', 500)
             }
-            self.send_command_to_wifi(node['ip'], meta_cmd)
+            self.send_command_to_wifi(target_ip, meta_cmd)
             time.sleep(CHUNK_DELAY)
-            
+
             # Then send channels in chunks
             channel_items = list(node_channels.items())
             for i in range(0, len(channel_items), CHUNK_SIZE * 2):
@@ -2178,11 +2229,11 @@ class NodeManager:
                     'channels': chunk,
                     'fade_ms': 0
                 }
-                self.send_command_to_wifi(node['ip'], chunk_cmd)
+                self.send_command_to_wifi(target_ip, chunk_cmd)
                 time.sleep(CHUNK_DELAY)
             print(f"  📤 Scene '{scene['name']}' -> {node['name']} (chunked)")
         else:
-            self.send_command_to_wifi(node['ip'], command)
+            self.send_command_to_wifi(target_ip, command)
             print(f"  📤 Scene '{scene['name']}' -> {node['name']}")
         
         return True
@@ -2191,7 +2242,10 @@ class NodeManager:
         """Send a chase to a WiFi node for local storage"""
         if node.get('type') != 'wifi':
             return False
-        
+
+        # Route through Seance if node is connected via Seance bridge
+        target_ip = node.get('seance_ip') if node.get('via_seance') else node.get('ip')
+
         # Filter each step's channels for this node's range
         filtered_steps = []
         for step in chase.get('steps', []):
@@ -2226,9 +2280,9 @@ class NodeManager:
                 'loop': chase.get('loop', True),
                 'steps': []
             }
-            self.send_command_to_wifi(node['ip'], meta_cmd)
+            self.send_command_to_wifi(target_ip, meta_cmd)
             time.sleep(CHUNK_DELAY)
-            
+
             # Send steps in batches
             for i in range(0, len(filtered_steps), 5):
                 batch_steps = filtered_steps[i:i+5]
@@ -2237,11 +2291,11 @@ class NodeManager:
                     'id': chase['chase_id'],
                     'steps': batch_steps
                 }
-                self.send_command_to_wifi(node['ip'], batch_cmd)
+                self.send_command_to_wifi(target_ip, batch_cmd)
                 time.sleep(CHUNK_DELAY)
             print(f"  📤 Chase '{chase['name']}' -> {node['name']} (chunked, {len(filtered_steps)} steps)")
         else:
-            self.send_command_to_wifi(node['ip'], command)
+            self.send_command_to_wifi(target_ip, command)
             print(f"  📤 Chase '{chase['name']}' -> {node['name']} ({len(filtered_steps)} steps)")
         
         return True
@@ -2295,28 +2349,32 @@ class NodeManager:
         """Tell all nodes in universe to play a stored scene"""
         nodes = self.get_nodes_in_universe(universe)
         results = []
-        
+
         for node in nodes:
             if node.get('type') == 'wifi':
+                # Route through Seance if node is connected via Seance bridge
+                target_ip = node.get('seance_ip') if node.get('via_seance') else node.get('ip')
                 command = {'cmd': 'play_scene', 'id': scene_id}
                 if fade_ms is not None:
                     command['fade_ms'] = fade_ms
-                success = self.send_command_to_wifi(node['ip'], command)
+                success = self.send_command_to_wifi(target_ip, command)
                 results.append({'node': node['name'], 'success': success})
-        
+
         return results
 
     def play_chase_on_nodes(self, universe, chase_id):
         """Tell all nodes in universe to play a stored chase"""
         nodes = self.get_nodes_in_universe(universe)
         results = []
-        
+
         for node in nodes:
             if node.get('type') == 'wifi':
+                # Route through Seance if node is connected via Seance bridge
+                target_ip = node.get('seance_ip') if node.get('via_seance') else node.get('ip')
                 command = {'cmd': 'play_chase', 'id': chase_id}
-                success = self.send_command_to_wifi(node['ip'], command)
+                success = self.send_command_to_wifi(target_ip, command)
                 results.append({'node': node['name'], 'success': success})
-        
+
         return results
 
     def stop_playback_on_nodes(self, universe=None):
@@ -2325,13 +2383,15 @@ class NodeManager:
             nodes = self.get_nodes_in_universe(universe)
         else:
             nodes = self.get_all_nodes(include_offline=False)
-        
+
         results = []
         for node in nodes:
             if node.get('type') == 'wifi':
-                success = self.send_command_to_wifi(node['ip'], {'cmd': 'stop'})
+                # Route through Seance if node is connected via Seance bridge
+                target_ip = node.get('seance_ip') if node.get('via_seance') else node.get('ip')
+                success = self.send_command_to_wifi(target_ip, {'cmd': 'stop'})
                 results.append({'node': node['name'], 'success': success})
-        
+
         return results
 
 node_manager = NodeManager()
@@ -2580,7 +2640,8 @@ class ContentManager:
         # Send full frame to each node via UDPJSON
         results = []
         for node in nodes:
-            node_ip = node.get('ip')
+            # Route through Seance if node is connected via Seance bridge
+            node_ip = node.get('seance_ip') if node.get('via_seance') else node.get('ip')
             if not node_ip or node_ip == 'localhost':
                 continue
 
