@@ -60,6 +60,16 @@ from cue_stacks import (
     validate_cue_stack_data, validate_cue_data,
 )
 
+# Supabase cloud sync (optional)
+try:
+    from services.supabase_service import get_supabase_service, sync_to_cloud
+    SUPABASE_AVAILABLE = True
+except ImportError:
+    SUPABASE_AVAILABLE = False
+    get_supabase_service = lambda: None
+    sync_to_cloud = lambda x: lambda f: f  # No-op decorator
+    print("⚠️ Supabase service not available - cloud sync disabled")
+
 # Optional serial support for UART gateway
 try:
     import serial
@@ -1975,6 +1985,16 @@ class NodeManager:
                 'slice_mode': node.get('slice_mode', 'zero_outside')
             })
         self.broadcast_status()
+
+        # Async sync node to Supabase (non-blocking)
+        if SUPABASE_AVAILABLE and node:
+            supabase = get_supabase_service()
+            if supabase and supabase.is_enabled():
+                threading.Thread(
+                    target=lambda: supabase.sync_node(node),
+                    daemon=True
+                ).start()
+
         return node
 
     def pair_node(self, node_id, config):
@@ -2001,6 +2021,16 @@ class NodeManager:
             print(f"✅ Node paired: {node.get('name')} on U{config.get('universe', 1)} ch{channel_start}-{channel_end} ({slice_mode})")
 
         self.broadcast_status()
+
+        # Async sync node to Supabase (non-blocking)
+        if SUPABASE_AVAILABLE and node:
+            supabase = get_supabase_service()
+            if supabase and supabase.is_enabled():
+                threading.Thread(
+                    target=lambda: supabase.sync_node(node),
+                    daemon=True
+                ).start()
+
         return node
 
     def unpair_node(self, node_id):
@@ -2769,6 +2799,16 @@ class ContentManager:
             conn.close()
         
         socketio.emit('scenes_update', {'scenes': self.get_scenes()})
+
+        # Async sync to Supabase (non-blocking)
+        if SUPABASE_AVAILABLE and scene:
+            supabase = get_supabase_service()
+            if supabase and supabase.is_enabled():
+                threading.Thread(
+                    target=lambda: supabase.sync_scene(scene),
+                    daemon=True
+                ).start()
+
         return {'success': True, 'scene_id': scene_id}
 
     def get_scenes(self):
@@ -3009,6 +3049,16 @@ class ContentManager:
             conn.close()
         
         socketio.emit('chases_update', {'chases': self.get_chases()})
+
+        # Async sync to Supabase (non-blocking)
+        if SUPABASE_AVAILABLE and chase:
+            supabase = get_supabase_service()
+            if supabase and supabase.is_enabled():
+                threading.Thread(
+                    target=lambda: supabase.sync_chase(chase),
+                    daemon=True
+                ).start()
+
         return {'success': True, 'chase_id': chase_id}
 
     def get_chases(self):
@@ -4409,6 +4459,16 @@ def create_look():
     )
 
     result = looks_sequences_manager.create_look(look)
+
+    # Async sync to Supabase (non-blocking)
+    if SUPABASE_AVAILABLE:
+        supabase = get_supabase_service()
+        if supabase and supabase.is_enabled():
+            threading.Thread(
+                target=lambda: supabase.sync_look(result.to_dict()),
+                daemon=True
+            ).start()
+
     return jsonify({'success': True, 'look': result.to_dict()})
 
 @app.route('/api/looks/<look_id>', methods=['GET'])
@@ -4433,6 +4493,16 @@ def update_look(look_id):
     result = looks_sequences_manager.update_look(look_id, data)
     if not result:
         return jsonify({'error': 'Look not found'}), 404
+
+    # Async sync to Supabase (non-blocking)
+    if SUPABASE_AVAILABLE:
+        supabase = get_supabase_service()
+        if supabase and supabase.is_enabled():
+            threading.Thread(
+                target=lambda: supabase.sync_look(result.to_dict()),
+                daemon=True
+            ).start()
+
     return jsonify({'success': True, 'look': result.to_dict()})
 
 @app.route('/api/looks/<look_id>', methods=['DELETE'])
@@ -4441,6 +4511,8 @@ def delete_look(look_id):
     success = looks_sequences_manager.delete_look(look_id)
     if not success:
         return jsonify({'error': 'Look not found'}), 404
+
+    # Note: Supabase delete is not implemented yet (would need to mark as deleted)
     return jsonify({'success': True, 'look_id': look_id})
 
 @app.route('/api/looks/<look_id>/versions', methods=['GET'])
@@ -4646,6 +4718,16 @@ def create_sequence():
     )
 
     result = looks_sequences_manager.create_sequence(sequence)
+
+    # Async sync to Supabase (non-blocking)
+    if SUPABASE_AVAILABLE:
+        supabase = get_supabase_service()
+        if supabase and supabase.is_enabled():
+            threading.Thread(
+                target=lambda: supabase.sync_sequence(result.to_dict()),
+                daemon=True
+            ).start()
+
     return jsonify({'success': True, 'sequence': result.to_dict()})
 
 @app.route('/api/sequences/<sequence_id>', methods=['GET'])
@@ -4670,6 +4752,16 @@ def update_sequence(sequence_id):
     result = looks_sequences_manager.update_sequence(sequence_id, data)
     if not result:
         return jsonify({'error': 'Sequence not found'}), 404
+
+    # Async sync to Supabase (non-blocking)
+    if SUPABASE_AVAILABLE:
+        supabase = get_supabase_service()
+        if supabase and supabase.is_enabled():
+            threading.Thread(
+                target=lambda: supabase.sync_sequence(result.to_dict()),
+                daemon=True
+            ).start()
+
     return jsonify({'success': True, 'sequence': result.to_dict()})
 
 @app.route('/api/sequences/<sequence_id>', methods=['DELETE'])
@@ -4678,6 +4770,8 @@ def delete_sequence(sequence_id):
     success = looks_sequences_manager.delete_sequence(sequence_id)
     if not success:
         return jsonify({'error': 'Sequence not found'}), 404
+
+    # Note: Supabase delete is not implemented yet
     return jsonify({'success': True, 'sequence_id': sequence_id})
 
 @app.route('/api/sequences/<sequence_id>/versions', methods=['GET'])
@@ -6228,6 +6322,91 @@ def stop_playback_manager():
     return jsonify(content_manager.stop_playback(data.get('universe')))
 
 # ─────────────────────────────────────────────────────────
+# Supabase Cloud Sync Routes
+# ─────────────────────────────────────────────────────────
+@app.route('/api/cloud/status', methods=['GET'])
+def get_cloud_status():
+    """Get Supabase cloud sync status"""
+    if not SUPABASE_AVAILABLE:
+        return jsonify({
+            'enabled': False,
+            'connected': False,
+            'error': 'Supabase service not available'
+        })
+
+    supabase = get_supabase_service()
+    if not supabase:
+        return jsonify({
+            'enabled': False,
+            'connected': False,
+            'error': 'Supabase service not initialized'
+        })
+
+    return jsonify(supabase.get_status())
+
+@app.route('/api/cloud/sync', methods=['POST'])
+def trigger_cloud_sync():
+    """Manually trigger a cloud sync"""
+    if not SUPABASE_AVAILABLE:
+        return jsonify({'success': False, 'error': 'Supabase not available'}), 503
+
+    supabase = get_supabase_service()
+    if not supabase or not supabase.is_enabled():
+        return jsonify({'success': False, 'error': 'Supabase not enabled'}), 503
+
+    # Gather local data
+    conn = get_db()
+    c = conn.cursor()
+
+    c.execute('SELECT * FROM nodes')
+    nodes = [dict(row) for row in c.fetchall()]
+
+    c.execute('SELECT * FROM scenes')
+    scenes = [dict(row) for row in c.fetchall()]
+
+    c.execute('SELECT * FROM chases')
+    chases = [dict(row) for row in c.fetchall()]
+
+    c.execute('SELECT * FROM fixtures')
+    fixtures = [dict(row) for row in c.fetchall()]
+
+    conn.close()
+
+    # Get looks and sequences
+    looks_list = []
+    sequences_list = []
+    try:
+        looks_list = [l.to_dict() for l in looks_sequences_manager.list_looks()]
+        sequences_list = [s.to_dict() for s in looks_sequences_manager.list_sequences()]
+    except Exception as e:
+        print(f"⚠️ Failed to get looks/sequences for sync: {e}")
+
+    # Perform sync
+    result = supabase.initial_sync(
+        nodes=nodes,
+        looks=looks_list,
+        sequences=sequences_list,
+        scenes=scenes,
+        chases=chases,
+        fixtures=fixtures
+    )
+
+    return jsonify({'success': True, 'result': result})
+
+@app.route('/api/cloud/retry-pending', methods=['POST'])
+def retry_pending_sync():
+    """Retry pending sync operations"""
+    if not SUPABASE_AVAILABLE:
+        return jsonify({'success': False, 'error': 'Supabase not available'}), 503
+
+    supabase = get_supabase_service()
+    if not supabase or not supabase.is_enabled():
+        return jsonify({'success': False, 'error': 'Supabase not enabled'}), 503
+
+    result = supabase.retry_pending()
+    return jsonify({'success': True, 'result': result})
+
+# ─────────────────────────────────────────────────────────
 # Settings Routes
 # ─────────────────────────────────────────────────────────
 @app.route('/api/settings/all', methods=['GET'])
@@ -6363,6 +6542,64 @@ if __name__ == '__main__':
 
     init_database()
     ai_ssot.init_ai_db()
+
+    # Supabase cloud sync (async, non-blocking)
+    if SUPABASE_AVAILABLE:
+        supabase = get_supabase_service()
+        if supabase and supabase.is_enabled():
+            def startup_cloud_sync():
+                """Background sync to Supabase on startup"""
+                try:
+                    # Gather local data for sync
+                    conn = get_db()
+                    c = conn.cursor()
+
+                    # Get nodes
+                    c.execute('SELECT * FROM nodes')
+                    nodes = [dict(row) for row in c.fetchall()]
+
+                    # Get scenes
+                    c.execute('SELECT * FROM scenes')
+                    scenes = [dict(row) for row in c.fetchall()]
+
+                    # Get chases
+                    c.execute('SELECT * FROM chases')
+                    chases = [dict(row) for row in c.fetchall()]
+
+                    # Get fixtures
+                    c.execute('SELECT * FROM fixtures')
+                    fixtures = [dict(row) for row in c.fetchall()]
+
+                    conn.close()
+
+                    # Get looks and sequences from LooksSequencesManager
+                    looks_list = []
+                    sequences_list = []
+                    try:
+                        looks_list = [l.to_dict() for l in looks_sequences_manager.list_looks()]
+                        sequences_list = [s.to_dict() for s in looks_sequences_manager.list_sequences()]
+                    except Exception as e:
+                        print(f"⚠️ Failed to get looks/sequences for sync: {e}")
+
+                    # Perform initial sync (one-way push to Supabase)
+                    result = supabase.initial_sync(
+                        nodes=nodes,
+                        looks=looks_list,
+                        sequences=sequences_list,
+                        scenes=scenes,
+                        chases=chases,
+                        fixtures=fixtures
+                    )
+                    print(f"☁️ Startup sync result: {result}")
+                except Exception as e:
+                    print(f"⚠️ Startup cloud sync failed (non-fatal): {e}")
+
+            # Run sync in background thread (doesn't block startup)
+            threading.Thread(target=startup_cloud_sync, daemon=True).start()
+            print(f"☁️ Supabase cloud sync enabled - syncing in background...")
+        else:
+            print("☁️ Supabase not configured - running in local-only mode")
+
     threading.Thread(target=discovery_listener, daemon=True).start()
     threading.Thread(target=stale_checker, daemon=True).start()
     schedule_runner.start()
