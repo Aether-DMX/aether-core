@@ -2173,7 +2173,13 @@ class NodeManager:
                 'channelCount': channel_end
             }
             # Route through Seance if node is connected via Seance bridge
-            target_ip = node.get('seance_ip') if node.get('via_seance') else node.get('ip')
+            if node.get('via_seance') and node.get('seance_ip'):
+                target_ip = node.get('seance_ip')
+                # Add routing info for Seance to forward to correct node
+                command['node_id'] = node.get('node_id')
+                command['_route_to'] = node.get('ip')  # Node's IP on Seance's AP network
+            else:
+                target_ip = node.get('ip')
             result = self.send_command_to_wifi(target_ip, command)
         else:
             return False
