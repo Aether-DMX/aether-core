@@ -2654,19 +2654,24 @@ class ContentManager:
             if not node_ip or node_ip == 'localhost':
                 continue
 
-            # Get node's channel slice (default: full 512)
+            # Get node's channel slice - use fixture-aware calculation if available
+            # Priority: 1) Explicit channel_start/end, 2) Calculate from fixtures, 3) Default 1-4 for RGBW
             slice_start = node.get('channel_start') or 1
-            slice_end = node.get('channel_end') or 512
+            slice_end = node.get('channel_end')
+
+            # If no explicit slice_end, default to 4 channels (single RGBW fixture)
+            # This is a safe default since most Pulse nodes have 1 fixture
+            if slice_end is None:
+                slice_end = 4  # Default: single RGBW fixture
 
             # Build channels dict for this node's slice from the full frame
-            # Channels are 1-indexed, full_frame is 0-indexed
             node_channels = {}
             for ch in range(slice_start, slice_end + 1):
                 value = full_frame[ch - 1] if ch <= 512 else 0
                 node_channels[str(ch)] = value
 
             node_non_zero = sum(1 for v in node_channels.values() if v > 0)
-            print(f"  📡 {node['name']} ({node_ip}): ch {slice_start}-{slice_end} ({node_non_zero} non-zero)", flush=True)
+            print(f"  📡 {node['name']} ({node_ip}): ch {slice_start}-{slice_end} ({node_non_zero} non-zero, {len(node_channels)} sent)", flush=True)
 
             if fade_ms > 0:
                 success = node_manager.send_udpjson_fade(node_ip, universe, node_channels, fade_ms)
