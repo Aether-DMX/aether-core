@@ -3060,14 +3060,16 @@ class ContentManager:
             universes_with_nodes = list(set(node.get('universe', 1) for node in all_nodes if node.get('is_paired')))
         print(f"🎬 Playing chase '{chase['name']}' on universes: {sorted(universes_with_nodes)}, fade={effective_fade_ms}ms", flush=True)
 
-        # SSOT: Acquire lock and stop everything cleanly
+        # SSOT: Acquire lock and stop only conflicting playback on target universes
+        # (Allow multiple chases to run simultaneously on different universes)
         with self.ssot_lock:
-            print(f"🔒 SSOT Lock - stopping all before chase", flush=True)
+            print(f"🔒 SSOT Lock - stopping playback on target universes: {universes_with_nodes}", flush=True)
             try:
                 show_engine.stop()
             except Exception as e:
                 print(f"⚠️ Show stop: {e}", flush=True)
-            chase_engine.stop_all()  # Now waits for chase threads to finish
+            # Only stop this specific chase if it's already running (not ALL chases)
+            chase_engine.stop_chase(chase_id)
             effects_engine.stop_effect()  # Also stop effects
             for univ in universes_with_nodes:
                 playback_manager.stop(univ)
