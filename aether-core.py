@@ -2178,12 +2178,12 @@ class NodeManager:
                 # Add routing info for Seance to forward to correct node
                 command['node_id'] = node.get('node_id')
                 command['_route_to'] = node.get('ip')  # Node's IP on Seance's AP network
-                print(f"📡 Config via Seance: {node.get('node_id')} -> {target_ip}:8888 (route to {node.get('ip')})")
+                print(f"📡 Config via Seance: {node.get('node_id')} -> {target_ip}:8888 (route to {node.get('ip')})", flush=True)
             else:
                 target_ip = node.get('ip')
-                print(f"📡 Config direct: {node.get('node_id')} -> {target_ip}:8888")
+                print(f"📡 Config direct: {node.get('node_id')} -> {target_ip}:8888", flush=True)
             result = self.send_command_to_wifi(target_ip, command)
-            print(f"📡 Config result: {result}")
+            print(f"📡 Config result: {result}", flush=True)
         else:
             return False
 
