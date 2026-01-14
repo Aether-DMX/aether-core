@@ -2178,9 +2178,12 @@ class NodeManager:
                 # Add routing info for Seance to forward to correct node
                 command['node_id'] = node.get('node_id')
                 command['_route_to'] = node.get('ip')  # Node's IP on Seance's AP network
+                print(f"📡 Config via Seance: {node.get('node_id')} -> {target_ip}:8888 (route to {node.get('ip')})")
             else:
                 target_ip = node.get('ip')
+                print(f"📡 Config direct: {node.get('node_id')} -> {target_ip}:8888")
             result = self.send_command_to_wifi(target_ip, command)
+            print(f"📡 Config result: {result}")
         else:
             return False
 
@@ -3883,7 +3886,6 @@ def configure_node(node_id):
 
     # Send config to node via UDP command port
     if node and node.get('type') == 'wifi':
-        node_manager.configure_ola_universe(node.get('universe', 1))
         node_manager.send_config_to_node(node, {
             'name': node.get('name'),
             'universe': node.get('universe'),
