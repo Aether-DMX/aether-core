@@ -6616,6 +6616,180 @@ def apply_color_to_fixtures():
         'fixture_count': len(fixtures)
     })
 
+@app.route('/api/fixture-library/apply-scene-to-all', methods=['POST'])
+def apply_scene_to_all_fixtures():
+    """
+    Apply a scene's color pattern to ALL configured fixtures intelligently.
+
+    This extracts the color intent from the scene (RGB values from first few channels)
+    and applies it to all fixtures using their proper channel mappings.
+    """
+    data = request.get_json() or {}
+    scene_id = data.get('scene_id')
+    fade_ms = data.get('fade_ms', 1000)
+    universes = data.get('universes', [])
+
+    if not scene_id:
+        return jsonify({'error': 'scene_id required'}), 400
+
+    # Get scene
+    scene = content_manager.get_scene(scene_id)
+    if not scene:
+        return jsonify({'error': 'Scene not found'}), 404
+
+    # Extract color intent from scene channels
+    scene_channels = scene.get('channels', {})
+    if not scene_channels:
+        return jsonify({'error': 'Scene has no channels'}), 400
+
+    # Try to detect RGB(W) values from scene
+    # Assume typical fixture layout: R, G, B, W, D or similar
+    ch_values = sorted([(int(k), v) for k, v in scene_channels.items()], key=lambda x: x[0])
+
+    # Extract first fixture's values as the "intent"
+    color = {'r': 0, 'g': 0, 'b': 0, 'w': 0, 'dimmer': 255}
+    if len(ch_values) >= 1:
+        color['r'] = ch_values[0][1]
+    if len(ch_values) >= 2:
+        color['g'] = ch_values[1][1]
+    if len(ch_values) >= 3:
+        color['b'] = ch_values[2][1]
+    if len(ch_values) >= 4:
+        color['w'] = ch_values[3][1]
+    if len(ch_values) >= 5:
+        color['dimmer'] = ch_values[4][1]
+
+    # Get ALL configured fixtures
+    all_fixtures = content_manager.get_fixtures()
+
+    # Filter by universe if specified
+    if universes:
+        all_fixtures = [f for f in all_fixtures if f.get('universe') in universes]
+
+    if not all_fixtures:
+        return jsonify({'error': 'No fixtures configured'}), 404
+
+    # Group fixtures by universe
+    fixtures_by_universe = {}
+    for fixture_data in all_fixtures:
+        u = fixture_data.get('universe', 1)
+        if u not in fixtures_by_universe:
+            fixtures_by_universe[u] = []
+
+        # Convert to FixtureInstance
+        profile = fixture_library.get_profile(fixture_data.get('profile_id'))
+        if not profile:
+            profile = fixture_library._create_generic_profile_for_footprint(
+                fixture_data.get('channel_count', 4)
+            )
+
+        fixtures_by_universe[u].append(FixtureInstance(
+            fixture_id=fixture_data['fixture_id'],
+            name=fixture_data['name'],
+            profile_id=profile.profile_id,
+            mode_id=profile.modes[0].mode_id if profile.modes else 'default',
+            universe=u,
+            start_channel=fixture_data.get('start_channel', 1)
+        ))
+
+    # Apply to each universe
+    total_fixtures = 0
+    all_channels = {}
+
+    for universe, fixtures in fixtures_by_universe.items():
+        channels = channel_mapper.apply_color_to_fixtures(
+            fixtures,
+            r=color['r'],
+            g=color['g'],
+            b=color['b'],
+            w=color['w'],
+            dimmer=color['dimmer']
+        )
+
+        content_manager.set_channels(universe, channels, fade_ms=fade_ms)
+        total_fixtures += len(fixtures)
+        all_channels[universe] = channels
+
+    return jsonify({
+        'success': True,
+        'scene_name': scene.get('name'),
+        'color_extracted': color,
+        'fixture_count': total_fixtures,
+        'universes': list(fixtures_by_universe.keys()),
+        'channels_by_universe': all_channels
+    })
+
+@app.route('/api/fixture-library/apply-color-to-all', methods=['POST'])
+def apply_color_to_all_fixtures():
+    """
+    Apply a color to ALL configured fixtures.
+
+    This is the simplest way to set all lights to a color.
+    """
+    data = request.get_json() or {}
+    color = data.get('color', {})  # {r, g, b, w, dimmer}
+    fade_ms = data.get('fade_ms', 0)
+    universes = data.get('universes', [])
+
+    if not color:
+        return jsonify({'error': 'color required'}), 400
+
+    # Get ALL configured fixtures
+    all_fixtures = content_manager.get_fixtures()
+
+    # Filter by universe if specified
+    if universes:
+        all_fixtures = [f for f in all_fixtures if f.get('universe') in universes]
+
+    if not all_fixtures:
+        return jsonify({'error': 'No fixtures configured'}), 404
+
+    # Group fixtures by universe
+    fixtures_by_universe = {}
+    for fixture_data in all_fixtures:
+        u = fixture_data.get('universe', 1)
+        if u not in fixtures_by_universe:
+            fixtures_by_universe[u] = []
+
+        # Convert to FixtureInstance
+        profile = fixture_library.get_profile(fixture_data.get('profile_id'))
+        if not profile:
+            profile = fixture_library._create_generic_profile_for_footprint(
+                fixture_data.get('channel_count', 4)
+            )
+
+        fixtures_by_universe[u].append(FixtureInstance(
+            fixture_id=fixture_data['fixture_id'],
+            name=fixture_data['name'],
+            profile_id=profile.profile_id,
+            mode_id=profile.modes[0].mode_id if profile.modes else 'default',
+            universe=u,
+            start_channel=fixture_data.get('start_channel', 1)
+        ))
+
+    # Apply to each universe
+    total_fixtures = 0
+
+    for universe, fixtures in fixtures_by_universe.items():
+        channels = channel_mapper.apply_color_to_fixtures(
+            fixtures,
+            r=color.get('r', 0),
+            g=color.get('g', 0),
+            b=color.get('b', 0),
+            w=color.get('w', 0),
+            dimmer=color.get('dimmer', 255)
+        )
+
+        content_manager.set_channels(universe, channels, fade_ms=fade_ms)
+        total_fixtures += len(fixtures)
+
+    return jsonify({
+        'success': True,
+        'color': color,
+        'fixture_count': total_fixtures,
+        'universes': list(fixtures_by_universe.keys())
+    })
+
 # ─────────────────────────────────────────────────────────
 # Groups Routes
 # ─────────────────────────────────────────────────────────
