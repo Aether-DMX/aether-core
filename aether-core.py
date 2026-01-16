@@ -52,6 +52,11 @@ from merge_layer import (
     merge_layer, channel_classifier, MergeLayer,
     ChannelClassifier, ChannelType, get_priority,
 )
+from fixture_library import (
+    init_fixture_library, get_fixture_library, get_channel_mapper,
+    FixtureLibrary, ChannelMapper, FixtureProfile, FixtureInstance,
+    FixtureMode, ChannelCapability, BUILTIN_PROFILES,
+)
 from preview_service import (
     preview_service, PreviewService, PreviewSession,
     PreviewMode, PreviewFrame,
@@ -3303,6 +3308,12 @@ looks_sequences_manager = LooksSequencesManager(DATABASE)
 cue_stacks_manager = CueStacksManager(DATABASE)
 
 # ============================================================
+# Fixture Library (profiles, instances, OFL integration)
+# ============================================================
+fixture_library = init_fixture_library(DATABASE)
+channel_mapper = get_channel_mapper()
+
+# ============================================================
 # SSOT Output Router - Unified output path for all DMX writes
 # ============================================================
 def ssot_send_frame(universe, channels_array, owner_type='effect'):
@@ -6389,6 +6400,221 @@ def get_fixtures_for_channels():
     universe = data.get('universe', 1)
     channels = data.get('channels', [])
     return jsonify(content_manager.get_fixtures_for_channels(universe, channels))
+
+# ─────────────────────────────────────────────────────────
+# Fixture Library Routes (profiles, OFL integration)
+# ─────────────────────────────────────────────────────────
+@app.route('/api/fixture-library/profiles', methods=['GET'])
+def get_fixture_profiles():
+    """Get all available fixture profiles"""
+    category = request.args.get('category')
+    profiles = fixture_library.get_all_profiles(category)
+    return jsonify([{
+        'profile_id': p.profile_id,
+        'manufacturer': p.manufacturer,
+        'model': p.model,
+        'category': p.category,
+        'modes': [{'mode_id': m.mode_id, 'name': m.name, 'channel_count': m.channel_count} for m in p.modes],
+        'source': p.source
+    } for p in profiles])
+
+@app.route('/api/fixture-library/profiles/<profile_id>', methods=['GET'])
+def get_fixture_profile(profile_id):
+    """Get a specific fixture profile with full details"""
+    profile = fixture_library.get_profile(profile_id)
+    if not profile:
+        return jsonify({'error': 'Profile not found'}), 404
+    return jsonify({
+        'profile_id': profile.profile_id,
+        'manufacturer': profile.manufacturer,
+        'model': profile.model,
+        'category': profile.category,
+        'modes': [{
+            'mode_id': m.mode_id,
+            'name': m.name,
+            'channel_count': m.channel_count,
+            'channels': [{'name': ch.name, 'type': ch.type, 'default': ch.default} for ch in m.channels]
+        } for m in profile.modes],
+        'source': profile.source,
+        'ofl_key': profile.ofl_key,
+        'rdm_manufacturer_id': profile.rdm_manufacturer_id,
+        'rdm_device_model_id': profile.rdm_device_model_id
+    })
+
+@app.route('/api/fixture-library/profiles', methods=['POST'])
+def create_fixture_profile():
+    """Create a new fixture profile"""
+    data = request.get_json() or {}
+    try:
+        modes = []
+        for m in data.get('modes', []):
+            channels = [ChannelCapability(
+                name=ch.get('name', f'Channel {i+1}'),
+                type=ch.get('type', 'control'),
+                default=ch.get('default', 0)
+            ) for i, ch in enumerate(m.get('channels', []))]
+            modes.append(FixtureMode(
+                mode_id=m.get('mode_id', 'default'),
+                name=m.get('name', 'Default'),
+                channel_count=len(channels),
+                channels=channels
+            ))
+
+        profile = FixtureProfile(
+            profile_id=data.get('profile_id', f"custom-{int(time.time())}"),
+            manufacturer=data.get('manufacturer', 'Custom'),
+            model=data.get('model', 'Fixture'),
+            category=data.get('category', 'generic'),
+            modes=modes,
+            source='manual'
+        )
+        fixture_library.save_profile(profile)
+        return jsonify({'success': True, 'profile_id': profile.profile_id})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+@app.route('/api/fixture-library/ofl/search', methods=['GET'])
+def search_ofl():
+    """Search Open Fixture Library for fixtures"""
+    query = request.args.get('q', '')
+    if len(query) < 2:
+        return jsonify({'error': 'Query must be at least 2 characters'}), 400
+    results = fixture_library.search_ofl(query)
+    return jsonify(results)
+
+@app.route('/api/fixture-library/ofl/manufacturers', methods=['GET'])
+def get_ofl_manufacturers():
+    """Get list of manufacturers from Open Fixture Library"""
+    manufacturers = fixture_library.get_ofl_manufacturers()
+    return jsonify(manufacturers)
+
+@app.route('/api/fixture-library/ofl/import', methods=['POST'])
+def import_ofl_fixture():
+    """Import a fixture from Open Fixture Library"""
+    data = request.get_json() or {}
+    manufacturer = data.get('manufacturer')
+    fixture = data.get('fixture')
+    if not manufacturer or not fixture:
+        return jsonify({'error': 'manufacturer and fixture required'}), 400
+
+    profile = fixture_library.import_from_ofl(manufacturer, fixture)
+    if profile:
+        return jsonify({
+            'success': True,
+            'profile_id': profile.profile_id,
+            'manufacturer': profile.manufacturer,
+            'model': profile.model,
+            'modes': [{'mode_id': m.mode_id, 'name': m.name, 'channel_count': m.channel_count} for m in profile.modes]
+        })
+    return jsonify({'error': 'Failed to import fixture'}), 500
+
+@app.route('/api/fixture-library/rdm/auto-configure', methods=['POST'])
+def auto_configure_from_rdm():
+    """Auto-configure fixtures from RDM devices"""
+    data = request.get_json() or {}
+    rdm_uid = data.get('rdm_uid')
+
+    # Get RDM device info
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('SELECT * FROM rdm_devices WHERE uid = ?', (rdm_uid,))
+    row = c.fetchone()
+    conn.close()
+
+    if not row:
+        return jsonify({'error': 'RDM device not found'}), 404
+
+    rdm_device = dict(row)
+
+    # Try to find matching profile
+    profile = fixture_library.find_profile_by_rdm(
+        rdm_device.get('manufacturer_id', 0),
+        rdm_device.get('device_model_id', 0)
+    )
+
+    # Create fixture instance
+    instance = fixture_library.create_fixture_from_rdm(rdm_device, profile)
+
+    # Save to fixtures table (existing system)
+    mode = None
+    if profile:
+        mode = profile.get_mode(instance.mode_id)
+
+    fixture_data = {
+        'fixture_id': instance.fixture_id,
+        'name': instance.name,
+        'type': profile.category if profile else 'generic',
+        'manufacturer': profile.manufacturer if profile else fixture_library.get_rdm_manufacturer_name(rdm_device.get('manufacturer_id', 0)),
+        'model': profile.model if profile else 'Unknown',
+        'universe': instance.universe,
+        'start_channel': instance.start_channel,
+        'channel_count': mode.channel_count if mode else rdm_device.get('dmx_footprint', 4),
+        'channel_map': [ch.name for ch in mode.channels] if mode else [],
+        'rdm_uid': rdm_uid
+    }
+    content_manager.create_fixture(fixture_data)
+
+    return jsonify({
+        'success': True,
+        'fixture': fixture_data,
+        'profile_matched': profile is not None,
+        'profile_id': profile.profile_id if profile else None
+    })
+
+@app.route('/api/fixture-library/apply-color', methods=['POST'])
+def apply_color_to_fixtures():
+    """Apply a color to specified fixtures intelligently"""
+    data = request.get_json() or {}
+    fixture_ids = data.get('fixture_ids', [])
+    color = data.get('color', {})  # {r, g, b, w, dimmer}
+    fade_ms = data.get('fade_ms', 0)
+    universe = data.get('universe', 1)
+
+    if not fixture_ids:
+        return jsonify({'error': 'No fixtures specified'}), 400
+
+    # Get fixtures
+    fixtures = []
+    for fid in fixture_ids:
+        fixture_data = content_manager.get_fixture(fid)
+        if fixture_data:
+            # Convert to FixtureInstance
+            profile = fixture_library.get_profile(fixture_data.get('profile_id', 'generic-rgbw'))
+            if not profile:
+                # Use legacy data to create ad-hoc profile
+                profile = fixture_library._create_generic_profile_for_footprint(
+                    fixture_data.get('channel_count', 4)
+                )
+            fixtures.append(FixtureInstance(
+                fixture_id=fixture_data['fixture_id'],
+                name=fixture_data['name'],
+                profile_id=profile.profile_id,
+                mode_id=profile.modes[0].mode_id if profile.modes else 'default',
+                universe=fixture_data.get('universe', 1),
+                start_channel=fixture_data.get('start_channel', 1)
+            ))
+
+    if not fixtures:
+        return jsonify({'error': 'No valid fixtures found'}), 404
+
+    # Apply color using channel mapper
+    channels = channel_mapper.apply_color_to_fixtures(
+        fixtures,
+        r=color.get('r', 0),
+        g=color.get('g', 0),
+        b=color.get('b', 0),
+        w=color.get('w', 0),
+        dimmer=color.get('dimmer', 255)
+    )
+
+    # Send DMX
+    content_manager.set_channels(universe, channels, fade_ms=fade_ms)
+
+    return jsonify({
+        'success': True,
+        'channels': channels,
+        'fixture_count': len(fixtures)
+    })
 
 # ─────────────────────────────────────────────────────────
 # Groups Routes
