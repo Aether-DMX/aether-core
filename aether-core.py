@@ -5376,11 +5376,14 @@ def unified_api_blackout():
     universes = data.get('universes', [2, 3, 4, 5])
     fade_ms = data.get('fade_ms', 1000)
 
-    # Get current state for fade
+    # Get current state for fade (convert list to channel dict)
     fade_from = {}
     if fade_ms > 0:
         for u in universes:
-            fade_from.update(dmx_state.get_universe(u))
+            universe_data = dmx_state.get_universe(u)
+            # Convert list [val0, val1, ...] to dict {1: val0, 2: val1, ...}
+            for ch_idx, val in enumerate(universe_data):
+                fade_from[ch_idx + 1] = val
 
     session = session_factory.blackout(universes, fade_ms)
     session_id = unified_engine.play(session, fade_from)
