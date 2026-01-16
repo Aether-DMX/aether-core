@@ -64,6 +64,14 @@ from pixel_mapper import (
     PixelArrayController, Pixel, OperationMode, EffectType,
     create_pixel_controller, UNIVERSE as PIXEL_UNIVERSE,
 )
+from unified_playback import (
+    unified_engine, session_factory, PlaybackSession, PlaybackType,
+    PlaybackState as UnifiedPlaybackState, Priority, LoopMode as UnifiedLoopMode,
+    Modifier as UnifiedModifier, Step, play_look as unified_play_look,
+    play_sequence as unified_play_sequence, play_chase as unified_play_chase,
+    play_scene as unified_play_scene, play_effect as unified_play_effect,
+    blackout as unified_blackout, stop as unified_stop, get_status as unified_get_status,
+)
 
 # Supabase cloud sync (optional)
 try:
@@ -5230,6 +5238,223 @@ def stop_sequence(sequence_id):
     return jsonify({'success': True, 'message': 'Sequence was not playing'})
 
 
+# ─────────────────────────────────────────────────────────
+# Unified Playback API (New - replaces fragmented playback)
+# ─────────────────────────────────────────────────────────
+
+@app.route('/api/unified/status', methods=['GET'])
+def get_unified_status():
+    """Get unified playback engine status"""
+    return jsonify(unified_engine.get_status())
+
+
+@app.route('/api/unified/play/look/<look_id>', methods=['POST'])
+def unified_api_play_look(look_id):
+    """Play a Look via unified engine"""
+    data = request.get_json() or {}
+    universes = data.get('universes', [2, 3, 4, 5])
+    fade_ms = data.get('fade_ms', 0)
+
+    look = looks_sequences_manager.get_look(look_id)
+    if not look:
+        return jsonify({'success': False, 'error': 'Look not found'}), 404
+
+    session = session_factory.from_look(look_id, look.to_dict(), universes, fade_ms)
+    session_id = unified_engine.play(session)
+
+    return jsonify({
+        'success': True,
+        'session_id': session_id,
+        'type': 'look',
+        'name': look.name
+    })
+
+
+@app.route('/api/unified/play/sequence/<sequence_id>', methods=['POST'])
+def unified_api_play_sequence(sequence_id):
+    """Play a Sequence via unified engine"""
+    data = request.get_json() or {}
+    universes = data.get('universes', [2, 3, 4, 5])
+
+    sequence = looks_sequences_manager.get_sequence(sequence_id)
+    if not sequence:
+        return jsonify({'success': False, 'error': 'Sequence not found'}), 404
+
+    session = session_factory.from_sequence(sequence_id, sequence.to_dict(), universes)
+    session_id = unified_engine.play(session)
+
+    return jsonify({
+        'success': True,
+        'session_id': session_id,
+        'type': 'sequence',
+        'name': sequence.name
+    })
+
+
+@app.route('/api/unified/play/chase/<chase_id>', methods=['POST'])
+def unified_api_play_chase(chase_id):
+    """Play a Chase via unified engine (legacy support)"""
+    data = request.get_json() or {}
+    universes = data.get('universes', [2, 3, 4, 5])
+
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('SELECT * FROM chases WHERE chase_id = ?', (chase_id,))
+    row = c.fetchone()
+    conn.close()
+
+    if not row:
+        return jsonify({'success': False, 'error': 'Chase not found'}), 404
+
+    chase_data = dict(row)
+    chase_data['steps'] = json.loads(chase_data.get('steps', '[]'))
+
+    session = session_factory.from_chase(chase_id, chase_data, universes)
+    session_id = unified_engine.play(session)
+
+    return jsonify({
+        'success': True,
+        'session_id': session_id,
+        'type': 'chase',
+        'name': chase_data.get('name', chase_id)
+    })
+
+
+@app.route('/api/unified/play/scene/<scene_id>', methods=['POST'])
+def unified_api_play_scene(scene_id):
+    """Play a Scene via unified engine (legacy support)"""
+    data = request.get_json() or {}
+    universes = data.get('universes', [2, 3, 4, 5])
+    fade_ms = data.get('fade_ms', 0)
+
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('SELECT * FROM scenes WHERE scene_id = ?', (scene_id,))
+    row = c.fetchone()
+    conn.close()
+
+    if not row:
+        return jsonify({'success': False, 'error': 'Scene not found'}), 404
+
+    scene_data = dict(row)
+    scene_data['channels'] = json.loads(scene_data.get('channels', '{}'))
+
+    session = session_factory.from_scene(scene_id, scene_data, universes, fade_ms)
+    session_id = unified_engine.play(session)
+
+    return jsonify({
+        'success': True,
+        'session_id': session_id,
+        'type': 'scene',
+        'name': scene_data.get('name', scene_id)
+    })
+
+
+@app.route('/api/unified/play/effect', methods=['POST'])
+def unified_api_play_effect():
+    """Play a built-in effect via unified engine"""
+    data = request.get_json() or {}
+    effect_type = data.get('effect_type', 'pulse')
+    params = data.get('params', {})
+    universes = data.get('universes', [2, 3, 4, 5])
+
+    session = session_factory.from_effect(effect_type, params, universes)
+    session_id = unified_engine.play(session)
+
+    return jsonify({
+        'success': True,
+        'session_id': session_id,
+        'type': 'effect',
+        'effect_type': effect_type
+    })
+
+
+@app.route('/api/unified/blackout', methods=['POST'])
+def unified_api_blackout():
+    """Trigger blackout via unified engine"""
+    data = request.get_json() or {}
+    universes = data.get('universes', [2, 3, 4, 5])
+    fade_ms = data.get('fade_ms', 1000)
+
+    # Get current state for fade
+    fade_from = {}
+    if fade_ms > 0:
+        for u in universes:
+            fade_from.update(dmx_state.get_universe(u))
+
+    session = session_factory.blackout(universes, fade_ms)
+    session_id = unified_engine.play(session, fade_from)
+
+    return jsonify({
+        'success': True,
+        'session_id': session_id,
+        'type': 'blackout'
+    })
+
+
+@app.route('/api/unified/stop', methods=['POST'])
+def unified_api_stop():
+    """Stop unified playback"""
+    data = request.get_json() or {}
+    session_id = data.get('session_id')
+    fade_ms = data.get('fade_ms', 0)
+
+    if session_id:
+        unified_engine.stop_session(session_id, fade_ms)
+    else:
+        unified_engine.stop_all(fade_ms)
+
+    return jsonify({'success': True, 'stopped': session_id or 'all'})
+
+
+@app.route('/api/unified/stop/<playback_type>', methods=['POST'])
+def unified_api_stop_type(playback_type):
+    """Stop all sessions of a specific type"""
+    data = request.get_json() or {}
+    fade_ms = data.get('fade_ms', 0)
+
+    try:
+        ptype = PlaybackType(playback_type)
+        unified_engine.stop_type(ptype, fade_ms)
+        return jsonify({'success': True, 'stopped_type': playback_type})
+    except ValueError:
+        return jsonify({'success': False, 'error': f'Unknown type: {playback_type}'}), 400
+
+
+@app.route('/api/unified/pause/<session_id>', methods=['POST'])
+def unified_api_pause(session_id):
+    """Pause a session"""
+    result = unified_engine.pause(session_id)
+    return jsonify({'success': result, 'session_id': session_id})
+
+
+@app.route('/api/unified/resume/<session_id>', methods=['POST'])
+def unified_api_resume(session_id):
+    """Resume a paused session"""
+    result = unified_engine.resume(session_id)
+    return jsonify({'success': result, 'session_id': session_id})
+
+
+@app.route('/api/unified/sessions', methods=['GET'])
+def unified_api_get_sessions():
+    """Get all active sessions"""
+    sessions = unified_engine.get_active_sessions()
+    return jsonify([{
+        'session_id': s.session_id,
+        'type': s.playback_type.value,
+        'name': s.name,
+        'state': s.state.value,
+        'priority': s.priority.value,
+        'universes': s.universes,
+        'elapsed_time': s.elapsed_time,
+        'frame_count': s.frame_count,
+    } for s in sessions])
+
+
+# ─────────────────────────────────────────────────────────
+# Legacy Playback API (maintains backward compatibility)
+# ─────────────────────────────────────────────────────────
+
 @app.route('/api/playback/status', methods=['GET'])
 def get_playback_status():
     """Get unified playback controller status"""
@@ -6940,6 +7165,25 @@ if __name__ == '__main__':
     threading.Thread(target=stale_checker, daemon=True).start()
     schedule_runner.start()
     # node_manager.start_dmx_refresh()  # Disabled - UDPJSON is on-demand
+
+    # Initialize Unified Playback Engine
+    def unified_output_callback(universe: int, channels: dict, fade_ms: int = 0):
+        """Route unified playback output through SSOT"""
+        content_manager.set_channels(universe, channels, fade_ms=fade_ms)
+
+    def unified_look_resolver(look_id: str):
+        """Resolve Look ID to Look data"""
+        try:
+            look = looks_sequences_manager.get_look(look_id)
+            return look.to_dict() if look else None
+        except:
+            return None
+
+    unified_engine.set_output_callback(unified_output_callback)
+    unified_engine.set_look_resolver(unified_look_resolver)
+    unified_engine.set_modifier_renderer(ModifierRenderer())
+    unified_engine.start()
+    print("✓ Unified Playback Engine started (30 fps)")
 
     print(f"✓ API server on port {API_PORT}")
     print(f"✓ Discovery on UDP {DISCOVERY_PORT}")

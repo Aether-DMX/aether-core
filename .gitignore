@@ -37,3 +37,6 @@ Thumbs.db
 *.backup
 *.backup-*
 *.bak
+
+# Claude temp files
+tmpclaude-*-cwd

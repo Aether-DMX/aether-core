@@ -4,7 +4,6 @@ Routes ALL output through SSOT for consistent state management.
 """
 import threading
 import time
-import subprocess
 import random
 
 
