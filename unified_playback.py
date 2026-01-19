@@ -108,24 +108,58 @@ class Priority(Enum):
 
 @dataclass
 class Modifier:
-    """A modifier that transforms base channel values"""
+    """
+    A modifier that transforms base channel/fixture values.
+
+    Phase 1 Addition:
+    - distribution: DistributionConfig for per-fixture effect distribution
+
+    The distribution field controls how this modifier's effect varies
+    across multiple fixtures (SYNCED, PHASED, INDEXED, PIXELATED, RANDOM).
+    """
     id: str
     type: str  # pulse, strobe, flicker, wave, rainbow, twinkle, etc.
     params: Dict[str, Any] = field(default_factory=dict)
     enabled: bool = True
     preset_id: Optional[str] = None
 
+    # Distribution mode for multi-fixture effects (Phase 1) - NEW
+    # If None, defaults to SYNCED (all fixtures identical)
+    distribution: Optional[Any] = None  # DistributionConfig, uses Any to avoid circular import
+
+    def get_distribution_config(self):
+        """Get distribution config, creating default if needed"""
+        if self.distribution is None:
+            from distribution_modes import DistributionConfig
+            return DistributionConfig()  # Default: SYNCED
+        if isinstance(self.distribution, dict):
+            from distribution_modes import DistributionConfig
+            return DistributionConfig.from_dict(self.distribution)
+        return self.distribution
+
 
 @dataclass
 class Step:
-    """A single step in a sequence or chase"""
+    """
+    A single step in a sequence or chase.
+
+    Fixture-Centric Fields (Phase 0):
+    - fixture_ids: List of fixture IDs this step targets
+    - fixture_channels: Dict of fixture_id -> attribute dict
+
+    Legacy 'channels' field continues to work for backward compatibility.
+    """
     step_id: str
     name: str = ""
-    channels: Dict[int, int] = field(default_factory=dict)
+    channels: Dict[int, int] = field(default_factory=dict)  # LEGACY
     look_id: Optional[str] = None  # Reference to existing Look
     modifiers: List[Modifier] = field(default_factory=list)
     fade_ms: int = 0           # Fade INTO this step
     hold_ms: int = 1000        # Hold AFTER fade completes
+
+    # Fixture-centric (Phase 0) - NEW
+    fixture_ids: List[str] = field(default_factory=list)
+    fixture_channels: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
     @property
     def total_duration_ms(self) -> int:
@@ -180,6 +214,20 @@ class PlaybackSession:
     Universal container for any playback type.
 
     This is the core abstraction that unifies all playback systems.
+
+    Fixture-Centric Fields (Phase 0):
+    - fixture_ids: List of fixture IDs this session targets
+    - fixture_channels: Dict of fixture_id -> attribute dict for fixture-centric playback
+
+    The fixture_channels format allows specifying fixture attributes semantically:
+        {
+            "fixture_1": {"intensity": 255, "color": [255, 0, 0]},
+            "fixture_2": {"intensity": 200, "color": [0, 255, 0]}
+        }
+
+    Legacy 'channels' field continues to work for backward compatibility.
+    When both are present, fixture_channels takes precedence and 'channels'
+    is used only for fixtures not in fixture_channels.
     """
     session_id: str
     playback_type: PlaybackType
@@ -203,8 +251,14 @@ class PlaybackSession:
     # Fade state
     fade_state: Optional[FadeState] = None
 
-    # Base channel data (for LOOK, SCENE, MANUAL)
+    # Base channel data (for LOOK, SCENE, MANUAL) - LEGACY
     channels: Dict[int, int] = field(default_factory=dict)
+
+    # Fixture-centric playback (Phase 0) - NEW
+    # fixture_ids: Ordered list of fixtures this session targets
+    fixture_ids: List[str] = field(default_factory=list)
+    # fixture_channels: fixture_id -> {"intensity": 255, "color": [255,0,0], ...}
+    fixture_channels: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
     # Modifiers (applicable to any type)
     modifiers: List[Modifier] = field(default_factory=list)

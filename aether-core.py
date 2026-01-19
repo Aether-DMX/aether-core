@@ -77,6 +77,26 @@ from unified_playback import (
     blackout as unified_blackout, stop as unified_stop, get_status as unified_get_status,
 )
 
+# Fixture-Centric Architecture (Phase 0-3)
+from fixture_render import (
+    RenderedFixtureFrame, RenderedFixtureState, FixtureFrameBuilder,
+    create_frame_from_fixture_channels, AttributeType,
+)
+from distribution_modes import (
+    DistributionMode, DistributionConfig, DistributionCalculator,
+    DISTRIBUTION_PRESETS, get_distribution_preset, list_distribution_presets,
+    get_supported_distributions, suggest_distribution_for_effect,
+)
+from ai_fixture_advisor import (
+    get_ai_advisor, AIFixtureAdvisor, AISuggestion, SuggestionType,
+    FixtureContext, get_distribution_suggestions,
+    apply_ai_suggestion, dismiss_ai_suggestion,
+)
+from final_render_pipeline import (
+    get_render_pipeline, init_render_pipeline, FinalRenderPipeline,
+    RenderTimeContext, RenderJob, FeatureFlags,
+)
+
 # Supabase cloud sync (optional)
 try:
     from services.supabase_service import get_supabase_service, sync_to_cloud
@@ -4139,13 +4159,85 @@ def rdm_delete_device(uid):
 # ─────────────────────────────────────────────────────────
 @app.route('/api/dmx/set', methods=['POST'])
 def dmx_set():
+    """
+    Set DMX channel values.
+
+    Supports both legacy channel-based and new fixture-centric modes.
+
+    Legacy (channel-based):
+    {
+        "universe": 2,
+        "channels": {"1": 255, "2": 128},
+        "fade_ms": 0
+    }
+
+    Fixture-Centric (Phase 0+):
+    {
+        "universe": 2,
+        "fixture_id": "par_1",
+        "attributes": {"intensity": 255, "color": [255, 0, 0]},
+        "fade_ms": 0
+    }
+
+    Or multiple fixtures:
+    {
+        "universe": 2,
+        "fixture_channels": {
+            "par_1": {"intensity": 255, "color": [255, 0, 0]},
+            "par_2": {"intensity": 200, "color": [0, 255, 0]}
+        },
+        "fade_ms": 0
+    }
+    """
     data = request.get_json()
     universe = data.get('universe', 1)
+
     # Universe 1 is offline - reject
     if universe == 1:
         return jsonify({'error': 'Universe 1 is offline. Use universes 2-5.', 'success': False}), 400
+
+    fade_ms = data.get('fade_ms', 0)
+
+    # Check for fixture-centric mode
+    fixture_id = data.get('fixture_id')
+    attributes = data.get('attributes')
+    fixture_channels = data.get('fixture_channels')
+
+    pipeline = get_render_pipeline()
+
+    # Single fixture mode
+    if fixture_id and attributes and pipeline.features.FIXTURE_CENTRIC_ENABLED:
+        try:
+            channels = pipeline.render_fixture_values(fixture_id, attributes, universe)
+            if channels:
+                # Convert to string keys for content_manager
+                str_channels = {str(k): v for k, v in channels.items()}
+                return jsonify(content_manager.set_channels(universe, str_channels, fade_ms))
+            else:
+                # Fixture not found or not registered
+                return jsonify({
+                    'error': f'Fixture {fixture_id} not registered in render pipeline',
+                    'success': False
+                }), 404
+        except Exception as e:
+            # Fall back to legacy mode on error
+            print(f"Fixture-centric render failed, falling back: {e}")
+
+    # Multiple fixtures mode
+    if fixture_channels and pipeline.features.FIXTURE_CENTRIC_ENABLED:
+        try:
+            all_channels = {}
+            for fid, attrs in fixture_channels.items():
+                channels = pipeline.render_fixture_values(fid, attrs, universe)
+                all_channels.update({str(k): v for k, v in channels.items()})
+            if all_channels:
+                return jsonify(content_manager.set_channels(universe, all_channels, fade_ms))
+        except Exception as e:
+            print(f"Multi-fixture render failed, falling back: {e}")
+
+    # Legacy channel-based mode (or fallback)
     return jsonify(content_manager.set_channels(
-        universe, data.get('channels', {}), data.get('fade_ms', 0)))
+        universe, data.get('channels', {}), fade_ms))
 
 @app.route('/api/dmx/fade', methods=['POST'])
 def dmx_fade():
@@ -6242,6 +6334,235 @@ def normalize_modifier_route():
         'success': True,
         'modifier': normalize_modifier(data)
     })
+
+
+# ─────────────────────────────────────────────────────────
+# Distribution Modes API (Phase 1 - Fixture-Centric Architecture)
+# ─────────────────────────────────────────────────────────
+@app.route('/api/modifiers/distribution-modes', methods=['GET'])
+def get_distribution_modes_route():
+    """
+    Get all available distribution modes and their descriptions.
+
+    Distribution modes control how modifiers are applied across multiple fixtures:
+    - SYNCED: All fixtures identical (default)
+    - INDEXED: Scaled by fixture index
+    - PHASED: Time offset per fixture
+    - PIXELATED: Unique per fixture
+    - RANDOM: Deterministic random per fixture
+    """
+    modes = [
+        {
+            'mode': mode.value,
+            'name': mode.name,
+            'description': {
+                'synced': 'All fixtures receive identical effect values',
+                'indexed': 'Effect values scale linearly with fixture position',
+                'phased': 'Time offset between fixtures for traveling effects',
+                'pixelated': 'Each fixture has unique, independent effect values',
+                'random': 'Deterministic random variation per fixture',
+                'grouped': 'Same value for fixtures in same group',
+            }.get(mode.value, '')
+        }
+        for mode in DistributionMode
+    ]
+    return jsonify({
+        'modes': modes,
+        'presets': list_distribution_presets()
+    })
+
+
+@app.route('/api/modifiers/distribution-modes/<modifier_type>', methods=['GET'])
+def get_modifier_distribution_modes_route(modifier_type):
+    """Get supported distribution modes for a specific modifier type"""
+    supported = get_supported_distributions(modifier_type)
+    return jsonify({
+        'modifier_type': modifier_type,
+        'supported_modes': [mode.value for mode in supported]
+    })
+
+
+@app.route('/api/modifiers/distribution-modes/suggest', methods=['POST'])
+def suggest_distribution_mode_route():
+    """
+    Get AI-suggested distribution mode for a modifier and fixture selection.
+
+    Request body:
+    {
+        "modifier_type": "wave",
+        "fixture_count": 8,
+        "effect_intent": "chase" (optional)
+    }
+    """
+    data = request.get_json() or {}
+    modifier_type = data.get('modifier_type', 'pulse')
+    fixture_count = data.get('fixture_count', 1)
+    effect_intent = data.get('effect_intent')
+
+    suggestion = suggest_distribution_for_effect(
+        modifier_type=modifier_type,
+        fixture_count=fixture_count,
+        effect_intent=effect_intent
+    )
+
+    return jsonify({
+        'suggestion': suggestion.to_dict(),
+        'modifier_type': modifier_type,
+        'fixture_count': fixture_count
+    })
+
+
+@app.route('/api/modifiers/distribution-presets', methods=['GET'])
+def get_distribution_presets_route():
+    """Get all distribution presets"""
+    return jsonify({
+        'presets': list_distribution_presets()
+    })
+
+
+@app.route('/api/modifiers/distribution-presets/<preset_name>', methods=['GET'])
+def get_distribution_preset_route(preset_name):
+    """Get a specific distribution preset"""
+    preset = get_distribution_preset(preset_name)
+    if not preset:
+        return jsonify({'error': f'Preset not found: {preset_name}'}), 404
+    return jsonify({
+        'name': preset_name,
+        'config': preset.to_dict()
+    })
+
+
+# ─────────────────────────────────────────────────────────
+# AI Fixture Advisor API (Phase 2 - Fixture-Centric Architecture)
+# ─────────────────────────────────────────────────────────
+@app.route('/api/ai/suggestions/distribution', methods=['POST'])
+def get_ai_distribution_suggestions_route():
+    """
+    Get AI suggestions for distribution modes.
+
+    IMPORTANT: AI suggestions are NEVER auto-applied.
+    Returns suggestions that the user must explicitly Apply or Dismiss.
+
+    Request body:
+    {
+        "modifier_type": "rainbow",
+        "modifier_params": {"speed": 0.5},
+        "fixture_count": 6
+    }
+    """
+    data = request.get_json() or {}
+    modifier_type = data.get('modifier_type', 'pulse')
+    modifier_params = data.get('modifier_params', {})
+    fixture_count = data.get('fixture_count', 1)
+
+    suggestions = get_distribution_suggestions(
+        modifier_type=modifier_type,
+        fixture_count=fixture_count,
+        modifier_params=modifier_params
+    )
+
+    return jsonify({
+        'suggestions': suggestions,
+        'note': 'AI suggestions require explicit user approval. Apply or Dismiss each suggestion.'
+    })
+
+
+@app.route('/api/ai/suggestions/apply/<suggestion_id>', methods=['POST'])
+def apply_ai_suggestion_route(suggestion_id):
+    """
+    Mark an AI suggestion as applied.
+
+    This does NOT apply the suggestion automatically - it only marks it as applied
+    after the user has explicitly chosen to apply it in the UI.
+    """
+    success = apply_ai_suggestion(suggestion_id)
+    if not success:
+        return jsonify({'error': 'Suggestion not found'}), 404
+    return jsonify({
+        'success': True,
+        'suggestion_id': suggestion_id,
+        'status': 'applied'
+    })
+
+
+@app.route('/api/ai/suggestions/dismiss/<suggestion_id>', methods=['POST'])
+def dismiss_ai_suggestion_route(suggestion_id):
+    """Dismiss an AI suggestion"""
+    success = dismiss_ai_suggestion(suggestion_id)
+    if not success:
+        return jsonify({'error': 'Suggestion not found'}), 404
+    return jsonify({
+        'success': True,
+        'suggestion_id': suggestion_id,
+        'status': 'dismissed'
+    })
+
+
+@app.route('/api/ai/suggestions/pending', methods=['GET'])
+def get_pending_ai_suggestions_route():
+    """Get all pending (not applied/dismissed) AI suggestions"""
+    advisor = get_ai_advisor()
+    suggestions = advisor.get_pending_suggestions()
+    return jsonify({
+        'suggestions': [s.to_dict() for s in suggestions]
+    })
+
+
+# ─────────────────────────────────────────────────────────
+# Render Pipeline API (Phase 3 - Fixture-Centric Architecture)
+# ─────────────────────────────────────────────────────────
+@app.route('/api/render/status', methods=['GET'])
+def get_render_pipeline_status_route():
+    """Get status of the final render pipeline"""
+    pipeline = get_render_pipeline()
+    return jsonify(pipeline.get_status())
+
+
+@app.route('/api/render/features', methods=['GET'])
+def get_render_features_route():
+    """Get feature flags for the render pipeline"""
+    pipeline = get_render_pipeline()
+    return jsonify({
+        'fixture_centric_enabled': pipeline.features.FIXTURE_CENTRIC_ENABLED,
+        'legacy_channel_fallback': pipeline.features.LEGACY_CHANNEL_FALLBACK,
+        'ai_suggestions_enabled': pipeline.features.AI_SUGGESTIONS_ENABLED,
+        'distribution_modes_enabled': pipeline.features.DISTRIBUTION_MODES_ENABLED,
+    })
+
+
+@app.route('/api/render/features', methods=['POST'])
+def set_render_features_route():
+    """
+    Update feature flags for the render pipeline.
+
+    Request body:
+    {
+        "fixture_centric_enabled": true,
+        "distribution_modes_enabled": true
+    }
+    """
+    data = request.get_json() or {}
+    pipeline = get_render_pipeline()
+
+    if 'fixture_centric_enabled' in data:
+        pipeline.features.FIXTURE_CENTRIC_ENABLED = bool(data['fixture_centric_enabled'])
+    if 'legacy_channel_fallback' in data:
+        pipeline.features.LEGACY_CHANNEL_FALLBACK = bool(data['legacy_channel_fallback'])
+    if 'ai_suggestions_enabled' in data:
+        pipeline.features.AI_SUGGESTIONS_ENABLED = bool(data['ai_suggestions_enabled'])
+    if 'distribution_modes_enabled' in data:
+        pipeline.features.DISTRIBUTION_MODES_ENABLED = bool(data['distribution_modes_enabled'])
+
+    return jsonify({
+        'success': True,
+        'features': {
+            'fixture_centric_enabled': pipeline.features.FIXTURE_CENTRIC_ENABLED,
+            'legacy_channel_fallback': pipeline.features.LEGACY_CHANNEL_FALLBACK,
+            'ai_suggestions_enabled': pipeline.features.AI_SUGGESTIONS_ENABLED,
+            'distribution_modes_enabled': pipeline.features.DISTRIBUTION_MODES_ENABLED,
+        }
+    })
+
 
 # ─────────────────────────────────────────────────────────
 # Migration Routes (legacy scenes/chases to looks/sequences)

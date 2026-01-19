@@ -90,6 +90,10 @@ class ModifierRenderer:
     - Takes base channels, modifier params, and time context
     - Returns a multiplier/value per channel
     - Is deterministic given same inputs
+
+    Phase 1 Addition:
+    - render_with_distribution(): Applies modifier with distribution across fixtures
+    - render_fixture_frame(): Renders modifier on a RenderedFixtureFrame
     """
 
     def __init__(self):
@@ -101,6 +105,8 @@ class ModifierRenderer:
             "rainbow": self._render_rainbow,
             "twinkle": self._render_twinkle,
         }
+        # Distribution calculator instance
+        self._distribution_calculator = None
 
     def render(
         self,
@@ -124,6 +130,259 @@ class ModifierRenderer:
             return {ch: 1.0 for ch in base_channels}
 
         return render_func(params, base_channels, time_ctx, state, fixture_index, total_fixtures)
+
+    # ─────────────────────────────────────────────────────────
+    # DISTRIBUTION-AWARE RENDERING (Phase 1)
+    # ─────────────────────────────────────────────────────────
+
+    def render_with_distribution(
+        self,
+        modifier_type: str,
+        params: Dict[str, Any],
+        distribution_config: Any,  # DistributionConfig
+        fixture_states: Dict[str, Dict[str, Any]],
+        fixture_order: List[str],
+        time_ctx: TimeContext,
+        modifier_states: Dict[str, ModifierState],
+        modifier_id: str,
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        Render a modifier with distribution across multiple fixtures.
+
+        This is the main entry point for fixture-centric rendering with
+        distribution modes (SYNCED, PHASED, INDEXED, etc.)
+
+        Args:
+            modifier_type: The modifier type (pulse, wave, etc.)
+            params: Modifier parameters
+            distribution_config: DistributionConfig controlling distribution
+            fixture_states: Dict of fixture_id -> {"intensity": 255, "color": [...], ...}
+            fixture_order: Ordered list of fixture IDs
+            time_ctx: Time context for this frame
+            modifier_states: Dict of modifier_id -> ModifierState
+            modifier_id: ID of this modifier instance
+
+        Returns:
+            Dict of fixture_id -> modified attributes
+        """
+        from distribution_modes import DistributionMode, DistributionCalculator
+
+        # Lazy init distribution calculator
+        if self._distribution_calculator is None:
+            self._distribution_calculator = DistributionCalculator(time_ctx.seed)
+
+        total_fixtures = len(fixture_order)
+        result = {}
+
+        # Get or create modifier state
+        state = modifier_states.get(modifier_id)
+        if not state:
+            state = ModifierState(
+                modifier_id=modifier_id,
+                modifier_type=modifier_type,
+                random_state=random.Random(time_ctx.seed + hash(modifier_id))
+            )
+            modifier_states[modifier_id] = state
+
+        for fixture_index, fixture_id in enumerate(fixture_order):
+            fixture_attrs = fixture_states.get(fixture_id, {}).copy()
+
+            # Calculate distribution-adjusted phase
+            if distribution_config:
+                dist_phase = self._distribution_calculator.get_fixture_phase(
+                    distribution_config,
+                    fixture_index,
+                    total_fixtures,
+                    base_phase=0.0
+                )
+                # Inject distribution phase into params
+                adjusted_params = params.copy()
+                current_phase_offset = adjusted_params.get("phase_offset", 0.0)
+                adjusted_params["phase_offset"] = current_phase_offset + dist_phase
+            else:
+                adjusted_params = params
+
+            # Convert fixture attributes to channel-like format for rendering
+            base_channels = self._fixture_attrs_to_channels(fixture_attrs)
+
+            # Create per-fixture state if needed for PIXELATED/RANDOM modes
+            if distribution_config and distribution_config.mode in (
+                DistributionMode.PIXELATED, DistributionMode.RANDOM
+            ):
+                # Use fixture-specific seed
+                fixture_seed = self._distribution_calculator.get_fixture_seed(
+                    distribution_config, fixture_index
+                )
+                fixture_state = ModifierState(
+                    modifier_id=f"{modifier_id}_{fixture_id}",
+                    modifier_type=modifier_type,
+                    random_state=random.Random(fixture_seed)
+                )
+            else:
+                fixture_state = state
+
+            # Render modifier for this fixture
+            mod_output = self.render(
+                modifier_type=modifier_type,
+                params=adjusted_params,
+                base_channels=base_channels,
+                time_ctx=time_ctx,
+                state=fixture_state,
+                fixture_index=fixture_index,
+                total_fixtures=total_fixtures,
+            )
+
+            # Apply modifier output to fixture attributes
+            result[fixture_id] = self._apply_modifier_to_attrs(
+                fixture_attrs, mod_output, modifier_type
+            )
+
+        return result
+
+    def _fixture_attrs_to_channels(
+        self,
+        attrs: Dict[str, Any]
+    ) -> Dict[int, int]:
+        """
+        Convert fixture attributes to channel-like format for modifier rendering.
+
+        Maps:
+        - intensity -> channel 0
+        - color[0] (R) -> channel 1
+        - color[1] (G) -> channel 2
+        - color[2] (B) -> channel 3
+        - color[3] (W) -> channel 4
+        - etc.
+        """
+        channels = {}
+
+        # Intensity as channel 0
+        if "intensity" in attrs:
+            channels[0] = attrs["intensity"]
+
+        # Color channels
+        color = attrs.get("color", [])
+        for i, val in enumerate(color):
+            channels[i + 1] = val
+
+        return channels if channels else {0: 255}
+
+    def _apply_modifier_to_attrs(
+        self,
+        original_attrs: Dict[str, Any],
+        mod_output: Dict[int, float],
+        modifier_type: str
+    ) -> Dict[str, Any]:
+        """
+        Apply modifier output back to fixture attributes.
+
+        Args:
+            original_attrs: Original fixture attributes
+            mod_output: Modifier output (channel -> multiplier/value)
+            modifier_type: Type of modifier (for merge mode determination)
+
+        Returns:
+            Modified fixture attributes
+        """
+        result = original_attrs.copy()
+        merge_mode = DEFAULT_MERGE_MODES.get(modifier_type, MergeMode.MULTIPLY)
+
+        # Apply intensity (channel 0)
+        if 0 in mod_output:
+            original_intensity = original_attrs.get("intensity", 255)
+            if merge_mode == MergeMode.MULTIPLY:
+                result["intensity"] = int(original_intensity * mod_output[0])
+            elif merge_mode == MergeMode.REPLACE:
+                result["intensity"] = int(mod_output[0])
+            elif merge_mode == MergeMode.ADD:
+                result["intensity"] = min(255, int(original_intensity + mod_output[0]))
+            result["intensity"] = max(0, min(255, result["intensity"]))
+
+        # Apply color channels
+        original_color = original_attrs.get("color", [255, 255, 255])
+        if len(original_color) > 0:
+            new_color = list(original_color)
+            for i in range(len(new_color)):
+                ch = i + 1
+                if ch in mod_output:
+                    if merge_mode == MergeMode.MULTIPLY:
+                        new_color[i] = int(new_color[i] * mod_output[ch])
+                    elif merge_mode == MergeMode.REPLACE:
+                        new_color[i] = int(mod_output[ch])
+                    elif merge_mode == MergeMode.ADD:
+                        new_color[i] = min(255, int(new_color[i] + mod_output[ch]))
+                    new_color[i] = max(0, min(255, new_color[i]))
+            result["color"] = new_color
+
+        return result
+
+    def render_fixture_frame(
+        self,
+        modifier_type: str,
+        params: Dict[str, Any],
+        distribution_config: Any,
+        frame: Any,  # RenderedFixtureFrame
+        time_ctx: TimeContext,
+        modifier_states: Dict[str, ModifierState],
+        modifier_id: str,
+    ) -> Any:  # RenderedFixtureFrame
+        """
+        Render a modifier on a RenderedFixtureFrame with distribution.
+
+        This is a convenience method that works directly with RenderedFixtureFrame.
+
+        Args:
+            modifier_type: The modifier type
+            params: Modifier parameters
+            distribution_config: DistributionConfig
+            frame: RenderedFixtureFrame to modify
+            time_ctx: Time context
+            modifier_states: Modifier state storage
+            modifier_id: ID of this modifier
+
+        Returns:
+            Modified RenderedFixtureFrame (copy)
+        """
+        from fixture_render import RenderedFixtureFrame, RenderedFixtureState
+
+        # Extract fixture states and order
+        fixture_order = list(frame.fixtures.keys())
+        fixture_states = {
+            fid: state.attributes.copy()
+            for fid, state in frame.fixtures.items()
+        }
+
+        # Render with distribution
+        modified_attrs = self.render_with_distribution(
+            modifier_type=modifier_type,
+            params=params,
+            distribution_config=distribution_config,
+            fixture_states=fixture_states,
+            fixture_order=fixture_order,
+            time_ctx=time_ctx,
+            modifier_states=modifier_states,
+            modifier_id=modifier_id,
+        )
+
+        # Build new frame with modified states
+        new_frame = RenderedFixtureFrame(
+            frame_number=frame.frame_number,
+            timestamp=frame.timestamp,
+            seed=frame.seed,
+        )
+
+        for fixture_id in fixture_order:
+            original_state = frame.fixtures[fixture_id]
+            new_attrs = modified_attrs.get(fixture_id, original_state.attributes)
+
+            new_frame.fixtures[fixture_id] = RenderedFixtureState(
+                fixture_id=fixture_id,
+                attributes=new_attrs,
+                source=original_state.source,
+                modified_by=original_state.modified_by + [modifier_id],
+            )
+
+        return new_frame
 
     # ─────────────────────────────────────────────────────────
     # PULSE - Breathing brightness effect
