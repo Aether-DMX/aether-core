@@ -36,6 +36,7 @@ class SuggestionType(Enum):
     EFFECT_COMBINATION = "effect_combination"
     TIMING_ADJUSTMENT = "timing_adjustment"
     COLOR_PALETTE = "color_palette"
+    TRANSITION_SMOOTHNESS = "transition_smoothness"
 
 
 class SuggestionPriority(Enum):
@@ -577,6 +578,181 @@ class AIFixtureAdvisor:
         return suggestions
 
     # ─────────────────────────────────────────────────────────
+    # Transition Smoothness Suggestions
+    # ─────────────────────────────────────────────────────────
+
+    def suggest_transition_time(
+        self,
+        effect_type: str,
+        fixture_count: int,
+        step_duration_ms: int = None,
+        effect_intent: str = None
+    ) -> List[AISuggestion]:
+        """
+        Suggest appropriate transition/crossfade times for effects.
+
+        Different effects benefit from different transition smoothness:
+        - Fast effects (strobe): instant transitions (0ms)
+        - Waves/chases: smooth transitions (200-400ms)
+        - Ambient/mood: very smooth (400-800ms)
+        - Dramatic reveals: medium (200-300ms)
+
+        Args:
+            effect_type: Type of effect (wave, chase, pulse, etc.)
+            fixture_count: Number of fixtures involved
+            step_duration_ms: Duration of each step (if applicable)
+            effect_intent: Optional hint about desired feel
+
+        Returns:
+            List of AISuggestion for transition times
+        """
+        suggestions = []
+
+        # Base transition recommendations by effect type
+        effect_transitions = {
+            "wave": {"default": 300, "smooth": 400, "ultra_smooth": 600, "snappy": 100},
+            "chase": {"default": 200, "smooth": 350, "ultra_smooth": 500, "snappy": 50},
+            "rainbow": {"default": 300, "smooth": 500, "ultra_smooth": 700, "snappy": 100},
+            "pulse": {"default": 400, "smooth": 600, "ultra_smooth": 800, "snappy": 150},
+            "twinkle": {"default": 150, "smooth": 250, "ultra_smooth": 400, "snappy": 50},
+            "flicker": {"default": 50, "smooth": 100, "ultra_smooth": 200, "snappy": 0},
+            "strobe": {"default": 0, "smooth": 0, "ultra_smooth": 25, "snappy": 0},
+        }
+
+        timings = effect_transitions.get(effect_type, {"default": 200, "smooth": 350, "snappy": 50})
+
+        # Adjust for fixture count (more fixtures = slightly longer transitions look better)
+        fixture_factor = 1.0 + (fixture_count - 1) * 0.05 if fixture_count > 1 else 1.0
+        fixture_factor = min(1.5, fixture_factor)  # Cap at 1.5x
+
+        default_ms = int(timings["default"] * fixture_factor)
+        smooth_ms = int(timings["smooth"] * fixture_factor)
+        ultra_smooth_ms = int(timings.get("ultra_smooth", timings["smooth"] * 1.5) * fixture_factor)
+
+        # If step duration provided, ensure transition doesn't exceed it
+        if step_duration_ms:
+            max_transition = int(step_duration_ms * 0.8)  # Max 80% of step duration
+            default_ms = min(default_ms, max_transition)
+            smooth_ms = min(smooth_ms, max_transition)
+            ultra_smooth_ms = min(ultra_smooth_ms, max_transition)
+
+        # Main suggestion: smooth transition
+        suggestions.append(AISuggestion(
+            suggestion_id=self._generate_id(),
+            suggestion_type=SuggestionType.TRANSITION_SMOOTHNESS,
+            suggestion={
+                "transition_ms": smooth_ms,
+                "transition_easing": "ease-in-out",
+                "preset": "smooth",
+                "reason_detail": f"Smooth crossfade for {effect_type} effect"
+            },
+            reason=f"A {smooth_ms}ms transition creates smooth crossfades between steps, eliminating the snappy/jumpy appearance.",
+            confidence=0.85,
+            priority=SuggestionPriority.HIGH,
+            context={"effect_type": effect_type, "fixture_count": fixture_count}
+        ))
+
+        # Alternative: ultra smooth for ambient effects
+        if effect_type in ("wave", "pulse", "rainbow"):
+            suggestions.append(AISuggestion(
+                suggestion_id=self._generate_id(),
+                suggestion_type=SuggestionType.TRANSITION_SMOOTHNESS,
+                suggestion={
+                    "transition_ms": ultra_smooth_ms,
+                    "transition_easing": "ease-in-out",
+                    "preset": "ultra_smooth",
+                    "reason_detail": "Ultra-smooth for ambient mood"
+                },
+                reason=f"For a more ambient/dreamy feel, {ultra_smooth_ms}ms transitions create buttery-smooth movement.",
+                confidence=0.70,
+                priority=SuggestionPriority.MEDIUM,
+                context={"effect_type": effect_type, "fixture_count": fixture_count}
+            ))
+
+        # Alternative: default (balanced)
+        if default_ms != smooth_ms:
+            suggestions.append(AISuggestion(
+                suggestion_id=self._generate_id(),
+                suggestion_type=SuggestionType.TRANSITION_SMOOTHNESS,
+                suggestion={
+                    "transition_ms": default_ms,
+                    "transition_easing": "linear",
+                    "preset": "default",
+                    "reason_detail": "Balanced transition timing"
+                },
+                reason=f"Balanced option: {default_ms}ms provides smooth transitions while maintaining effect energy.",
+                confidence=0.75,
+                priority=SuggestionPriority.MEDIUM,
+                context={"effect_type": effect_type, "fixture_count": fixture_count}
+            ))
+
+        # Snappy option for certain effects
+        if effect_type in ("chase", "strobe", "flicker"):
+            snappy_ms = timings["snappy"]
+            suggestions.append(AISuggestion(
+                suggestion_id=self._generate_id(),
+                suggestion_type=SuggestionType.TRANSITION_SMOOTHNESS,
+                suggestion={
+                    "transition_ms": snappy_ms,
+                    "transition_easing": "linear",
+                    "preset": "snappy",
+                    "reason_detail": "Sharp transitions for punch"
+                },
+                reason=f"For punchy, high-energy effects, {snappy_ms}ms transitions keep the sharp edges.",
+                confidence=0.60,
+                priority=SuggestionPriority.LOW,
+                context={"effect_type": effect_type, "fixture_count": fixture_count}
+            ))
+
+        for suggestion in suggestions:
+            self._pending_suggestions[suggestion.suggestion_id] = suggestion
+
+        return suggestions
+
+    def get_recommended_transition(
+        self,
+        effect_type: str,
+        fixture_count: int,
+        smoothness: str = "smooth"
+    ) -> Dict[str, Any]:
+        """
+        Get recommended transition settings without creating a suggestion.
+
+        Quick helper for getting transition values programmatically.
+
+        Args:
+            effect_type: Type of effect
+            fixture_count: Number of fixtures
+            smoothness: "snappy", "default", "smooth", or "ultra_smooth"
+
+        Returns:
+            Dict with transition_ms and transition_easing
+        """
+        effect_transitions = {
+            "wave": {"default": 300, "smooth": 400, "ultra_smooth": 600, "snappy": 100},
+            "chase": {"default": 200, "smooth": 350, "ultra_smooth": 500, "snappy": 50},
+            "rainbow": {"default": 300, "smooth": 500, "ultra_smooth": 700, "snappy": 100},
+            "pulse": {"default": 400, "smooth": 600, "ultra_smooth": 800, "snappy": 150},
+            "twinkle": {"default": 150, "smooth": 250, "ultra_smooth": 400, "snappy": 50},
+            "flicker": {"default": 50, "smooth": 100, "ultra_smooth": 200, "snappy": 0},
+            "strobe": {"default": 0, "smooth": 0, "ultra_smooth": 25, "snappy": 0},
+        }
+
+        timings = effect_transitions.get(effect_type, {"default": 200, "smooth": 350, "snappy": 50})
+
+        # Fixture count adjustment
+        fixture_factor = 1.0 + (fixture_count - 1) * 0.05 if fixture_count > 1 else 1.0
+        fixture_factor = min(1.5, fixture_factor)
+
+        transition_ms = int(timings.get(smoothness, timings["default"]) * fixture_factor)
+        easing = "ease-in-out" if smoothness in ("smooth", "ultra_smooth") else "linear"
+
+        return {
+            "transition_ms": transition_ms,
+            "transition_easing": easing
+        }
+
+    # ─────────────────────────────────────────────────────────
     # Suggestion Management
     # ─────────────────────────────────────────────────────────
 
@@ -679,3 +855,54 @@ def apply_ai_suggestion(suggestion_id: str) -> bool:
 def dismiss_ai_suggestion(suggestion_id: str) -> bool:
     """Mark a suggestion as dismissed"""
     return get_ai_advisor().dismiss_suggestion(suggestion_id)
+
+
+def get_transition_suggestions(
+    effect_type: str,
+    fixture_count: int,
+    step_duration_ms: int = None
+) -> List[Dict[str, Any]]:
+    """
+    Get transition smoothness suggestions for an effect.
+
+    Convenience function for the frontend to get AI recommendations
+    on appropriate crossfade/transition times.
+
+    Args:
+        effect_type: Type of effect (wave, chase, pulse, etc.)
+        fixture_count: Number of fixtures
+        step_duration_ms: Optional step duration
+
+    Returns:
+        List of suggestion dictionaries
+    """
+    advisor = get_ai_advisor()
+    suggestions = advisor.suggest_transition_time(
+        effect_type=effect_type,
+        fixture_count=fixture_count,
+        step_duration_ms=step_duration_ms
+    )
+    return [s.to_dict() for s in suggestions]
+
+
+def get_recommended_transition_for_effect(
+    effect_type: str,
+    fixture_count: int,
+    smoothness: str = "smooth"
+) -> Dict[str, Any]:
+    """
+    Quick helper to get recommended transition settings.
+
+    Args:
+        effect_type: Type of effect
+        fixture_count: Number of fixtures
+        smoothness: "snappy", "default", "smooth", or "ultra_smooth"
+
+    Returns:
+        Dict with transition_ms and transition_easing
+    """
+    return get_ai_advisor().get_recommended_transition(
+        effect_type=effect_type,
+        fixture_count=fixture_count,
+        smoothness=smoothness
+    )

@@ -91,6 +91,15 @@ class DistributionConfig:
     # Custom mapping function name (for advanced use)
     custom_mapper: Optional[str] = None
 
+    # Transition/crossfade time in milliseconds
+    # Controls how smoothly values transition between states
+    # 0 = instant (snappy), 100-500 = smooth, 500+ = very smooth
+    transition_ms: int = 0
+
+    # Easing function for transitions
+    # Options: "linear", "ease-in", "ease-out", "ease-in-out"
+    transition_easing: str = "linear"
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization"""
         return {
@@ -102,6 +111,8 @@ class DistributionConfig:
             "reverse": self.reverse,
             "group_id": self.group_id,
             "custom_mapper": self.custom_mapper,
+            "transition_ms": self.transition_ms,
+            "transition_easing": self.transition_easing,
         }
 
     @classmethod
@@ -122,6 +133,8 @@ class DistributionConfig:
             reverse=data.get("reverse", False),
             group_id=data.get("group_id"),
             custom_mapper=data.get("custom_mapper"),
+            transition_ms=data.get("transition_ms", 0),
+            transition_easing=data.get("transition_easing", "linear"),
         )
 
 
@@ -330,6 +343,41 @@ DISTRIBUTION_PRESETS: Dict[str, DistributionConfig] = {
 
     "twinkle_sequential": DistributionConfig(
         mode=DistributionMode.PIXELATED
+    ),
+
+    # Smooth transition presets
+    "wave_smooth": DistributionConfig(
+        mode=DistributionMode.PHASED,
+        phase_offset=0.08,
+        transition_ms=300,
+        transition_easing="ease-in-out"
+    ),
+
+    "wave_ultra_smooth": DistributionConfig(
+        mode=DistributionMode.PHASED,
+        phase_offset=0.08,
+        transition_ms=500,
+        transition_easing="ease-in-out"
+    ),
+
+    "chase_smooth": DistributionConfig(
+        mode=DistributionMode.PHASED,
+        phase_offset=0.15,
+        transition_ms=250,
+        transition_easing="ease-out"
+    ),
+
+    "rainbow_smooth": DistributionConfig(
+        mode=DistributionMode.INDEXED,
+        phase_offset=1.0,
+        transition_ms=300,
+        transition_easing="linear"
+    ),
+
+    "pulse_smooth": DistributionConfig(
+        mode=DistributionMode.SYNCED,
+        transition_ms=400,
+        transition_easing="ease-in-out"
     ),
 }
 

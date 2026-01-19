@@ -6508,6 +6508,77 @@ def get_pending_ai_suggestions_route():
     })
 
 
+@app.route('/api/ai/suggestions/transition', methods=['POST'])
+def get_ai_transition_suggestions_route():
+    """
+    Get AI suggestions for transition/crossfade times.
+
+    Request body:
+    {
+        "effect_type": "wave",      // Required: wave, chase, pulse, rainbow, etc.
+        "fixture_count": 5,         // Required: number of fixtures
+        "step_duration_ms": 350     // Optional: step duration for timing
+    }
+
+    Returns suggestions for smooth, ultra_smooth, default, and snappy transitions.
+    AI suggests but NEVER auto-applies - user must explicitly apply.
+    """
+    from ai_fixture_advisor import get_transition_suggestions
+
+    data = request.get_json() or {}
+    effect_type = data.get('effect_type', 'wave')
+    fixture_count = data.get('fixture_count', 1)
+    step_duration_ms = data.get('step_duration_ms')
+
+    suggestions = get_transition_suggestions(
+        effect_type=effect_type,
+        fixture_count=fixture_count,
+        step_duration_ms=step_duration_ms
+    )
+
+    return jsonify({
+        'effect_type': effect_type,
+        'fixture_count': fixture_count,
+        'suggestions': suggestions
+    })
+
+
+@app.route('/api/ai/transition/recommend', methods=['GET'])
+def get_recommended_transition_route():
+    """
+    Quick endpoint to get recommended transition for an effect.
+
+    Query params:
+    - effect_type: wave, chase, pulse, rainbow, etc.
+    - fixture_count: number of fixtures
+    - smoothness: snappy, default, smooth, ultra_smooth (default: smooth)
+
+    Returns:
+    {
+        "transition_ms": 400,
+        "transition_easing": "ease-in-out"
+    }
+    """
+    from ai_fixture_advisor import get_recommended_transition_for_effect
+
+    effect_type = request.args.get('effect_type', 'wave')
+    fixture_count = int(request.args.get('fixture_count', 1))
+    smoothness = request.args.get('smoothness', 'smooth')
+
+    result = get_recommended_transition_for_effect(
+        effect_type=effect_type,
+        fixture_count=fixture_count,
+        smoothness=smoothness
+    )
+
+    return jsonify({
+        'effect_type': effect_type,
+        'fixture_count': fixture_count,
+        'smoothness': smoothness,
+        **result
+    })
+
+
 # ─────────────────────────────────────────────────────────
 # Render Pipeline API (Phase 3 - Fixture-Centric Architecture)
 # ─────────────────────────────────────────────────────────
