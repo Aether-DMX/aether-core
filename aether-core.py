@@ -33,8 +33,7 @@ import ai_ops_registry
 from effects_engine import DynamicEffectsEngine
 from looks_sequences import (
     LooksSequencesManager, Look, Sequence, SequenceStep, Modifier,
-    get_modifier_schemas, validate_look_data, validate_sequence_data,
-    run_full_migration,
+    validate_look_data, validate_sequence_data, run_full_migration,
 )
 from modifier_registry import (
     modifier_registry, validate_modifier, normalize_modifier,
@@ -138,7 +137,7 @@ def get_git_commit():
         )
         if result.returncode == 0:
             return result.stdout.strip()
-    except:
+    except (subprocess.SubprocessError, OSError, FileNotFoundError):
         pass
     return "unknown"
 
@@ -162,8 +161,8 @@ def ssot_integrity_check():
     try:
         with open(AETHER_FILE_PATH, 'r') as f:
             lines = f.readlines()
-    except:
-        print("⚠️ SSOT check: Could not read source file")
+    except OSError as e:
+        print(f"⚠️ SSOT check: Could not read source file: {e}")
         return []
 
     # Track what class/method we're in
@@ -330,8 +329,8 @@ class DMXStateManager:
                                     'name': info.get('name')
                                 }
                                 break
-                except:
-                    pass
+                except Exception:
+                    pass  # Playback status not critical for state save
                 
                 data = {
                     'universes': {str(k): v for k, v in self.universes.items()},
@@ -1282,12 +1281,12 @@ def init_database():
     # Add via_seance columns if they don't exist (for existing databases)
     try:
         c.execute('ALTER TABLE nodes ADD COLUMN via_seance TEXT')
-    except:
-        pass
+    except sqlite3.OperationalError:
+        pass  # Column already exists
     try:
         c.execute('ALTER TABLE nodes ADD COLUMN seance_ip TEXT')
-    except:
-        pass
+    except sqlite3.OperationalError:
+        pass  # Column already exists
 
     c.execute('''CREATE TABLE IF NOT EXISTS scenes (
         scene_id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, universe INTEGER DEFAULT 1,
@@ -1372,20 +1371,20 @@ def init_database():
     try:
         c.execute('ALTER TABLE scenes ADD COLUMN synced_to_nodes BOOLEAN DEFAULT 0')
         conn.commit()
-    except:
-        pass
+    except sqlite3.OperationalError:
+        pass  # Column already exists
     try:
         c.execute('ALTER TABLE chases ADD COLUMN synced_to_nodes BOOLEAN DEFAULT 0')
         conn.commit()
-    except:
-        pass
+    except sqlite3.OperationalError:
+        pass  # Column already exists
 
     # Add fade_ms column to chases table for smooth transitions
     try:
         c.execute('ALTER TABLE chases ADD COLUMN fade_ms INTEGER DEFAULT 0')
         conn.commit()
         print("✓ Added fade_ms column to chases table")
-    except:
+    except sqlite3.OperationalError:
         pass  # Column already exists
 
 
@@ -1393,21 +1392,21 @@ def init_database():
     try:
         c.execute('ALTER TABLE fixtures ADD COLUMN node_id TEXT')
         conn.commit()
-    except:
-        pass
+    except sqlite3.OperationalError:
+        pass  # Column already exists
     # Add fixture_ids to groups
     try:
         c.execute('ALTER TABLE groups ADD COLUMN fixture_ids TEXT')
         conn.commit()
-    except:
-        pass
+    except sqlite3.OperationalError:
+        pass  # Column already exists
 
     # Add slice_mode column to nodes table (migration for existing databases)
     try:
         c.execute('ALTER TABLE nodes ADD COLUMN slice_mode TEXT DEFAULT \'zero_outside\'')
         conn.commit()
         print("✓ Added slice_mode column to nodes table")
-    except:
+    except sqlite3.OperationalError:
         pass  # Column already exists
 
     # NOTE: Universe 1 built-in node removed - all nodes are WiFi ESP32 via UDPJSON
@@ -3648,8 +3647,8 @@ def system_stats():
             load = f.read().split()
             # Convert 1-min load average to approximate percentage (for 4 cores)
             stats['cpu_percent'] = float(load[0]) * 25  # Rough approximation
-    except:
-        pass
+    except (OSError, ValueError, IndexError):
+        pass  # Not available on this platform
 
     try:
         # Memory - read from /proc/meminfo
@@ -3661,30 +3660,30 @@ def system_stats():
                     meminfo[parts[0].rstrip(':')] = int(parts[1]) * 1024  # Convert KB to bytes
             stats['memory_total'] = meminfo.get('MemTotal', 0)
             stats['memory_used'] = stats['memory_total'] - meminfo.get('MemAvailable', 0)
-    except:
-        pass
+    except (OSError, ValueError, KeyError):
+        pass  # Not available on this platform
 
     try:
         # CPU temperature - Raspberry Pi specific
         with open('/sys/class/thermal/thermal_zone0/temp', 'r') as f:
             stats['cpu_temp'] = int(f.read().strip()) / 1000.0
-    except:
-        pass
+    except (OSError, ValueError):
+        pass  # Not available on this platform
 
     try:
         # Disk usage
         statvfs = os.statvfs('/')
         stats['disk_total'] = statvfs.f_blocks * statvfs.f_frsize
         stats['disk_used'] = (statvfs.f_blocks - statvfs.f_bfree) * statvfs.f_frsize
-    except:
-        pass
+    except (OSError, AttributeError):
+        pass  # Not available on this platform
 
     try:
         # Uptime
         with open('/proc/uptime', 'r') as f:
             stats['uptime'] = float(f.read().split()[0])
-    except:
-        pass
+    except (OSError, ValueError, IndexError):
+        pass  # Not available on this platform
 
     return jsonify(stats)
 
@@ -7609,7 +7608,8 @@ if __name__ == '__main__':
         try:
             look = looks_sequences_manager.get_look(look_id)
             return look.to_dict() if look else None
-        except:
+        except Exception as e:
+            print(f"⚠️ Look resolver error for {look_id}: {e}")
             return None
 
     unified_engine.set_output_callback(unified_output_callback)

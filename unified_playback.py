@@ -32,7 +32,7 @@ import random
 import math
 from typing import Dict, List, Optional, Any, Callable, Tuple, Union
 from dataclasses import dataclass, field
-from enum import Enum, auto
+from enum import Enum
 from datetime import datetime
 
 

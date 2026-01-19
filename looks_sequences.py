@@ -37,16 +37,6 @@ from modifier_registry import (
 SCHEMA_VERSION = 2  # Bumped for enhanced modifier system
 
 
-# ============================================================
-# Legacy compatibility - MODIFIER_SCHEMAS now comes from registry
-# ============================================================
-def get_legacy_schemas() -> dict:
-    """Get schemas in legacy format for backward compatibility"""
-    response = modifier_registry.to_api_response()
-    return response.get("schemas", {})
-
-# For backward compatibility - but prefer using modifier_registry directly
-MODIFIER_SCHEMAS = property(lambda self: get_legacy_schemas())
 
 
 # ============================================================
@@ -942,9 +932,6 @@ def run_full_migration(db_path: str) -> dict:
 # API Endpoint Helpers
 # ============================================================
 
-def get_modifier_schemas() -> dict:
-    """Get all modifier schemas for UI generation"""
-    return MODIFIER_SCHEMAS
 
 
 def validate_look_data(data: dict) -> tuple[bool, Optional[str]]:

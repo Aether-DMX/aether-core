@@ -317,8 +317,8 @@ class OFLClient:
                         cached_time = datetime.fromisoformat(data['_cached_at'])
                         if (datetime.now() - cached_time).days < 7:
                             return data.get('data')
-            except:
-                pass
+            except (OSError, json.JSONDecodeError, ValueError, KeyError):
+                pass  # Cache corrupted or unreadable, will refetch
         return None
 
     def _write_cache(self, key: str, data: Dict):
@@ -327,8 +327,8 @@ class OFLClient:
         try:
             with open(cache_path, 'w') as f:
                 json.dump({'data': data, '_cached_at': datetime.now().isoformat()}, f)
-        except:
-            pass
+        except OSError:
+            pass  # Cache write failed, non-critical
 
     def get_manufacturers(self) -> List[Dict]:
         """Get list of all manufacturers"""
