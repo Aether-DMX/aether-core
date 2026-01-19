@@ -225,8 +225,38 @@ STALE_TIMEOUT = 60
 DMX_OUTPUT_FPS = 40  # Max frames per second for DMX output
 
 app = Flask(__name__)
-CORS(app, resources={r"/api/*": {"origins": "*"}})
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+
+# ============================================================
+# CORS Configuration - Security hardened
+# ============================================================
+# Default allowed origins for local deployment (Pi + local network)
+# Add custom origins via AETHER_CORS_ORIGINS environment variable (comma-separated)
+DEFAULT_CORS_ORIGINS = [
+    "http://localhost:3000",
+    "http://localhost:8891",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:8891",
+    "http://192.168.50.1:3000",   # Default Pi AP address
+    "http://192.168.50.1:8891",
+]
+
+def get_allowed_origins():
+    """Get list of allowed CORS origins from defaults + environment"""
+    origins = DEFAULT_CORS_ORIGINS.copy()
+    # Allow additional origins via environment variable
+    env_origins = os.environ.get('AETHER_CORS_ORIGINS', '')
+    if env_origins:
+        for origin in env_origins.split(','):
+            origin = origin.strip()
+            if origin and origin not in origins:
+                origins.append(origin)
+    return origins
+
+ALLOWED_ORIGINS = get_allowed_origins()
+print(f"🔒 CORS allowed origins: {ALLOWED_ORIGINS}")
+
+CORS(app, resources={r"/api/*": {"origins": ALLOWED_ORIGINS}})
+socketio = SocketIO(app, cors_allowed_origins=ALLOWED_ORIGINS, async_mode='threading')
 
 # ============================================================
 # Beta Debug Logging - Enable with AETHER_BETA_DEBUG=1
