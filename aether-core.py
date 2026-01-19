@@ -102,11 +102,11 @@ except ImportError:
 AETHER_UDPJSON_PORT = 6455  # SSOT: Primary port for UDPJSON DMX commands
 
 # ============================================================
-# Configuration - Dynamic paths based on user home directory
+# Configuration - Environment-based with sensible defaults
 # ============================================================
-API_PORT = 8891
-DISCOVERY_PORT = 9999
-WIFI_COMMAND_PORT = 8888
+API_PORT = int(os.environ.get('AETHER_API_PORT', 8891))
+DISCOVERY_PORT = int(os.environ.get('AETHER_DISCOVERY_PORT', 9999))
+WIFI_COMMAND_PORT = int(os.environ.get('AETHER_WIFI_PORT', 8888))
 
 # UART Gateway configuration (Pi GPIO to ESP32)
 UART_GATEWAY_PORT = "/dev/serial0"  # Pi GPIO 14/15

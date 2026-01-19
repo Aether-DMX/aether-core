@@ -232,7 +232,8 @@ def run_live_test():
     import urllib.request
     import urllib.error
 
-    base_url = "http://localhost:8891"
+    # API endpoint - configure via environment variable or default to localhost
+    base_url = os.environ.get("AETHER_CORE_URL", "http://localhost:8891")
 
     print("\n" + "="*60)
     print("LIVE TEST: Chase Playback Against Running Server")
