@@ -33,9 +33,22 @@ from .types import (
     RdmDeviceInfo,
     PatchSuggestion,
     DiscoveryStatus,
+    RdmCommand,
+    RdmResponse,
+    RdmCommandType,
+    RdmResponseType,
+    RdmPid,
+    RdmNackReason,
 )
 
-from .transport import RdmTransport, UdpJsonRdmTransport
+from .transport import (
+    RdmTransport,
+    UdpJsonRdmTransport,
+    RdmTransportError,
+    RdmTimeoutError,
+    RdmConnectionError,
+    create_transport,
+)
 from .discovery import RdmDiscovery, DiscoverySession
 from .auto_patch import AutoPatcher, ProfileMatcher
 from .manager import RdmManager
@@ -49,9 +62,19 @@ __all__ = [
     "RdmDeviceInfo",
     "PatchSuggestion",
     "DiscoveryStatus",
+    "RdmCommand",
+    "RdmResponse",
+    "RdmCommandType",
+    "RdmResponseType",
+    "RdmPid",
+    "RdmNackReason",
     # Transport
     "RdmTransport",
     "UdpJsonRdmTransport",
+    "RdmTransportError",
+    "RdmTimeoutError",
+    "RdmConnectionError",
+    "create_transport",
     # Discovery
     "RdmDiscovery",
     "DiscoverySession",

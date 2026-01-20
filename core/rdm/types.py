@@ -12,12 +12,250 @@ Classes:
     RdmDeviceInfo: Complete device information
     PatchSuggestion: Auto-patch recommendation
     DiscoveryStatus: Discovery session state
+    RdmCommand: UDP JSON RDM command wrapper
+    RdmResponse: UDP JSON RDM response wrapper
+
+Constants:
+    RDM_PID_*: Standard RDM Parameter IDs
+    RdmCommandType: Command type enum
+    RdmResponseType: Response type enum
 """
 
 from dataclasses import dataclass, field
-from typing import Optional, List, Dict, Any
-from enum import Enum
+from typing import Optional, List, Dict, Any, Union
+from enum import Enum, IntEnum
 from datetime import datetime
+
+
+# ============================================================
+# RDM Constants - Standard Parameter IDs (PIDs)
+# ============================================================
+
+class RdmPid(IntEnum):
+    """Standard RDM Parameter IDs (E1.20)."""
+    # Discovery
+    DISC_UNIQUE_BRANCH = 0x0001
+    DISC_MUTE = 0x0002
+    DISC_UN_MUTE = 0x0003
+
+    # Device Info
+    DEVICE_INFO = 0x0060
+    PRODUCT_DETAIL_ID_LIST = 0x0070
+    DEVICE_MODEL_DESCRIPTION = 0x0080
+    MANUFACTURER_LABEL = 0x0081
+    DEVICE_LABEL = 0x0082
+    FACTORY_DEFAULTS = 0x0090
+    SOFTWARE_VERSION_LABEL = 0x00C0
+    BOOT_SOFTWARE_VERSION_ID = 0x00C1
+    BOOT_SOFTWARE_VERSION_LABEL = 0x00C2
+
+    # DMX512 Setup
+    DMX_PERSONALITY = 0x00E0
+    DMX_PERSONALITY_DESCRIPTION = 0x00E1
+    DMX_START_ADDRESS = 0x00F0
+    SLOT_INFO = 0x0120
+    SLOT_DESCRIPTION = 0x0121
+
+    # Sensors
+    SENSOR_DEFINITION = 0x0200
+    SENSOR_VALUE = 0x0201
+
+    # Power/Lamp
+    DEVICE_HOURS = 0x0400
+    LAMP_HOURS = 0x0401
+    LAMP_STRIKES = 0x0402
+    LAMP_STATE = 0x0403
+    LAMP_ON_MODE = 0x0404
+    DEVICE_POWER_CYCLES = 0x0405
+
+    # Display
+    DISPLAY_INVERT = 0x0500
+    DISPLAY_LEVEL = 0x0501
+
+    # Control
+    PAN_INVERT = 0x0600
+    TILT_INVERT = 0x0601
+    PAN_TILT_SWAP = 0x0602
+
+    # Identity
+    IDENTIFY_DEVICE = 0x1000
+    RESET_DEVICE = 0x1001
+
+
+class RdmCommandType(Enum):
+    """RDM command types for UDP JSON messages."""
+    DISCOVER = "discover"
+    GET_INFO = "get_info"
+    GET_PARAM = "get_param"
+    SET_PARAM = "set_param"
+    IDENTIFY = "identify"
+    SET_ADDRESS = "set_address"
+    SET_LABEL = "set_label"
+    SET_PERSONALITY = "set_personality"
+
+
+class RdmResponseType(Enum):
+    """RDM response types."""
+    ACK = "ack"
+    ACK_TIMER = "ack_timer"
+    NACK = "nack"
+    TIMEOUT = "timeout"
+    ERROR = "error"
+
+
+class RdmNackReason(IntEnum):
+    """RDM NACK reason codes."""
+    UNKNOWN_PID = 0x0000
+    FORMAT_ERROR = 0x0001
+    HARDWARE_FAULT = 0x0002
+    PROXY_REJECT = 0x0003
+    WRITE_PROTECT = 0x0004
+    UNSUPPORTED_COMMAND_CLASS = 0x0005
+    DATA_OUT_OF_RANGE = 0x0006
+    BUFFER_FULL = 0x0007
+    PACKET_SIZE_UNSUPPORTED = 0x0008
+    SUB_DEVICE_OUT_OF_RANGE = 0x0009
+    PROXY_BUFFER_FULL = 0x000A
+
+
+# ============================================================
+# UDP JSON RDM Command/Response
+# ============================================================
+
+@dataclass
+class RdmCommand:
+    """
+    RDM command for UDP JSON transport.
+
+    This wraps an RDM command in the UDP JSON v2 format
+    for sending to ESP32 nodes.
+
+    Attributes:
+        action: Command type (discover, get_info, etc.)
+        universe: Target DMX universe
+        uid: Target device UID (None for broadcast)
+        pid: Parameter ID for get/set commands
+        data: Command data payload
+        seq: Sequence number for request tracking
+    """
+    action: RdmCommandType
+    universe: int
+    uid: Optional[str] = None
+    pid: Optional[int] = None
+    data: Optional[Dict[str, Any]] = None
+    seq: int = 0
+
+    def to_udp_json(self) -> Dict[str, Any]:
+        """Convert to UDP JSON v2 message format."""
+        msg: Dict[str, Any] = {
+            "v": 2,
+            "type": "rdm",
+            "action": self.action.value,
+            "universe": self.universe,
+            "seq": self.seq,
+        }
+
+        if self.uid:
+            msg["uid"] = self.uid
+
+        if self.pid is not None:
+            msg["pid"] = self.pid
+
+        if self.data:
+            msg.update(self.data)
+
+        return msg
+
+
+@dataclass
+class RdmResponse:
+    """
+    RDM response from UDP JSON transport.
+
+    Wraps an RDM response received from ESP32 nodes.
+
+    Attributes:
+        action: Original command action
+        response_type: Response type (ack, nack, timeout, error)
+        uid: Responding device UID
+        data: Response data payload
+        nack_reason: NACK reason code if applicable
+        error: Error message if applicable
+        seq: Sequence number matching request
+    """
+    action: RdmCommandType
+    response_type: RdmResponseType
+    uid: Optional[str] = None
+    data: Optional[Dict[str, Any]] = None
+    nack_reason: Optional[RdmNackReason] = None
+    error: Optional[str] = None
+    seq: int = 0
+
+    @property
+    def success(self) -> bool:
+        """Check if response indicates success."""
+        return self.response_type == RdmResponseType.ACK
+
+    @classmethod
+    def from_udp_json(cls, msg: Dict[str, Any]) -> "RdmResponse":
+        """Parse from UDP JSON v2 response message."""
+        action_str = msg.get("action", "")
+        try:
+            action = RdmCommandType(action_str)
+        except ValueError:
+            action = RdmCommandType.GET_INFO  # Default
+
+        # Determine response type
+        if msg.get("error"):
+            response_type = RdmResponseType.ERROR
+        elif msg.get("timeout"):
+            response_type = RdmResponseType.TIMEOUT
+        elif msg.get("nack"):
+            response_type = RdmResponseType.NACK
+        else:
+            response_type = RdmResponseType.ACK
+
+        # Extract NACK reason if present
+        nack_reason = None
+        if response_type == RdmResponseType.NACK:
+            nack_code = msg.get("nack_reason")
+            if nack_code is not None:
+                try:
+                    nack_reason = RdmNackReason(nack_code)
+                except ValueError:
+                    pass
+
+        # Extract data (everything except meta fields)
+        meta_fields = {"v", "type", "action", "seq", "error", "timeout", "nack", "nack_reason", "uid"}
+        data = {k: v for k, v in msg.items() if k not in meta_fields}
+
+        return cls(
+            action=action,
+            response_type=response_type,
+            uid=msg.get("uid"),
+            data=data if data else None,
+            nack_reason=nack_reason,
+            error=msg.get("error"),
+            seq=msg.get("seq", 0),
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        result: Dict[str, Any] = {
+            "action": self.action.value,
+            "response_type": self.response_type.value,
+            "success": self.success,
+            "seq": self.seq,
+        }
+        if self.uid:
+            result["uid"] = self.uid
+        if self.data:
+            result["data"] = self.data
+        if self.nack_reason:
+            result["nack_reason"] = self.nack_reason.value
+        if self.error:
+            result["error"] = self.error
+        return result
 
 
 class DiscoveryState(Enum):
