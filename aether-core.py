@@ -2604,7 +2604,20 @@ class RDMManager:
 
         # Save discovered devices to database
         if result.get('success') and result.get('devices'):
-            self._save_devices(node_id, node.get('universe', 1), result['devices'])
+            universe = node.get('universe', 1)
+            self._save_devices(node_id, universe, result['devices'])
+
+            # Fetch detailed info for each device
+            for device in result['devices']:
+                uid = device if isinstance(device, str) else device.get('uid')
+                if uid:
+                    try:
+                        info = self._send_rdm_command(node['ip'], 'get_info', {"uid": uid})
+                        if info.get('success'):
+                            self._update_device_info(uid, info)
+                            print(f"  📋 Got info for {uid}: Ch{info.get('dmx_address', '?')}, {info.get('footprint', '?')}ch")
+                    except Exception as e:
+                        print(f"  ⚠️ Failed to get info for {uid}: {e}")
 
         return result
 
