@@ -270,7 +270,9 @@ DEFAULT_CORS_ORIGINS = [
     "http://localhost:8891",
     "http://127.0.0.1:3000",
     "http://127.0.0.1:8891",
-    "http://192.168.50.1:3000",   # Default Pi AP address
+    "http://192.168.50.1:3000",
+    "http://192.168.18.13:3000",
+    "http://192.168.18.13:8891",   # Default Pi AP address
     "http://192.168.50.1:8891",
 ]
 
@@ -620,6 +622,7 @@ class ChaseEngine:
         steps = chase.get('steps', [])
         bpm = chase.get('bpm', 120)
         loop = chase.get('loop', True)
+        distribution_mode = chase.get('distribution_mode', 'unified')
         # Apply-time fade override > chase default > 0
         chase_fade_ms = fade_ms_override if fade_ms_override is not None else chase.get('fade_ms', 0)
 
@@ -676,7 +679,7 @@ class ChaseEngine:
                 # Would need ESP firmware to handle local chase playback with 'play_chase' command.
                 def send_to_universe(univ):
                     try:
-                        self._send_step(univ, channels, fade_ms)
+                        self._send_step(univ, channels, fade_ms, distribution_mode)
                     except Exception as e:
                         print(f"❌ Chase step send error (U{univ}): {e}", flush=True)
 
@@ -708,40 +711,48 @@ class ChaseEngine:
             self.chase_health[chase_id] = {"step": step_index, "last_time": time.time(), "status": "stopped"}
             print(f"⏹️ Chase '{chase['name']}' stopped after {loop_count} loops", flush=True)
 
-    def _send_step(self, universe, channels, fade_ms=0):
-        """Send a single chase step - routes through SSOT (same path as /api/dmx/set)"""
+    def _send_step(self, universe, channels, fade_ms=0, distribution_mode='unified'):
+        """Send chase step with intelligent distribution.
+        
+        distribution_mode: 'unified' = replicate to all, 'pixel' = unique per fixture"""
         if not channels:
-            print(f"  ⚠️ _send_step: no channels to send for U{universe}", flush=True)
             return
-        parsed_channels = {}
+        parsed = {}
         for key, value in channels.items():
             key_str = str(key)
             if ':' in key_str:
-                # Format: "universe:channel" -> only apply to matching universe
                 parts = key_str.split(':')
-                ch_univ = int(parts[0])
-                ch_num = int(parts[1])
-                if ch_univ == universe:
-                    parsed_channels[ch_num] = value
+                if int(parts[0]) == universe:
+                    parsed[int(parts[1])] = value
             else:
-                # Simple channel number - apply to all universes
-                parsed_channels[int(key_str)] = value
-        if not parsed_channels:
-            print(f"  ⚠️ _send_step: no channels matched U{universe} after parsing", flush=True)
+                parsed[int(key_str)] = value
+        if not parsed:
             return
+        # Get fixtures and apply distribution mode
+        fixtures = content_manager.get_fixtures(universe)
+        if fixtures:
+            fixtures = sorted(fixtures, key=lambda f: f.get('start_channel', 1))
+            pattern_vals = list(parsed.values())
+            expanded = {}
+            if distribution_mode == 'pixel':
+                # PIXEL: Each fixture gets unique sequential value
+                for idx, fix in enumerate(fixtures):
+                    start = fix.get('start_channel', 1)
+                    count = fix.get('channel_count', 1)
+                    val = pattern_vals[idx % len(pattern_vals)] if pattern_vals else 0
+                    for ch in range(count):
+                        expanded[start + ch] = val
+            else:
+                # UNIFIED: Replicate pattern to all fixtures
+                for fix in fixtures:
+                    start = fix.get('start_channel', 1)
+                    count = fix.get('channel_count', len(pattern_vals))
+                    for i in range(min(count, len(pattern_vals))):
+                        expanded[start + i] = pattern_vals[i]
+            if expanded:
+                parsed = expanded
+        content_manager.set_channels(universe, parsed, fade_ms=fade_ms)
 
-        # SSOT trace: log what we're about to send
-        sample_ch = list(parsed_channels.items())[:3]  # First 3 for brevity
-        print(f"  📤 _send_step -> SSOT: U{universe}, {len(parsed_channels)} ch, fade={fade_ms}ms, sample={sample_ch}", flush=True)
-
-        # Route through SSOT - same function as /api/dmx/set
-        result = content_manager.set_channels(universe, parsed_channels, fade_ms=fade_ms)
-
-        # Log result
-        if result.get('success'):
-            print(f"  ✓ _send_step: SSOT accepted, {len(result.get('results', []))} nodes updated", flush=True)
-        else:
-            print(f"  ❌ _send_step: SSOT failed: {result.get('error', 'unknown')}", flush=True)
 
 chase_engine = ChaseEngine()
 effects_engine = DynamicEffectsEngine()
@@ -1328,6 +1339,7 @@ def init_database():
         channels TEXT, fade_ms INTEGER DEFAULT 500, curve TEXT DEFAULT 'linear', color TEXT DEFAULT '#3b82f6',
         icon TEXT DEFAULT 'lightbulb', is_favorite BOOLEAN DEFAULT 0, play_count INTEGER DEFAULT 0,
         synced_to_nodes BOOLEAN DEFAULT 0,
+        distribution_mode TEXT DEFAULT 'unified',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )''')
 
@@ -1336,6 +1348,7 @@ def init_database():
         bpm INTEGER DEFAULT 120, loop BOOLEAN DEFAULT 1, steps TEXT, color TEXT DEFAULT '#10b981',
         fade_ms INTEGER DEFAULT 0,
         synced_to_nodes BOOLEAN DEFAULT 0,
+        distribution_mode TEXT DEFAULT 'unified',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )''')
 
@@ -1422,6 +1435,14 @@ def init_database():
     except sqlite3.OperationalError:
         pass  # Column already exists
 
+
+    # Add distribution_mode to chases (unified/pixel)
+    try:
+        c.execute('ALTER TABLE chases ADD COLUMN distribution_mode TEXT DEFAULT \'unified\'')
+        conn.commit()
+        print("Added distribution_mode column to chases table")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
 
     # Add node_id to fixtures (which Pulse node outputs this fixture)
     try:
@@ -2877,7 +2898,7 @@ class ContentManager:
         conn = get_db()
         c = conn.cursor()
         c.execute('''INSERT OR REPLACE INTO scenes (scene_id, name, description, universe, channels,
-            fade_ms, curve, color, icon, synced_to_nodes, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+            fade_ms, curve, color, icon, synced_to_nodes, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
             (scene_id, data.get('name', 'Untitled'), data.get('description', ''),
              universe, json.dumps(channels), data.get('fade_ms', 500), data.get('curve', 'linear'),
              data.get('color', '#3b82f6'), data.get('icon', 'lightbulb'), False, datetime.now().isoformat()))
@@ -2937,14 +2958,29 @@ class ContentManager:
             return scene
         return None
 
-    def replicate_scene_to_fixtures(self, channels, fixture_size=4, max_fixtures=128):
+    def replicate_scene_to_fixtures(self, channels, fixture_size=4, max_fixtures=128, distribution_mode='unified', universe=None):
         """Replicate a scene pattern across all fixtures in a universe.
 
         If scene has channels 1-4, replicate to 5-8, 9-12, etc.
-        Detects the fixture pattern from the scene and tiles it.
+        distribution_mode: 'unified' = replicate same pattern, 'pixel' = unique per fixture
         """
         if not channels:
             return channels
+
+        # PIXEL MODE: distribute unique values to each fixture
+        if distribution_mode == 'pixel' and universe is not None:
+            fixtures = self.get_fixtures(universe)
+            if fixtures:
+                fixtures = sorted(fixtures, key=lambda f: f.get('start_channel', 1))
+                pattern_vals = list(channels.values())
+                distributed = {}
+                for idx, fix in enumerate(fixtures):
+                    start = fix.get('start_channel', 1)
+                    count = fix.get('channel_count', 1)
+                    val = pattern_vals[idx % len(pattern_vals)] if pattern_vals else 0
+                    for ch in range(count):
+                        distributed[str(start + ch)] = val
+                return distributed
 
         # Find the base pattern - channels that define one fixture
         ch_nums = sorted(int(k) for k in channels.keys())
@@ -3128,37 +3164,42 @@ class ContentManager:
         conn = get_db()
         c = conn.cursor()
         c.execute('''INSERT OR REPLACE INTO chases (chase_id, name, description, universe, bpm, loop,
-            steps, color, fade_ms, synced_to_nodes, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+            steps, color, fade_ms, distribution_mode, synced_to_nodes, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
             (chase_id, data.get('name', 'Untitled'), data.get('description', ''),
              universe, data.get('bpm', 120), data.get('loop', True),
-             json.dumps(steps), data.get('color', '#10b981'), data.get('fade_ms', 0), False, datetime.now().isoformat()))
+             json.dumps(steps), data.get('color', '#10b981'), data.get('fade_ms', 0), data.get('distribution_mode', 'unified'), False, datetime.now().isoformat()))
         conn.commit()
         conn.close()
-        
-        # Sync to nodes
-        chase = self.get_chase(chase_id)
-        if chase:
-            nodes = node_manager.get_wifi_nodes_in_universe(universe)
-            for node in nodes:
-                node_manager.sync_chase_to_node(node, chase)
-                time.sleep(CHUNK_DELAY)
-            
-            conn = get_db()
-            c = conn.cursor()
-            c.execute('UPDATE chases SET synced_to_nodes = 1 WHERE chase_id = ?', (chase_id,))
-            conn.commit()
-            conn.close()
-        
+
+        # Sync to nodes (non-blocking)
+        try:
+            chase = self.get_chase(chase_id)
+            if chase:
+                nodes = node_manager.get_wifi_nodes_in_universe(universe)
+                for node in nodes:
+                    node_manager.sync_chase_to_node(node, chase)
+                    time.sleep(CHUNK_DELAY)
+                conn = get_db()
+                c = conn.cursor()
+                c.execute('UPDATE chases SET synced_to_nodes = 1 WHERE chase_id = ?', (chase_id,))
+                conn.commit()
+                conn.close()
+        except Exception as e:
+            print(f"Chase sync error: {e}", flush=True)
+
         socketio.emit('chases_update', {'chases': self.get_chases()})
 
-        # Async sync to Supabase (non-blocking)
-        if SUPABASE_AVAILABLE and chase:
-            supabase = get_supabase_service()
-            if supabase and supabase.is_enabled():
-                threading.Thread(
-                    target=lambda: supabase.sync_chase(chase),
-                    daemon=True
-                ).start()
+        # Async sync to Supabase
+        try:
+            if SUPABASE_AVAILABLE and chase:
+                supabase = get_supabase_service()
+                if supabase and supabase.is_enabled():
+                    threading.Thread(
+                        target=lambda: supabase.sync_chase(chase),
+                        daemon=True
+                    ).start()
+        except Exception as e:
+            print(f"Supabase error: {e}", flush=True)
 
         return {'success': True, 'chase_id': chase_id}
 
@@ -3224,8 +3265,8 @@ class ContentManager:
                 show_engine.stop()
             except Exception as e:
                 print(f"⚠️ Show stop: {e}", flush=True)
-            # Only stop this specific chase if it's already running (not ALL chases)
-            chase_engine.stop_chase(chase_id)
+            # Stop ALL running chases before starting new one
+            chase_engine.stop_all()  # Stop all running chases
             effects_engine.stop_effect()  # Also stop effects
             for univ in universes_with_nodes:
                 playback_manager.stop(univ)
@@ -4963,7 +5004,7 @@ def play_chase(chase_id):
 @app.route('/api/chases/<chase_id>/stop', methods=['POST'])
 def stop_chase(chase_id):
     """Stop a specific chase"""
-    chase_engine.stop_chase(chase_id)
+    chase_engine.stop_all()  # Stop all running chases
     return jsonify({'success': True, 'chase_id': chase_id})
 
 @app.route('/api/chases/health', methods=['GET'])
