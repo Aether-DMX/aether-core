@@ -33,6 +33,7 @@ from .types import (
     RdmParameter,
     RdmDeviceInfo,
     PatchSuggestion,
+    AutoPatchSuggestion,
     PatchConfidence,
     DiscoveryStatus,
     DiscoveryState,
@@ -53,7 +54,7 @@ from .transport import (
     create_transport,
 )
 from .discovery import RdmDiscovery, DiscoverySession, DiscoveryEngine
-from .auto_patch import AutoPatcher, ProfileMatcher
+from .auto_patch import AutoPatcher, ProfileMatcher, AutoPatchEngine
 from .manager import RdmManager
 
 __all__ = [
@@ -65,6 +66,7 @@ __all__ = [
     "RdmParameter",
     "RdmDeviceInfo",
     "PatchSuggestion",
+    "AutoPatchSuggestion",
     "PatchConfidence",
     "DiscoveryStatus",
     "DiscoveryState",
@@ -88,6 +90,7 @@ __all__ = [
     # Auto-Patch
     "AutoPatcher",
     "ProfileMatcher",
+    "AutoPatchEngine",
     # Manager
     "RdmManager",
 ]
