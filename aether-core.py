@@ -23,6 +23,8 @@ import threading
 import time
 import os
 import subprocess
+import uuid
+import platform
 from datetime import datetime, timedelta
 from typing import Dict, Optional
 from flask import Flask, request, jsonify
@@ -162,6 +164,19 @@ def get_git_commit():
     return "unknown"
 
 AETHER_COMMIT = get_git_commit()
+
+# Device identification for cloud sync
+DEVICE_ID_FILE = os.path.join(HOME_DIR, ".aether-device-id")
+
+def get_or_create_device_id():
+    """Get or create persistent device identifier"""
+    if os.path.exists(DEVICE_ID_FILE):
+        with open(DEVICE_ID_FILE, 'r') as f:
+            return f.read().strip()
+    device_id = f"aether-{uuid.uuid4().hex[:8]}"
+    with open(DEVICE_ID_FILE, 'w') as f:
+        f.write(device_id)
+    return device_id
 
 # ============================================================
 # SSOT Guardrail - Prevents future bypass regressions
@@ -3646,6 +3661,50 @@ def dismiss_session():
     """Dismiss the resume prompt without resuming"""
     dmx_state.last_session = None
     return jsonify({'success': True})
+
+
+@app.route('/api/system/info', methods=['GET'])
+def system_info():
+    """System information for frontend mode detection"""
+    device_id = get_or_create_device_id()
+    is_pi = os.path.exists('/sys/firmware/devicetree/base/model')
+    has_display = bool(os.environ.get('DISPLAY') or os.environ.get('WAYLAND_DISPLAY'))
+
+    # Determine mode from settings
+    mode_setting = app_settings.get('system', {}).get('uiMode', 'auto')
+    if mode_setting == 'auto':
+        mode = 'kiosk' if (is_pi and has_display) else 'desktop'
+    else:
+        mode = mode_setting
+
+    return jsonify({
+        'deviceId': device_id,
+        'hostname': platform.node(),
+        'platform': 'pi5' if is_pi else platform.system().lower(),
+        'version': AETHER_VERSION,
+        'commit': AETHER_COMMIT,
+        'mode': mode,
+        'capabilities': {
+            'maxUniverses': 16,
+            'rdmSupported': True,
+            'sacnSupported': True,
+        }
+    })
+
+
+@app.route('/api/system/mode', methods=['POST'])
+def set_system_mode():
+    """Set UI mode preference"""
+    global app_settings
+    data = request.get_json() or {}
+    mode = data.get('mode', 'auto')
+    if mode not in ['auto', 'kiosk', 'desktop', 'mobile']:
+        return jsonify({'error': 'Invalid mode'}), 400
+    if 'system' not in app_settings:
+        app_settings['system'] = {}
+    app_settings['system']['uiMode'] = mode
+    save_settings()
+    return jsonify({'success': True, 'mode': mode})
 
 
 @app.route('/api/system/stats', methods=['GET'])
