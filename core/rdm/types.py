@@ -261,10 +261,15 @@ class RdmResponse:
 class DiscoveryState(Enum):
     """State of an RDM discovery session."""
     IDLE = "idle"
-    DISCOVERING = "discovering"
+    BROADCASTING = "broadcasting"
     QUERYING = "querying"
+    ENRICHING = "enriching"
+    CONFLICT_CHECK = "conflict_check"
     COMPLETE = "complete"
     ERROR = "error"
+
+    # Aliases for backward compatibility
+    DISCOVERING = "broadcasting"
 
 
 class PatchConfidence(Enum):
@@ -601,3 +606,116 @@ class DiscoveryStatus:
         if self.devices_found == 0:
             return 0.1  # Discovering
         return 0.1 + (0.9 * self.devices_queried / self.devices_found)
+
+
+@dataclass
+class DiscoveredFixture:
+    """
+    Fixture discovered via RDM with full information for patching.
+
+    This is the primary data structure returned by the DiscoveryEngine.
+    It contains all RDM-reported information plus enrichment from
+    the fixture database.
+
+    Attributes:
+        uid: Unique RDM device identifier (e.g., '6574:ABCD1234')
+        universe: DMX universe number
+        start_address: DMX start address (1-512)
+        channel_count: Number of DMX channels used
+        personality_index: Current personality/mode index
+        personality_label: Human-readable personality name
+        manufacturer: Manufacturer name from RDM
+        model: Model name from RDM
+        device_id: RDM device model ID
+        serial_number: Device serial number
+        software_version: Firmware version string
+        capabilities: List of device capabilities (e.g., ['color_wheel', 'gobo'])
+        fixture_type: Guessed fixture type from model (e.g., 'moving_head')
+        conflicts: List of conflict descriptions (overlapping addresses)
+    """
+    uid: str
+    universe: int
+    start_address: int
+    channel_count: int
+    personality_index: int = 1
+    personality_label: str = ""
+    manufacturer: str = ""
+    model: str = ""
+    device_id: int = 0
+    serial_number: str = ""
+    software_version: str = ""
+    capabilities: List[str] = field(default_factory=list)
+    fixture_type: Optional[str] = None
+    conflicts: List[str] = field(default_factory=list)
+
+    def channel_range(self) -> range:
+        """
+        Get the DMX channel range for this fixture.
+
+        Returns:
+            range object from start_address to start_address + channel_count
+        """
+        return range(self.start_address, self.start_address + self.channel_count)
+
+    def has_conflicts(self) -> bool:
+        """Check if fixture has address conflicts."""
+        return len(self.conflicts) > 0
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for API response."""
+        return {
+            "uid": self.uid,
+            "universe": self.universe,
+            "start_address": self.start_address,
+            "channel_count": self.channel_count,
+            "personality_index": self.personality_index,
+            "personality_label": self.personality_label,
+            "manufacturer": self.manufacturer,
+            "model": self.model,
+            "device_id": self.device_id,
+            "serial_number": self.serial_number,
+            "software_version": self.software_version,
+            "capabilities": self.capabilities,
+            "fixture_type": self.fixture_type,
+            "conflicts": self.conflicts,
+            "channel_range": [self.start_address, self.start_address + self.channel_count - 1],
+            "has_conflicts": self.has_conflicts(),
+        }
+
+    @classmethod
+    def from_device_info(
+        cls,
+        info: "RdmDeviceInfo",
+        universe: int
+    ) -> "DiscoveredFixture":
+        """
+        Create DiscoveredFixture from RdmDeviceInfo.
+
+        Args:
+            info: RDM device information
+            universe: DMX universe number
+
+        Returns:
+            New DiscoveredFixture instance
+        """
+        # Get current personality label if available
+        personality_label = ""
+        if info.personalities:
+            for p in info.personalities:
+                if p.id == info.current_personality:
+                    personality_label = p.name
+                    break
+
+        return cls(
+            uid=str(info.uid),
+            universe=universe,
+            start_address=info.dmx_address,
+            channel_count=info.dmx_footprint,
+            personality_index=info.current_personality,
+            personality_label=personality_label,
+            manufacturer=info.manufacturer_label,
+            model=info.device_model,
+            device_id=info.device_model_id,
+            serial_number=str(info.uid.device_id),  # Use device_id as serial
+            software_version=info.software_version,
+        )

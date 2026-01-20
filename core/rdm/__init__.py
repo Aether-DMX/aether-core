@@ -28,11 +28,14 @@ Version: 0.1.0
 from .types import (
     RdmUid,
     DiscoveredDevice,
+    DiscoveredFixture,
     RdmPersonality,
     RdmParameter,
     RdmDeviceInfo,
     PatchSuggestion,
+    PatchConfidence,
     DiscoveryStatus,
+    DiscoveryState,
     RdmCommand,
     RdmResponse,
     RdmCommandType,
@@ -49,7 +52,7 @@ from .transport import (
     RdmConnectionError,
     create_transport,
 )
-from .discovery import RdmDiscovery, DiscoverySession
+from .discovery import RdmDiscovery, DiscoverySession, DiscoveryEngine
 from .auto_patch import AutoPatcher, ProfileMatcher
 from .manager import RdmManager
 
@@ -57,11 +60,14 @@ __all__ = [
     # Types
     "RdmUid",
     "DiscoveredDevice",
+    "DiscoveredFixture",
     "RdmPersonality",
     "RdmParameter",
     "RdmDeviceInfo",
     "PatchSuggestion",
+    "PatchConfidence",
     "DiscoveryStatus",
+    "DiscoveryState",
     "RdmCommand",
     "RdmResponse",
     "RdmCommandType",
@@ -78,6 +84,7 @@ __all__ = [
     # Discovery
     "RdmDiscovery",
     "DiscoverySession",
+    "DiscoveryEngine",
     # Auto-Patch
     "AutoPatcher",
     "ProfileMatcher",
