@@ -548,13 +548,25 @@ playback_manager = PlaybackManager()
 # Chase Playback Engine (streams steps via UDPJSON)
 # ============================================================
 class ChaseEngine:
-    """Runs chases by streaming each step via UDPJSON to all universes"""
+    """Runs chases by streaming each step via UDPJSON to all universes.
+
+    RACE CONDITION FIX: Now routes all output through merge layer for proper
+    priority-based merging with other playback sources (effects, scenes, etc.)
+    """
     def __init__(self):
         self.lock = threading.Lock()
         self.running_chases = {}  # {chase_id: thread}
         self.stop_flags = {}  # {chase_id: Event}
         # Health tracking for debugging
         self.chase_health = {}  # {chase_id: {"step": int, "last_time": float, "status": str}}
+        # Merge layer source tracking - maps chase_id to source_id
+        self._merge_sources = {}  # {chase_id: source_id}
+        # Reference to merge layer (set after merge_layer is created)
+        self._merge_layer = None
+
+    def set_merge_layer(self, merge_layer_ref):
+        """Set reference to merge layer for priority-based output"""
+        self._merge_layer = merge_layer_ref
 
     def start_chase(self, chase, universes, fade_ms_override=None):
         """Start a chase on the given universes with optional fade override"""
@@ -567,6 +579,14 @@ class ChaseEngine:
 
         # Stop any other running chases first
         self.stop_chase(chase_id)
+
+        # MERGE LAYER: Register as a merge source for proper priority handling
+        if self._merge_layer:
+            source_id = f"chase_{chase_id}"
+            self._merge_layer.register_source(source_id, 'chase', universes)
+            with self.lock:
+                self._merge_sources[chase_id] = source_id
+            print(f"📥 Chase '{chase['name']}' registered as merge source (priority=40)", flush=True)
 
         # Create stop flag
         stop_flag = threading.Event()
@@ -586,6 +606,7 @@ class ChaseEngine:
     def stop_chase(self, chase_id=None, wait=True):
         """Stop a chase or all chases, optionally waiting for thread to finish"""
         threads_to_join = []
+        sources_to_unregister = []
         with self.lock:
             if chase_id:
                 if chase_id in self.stop_flags:
@@ -594,6 +615,10 @@ class ChaseEngine:
                     thread = self.running_chases.pop(chase_id, None)
                     if thread and wait:
                         threads_to_join.append(thread)
+                # Track merge source to unregister
+                source_id = self._merge_sources.pop(chase_id, None)
+                if source_id:
+                    sources_to_unregister.append(source_id)
             else:
                 # Stop all
                 for flag in self.stop_flags.values():
@@ -602,6 +627,9 @@ class ChaseEngine:
                     threads_to_join = list(self.running_chases.values())
                 self.stop_flags.clear()
                 self.running_chases.clear()
+                # Track all merge sources to unregister
+                sources_to_unregister = list(self._merge_sources.values())
+                self._merge_sources.clear()
 
             # ARBITRATION: Release chase ownership if no more chases running
             if not self.running_chases:
@@ -611,6 +639,12 @@ class ChaseEngine:
         if wait:
             for thread in threads_to_join:
                 thread.join(timeout=0.5)  # Max 500ms wait per thread
+
+        # MERGE LAYER: Unregister sources after threads have stopped
+        if self._merge_layer and sources_to_unregister:
+            for source_id in sources_to_unregister:
+                self._merge_layer.unregister_source(source_id)
+                print(f"📤 Chase unregistered from merge layer: {source_id}", flush=True)
 
     def stop_all(self):
         """Stop all running chases"""
@@ -677,13 +711,18 @@ class ChaseEngine:
                 # TODO: Future improvement - store chase data on ESP nodes and trigger playback
                 # locally for perfect sync. See: sync_chase_to_node() infrastructure already exists.
                 # Would need ESP firmware to handle local chase playback with 'play_chase' command.
-                def send_to_universe(univ):
+                def send_to_universe(univ, cid, sflag):
                     try:
-                        self._send_step(univ, channels, fade_ms, distribution_mode)
+                        # Pass chase_id and stop_flag for merge layer routing and race condition fix
+                        self._send_step(univ, channels, fade_ms, distribution_mode, chase_id=cid, stop_flag=sflag)
                     except Exception as e:
                         print(f"❌ Chase step send error (U{univ}): {e}", flush=True)
 
-                threads = [threading.Thread(target=send_to_universe, args=(univ,)) for univ in universes]
+                # Check stop flag before spawning threads (race condition fix)
+                if stop_flag.is_set():
+                    break
+
+                threads = [threading.Thread(target=send_to_universe, args=(univ, chase_id, stop_flag)) for univ in universes]
                 for t in threads:
                     t.start()
                 for t in threads:
@@ -711,10 +750,17 @@ class ChaseEngine:
             self.chase_health[chase_id] = {"step": step_index, "last_time": time.time(), "status": "stopped"}
             print(f"⏹️ Chase '{chase['name']}' stopped after {loop_count} loops", flush=True)
 
-    def _send_step(self, universe, channels, fade_ms=0, distribution_mode='unified'):
+    def _send_step(self, universe, channels, fade_ms=0, distribution_mode='unified', chase_id=None, stop_flag=None):
         """Send chase step with intelligent distribution.
-        
+
+        RACE CONDITION FIX: Now routes through merge layer instead of direct write.
+        This ensures proper priority-based merging with effects, scenes, etc.
+
         distribution_mode: 'unified' = replicate to all, 'pixel' = unique per fixture"""
+        # Check stop flag BEFORE writing (race condition fix)
+        if stop_flag and stop_flag.is_set():
+            return
+
         if not channels:
             return
         parsed = {}
@@ -751,6 +797,25 @@ class ChaseEngine:
                         expanded[start + i] = pattern_vals[i]
             if expanded:
                 parsed = expanded
+
+        # Check stop flag again before writing (double-check for race condition)
+        if stop_flag and stop_flag.is_set():
+            return
+
+        # MERGE LAYER: Route through merge layer for proper priority handling
+        if self._merge_layer and chase_id:
+            source_id = self._merge_sources.get(chase_id)
+            if source_id:
+                # Update merge layer source channels
+                self._merge_layer.set_source_channels(source_id, universe, parsed)
+                # Compute merged output and send
+                merged = self._merge_layer.compute_merge(universe)
+                if merged:
+                    # Send merged result to SSOT (content_manager handles node dispatch)
+                    content_manager.set_channels(universe, {str(k): v for k, v in merged.items()}, fade_ms=fade_ms)
+                return
+
+        # Fallback: direct write if merge layer not available (legacy behavior)
         content_manager.set_channels(universe, parsed, fade_ms=fade_ms)
 
 
@@ -958,7 +1023,13 @@ class ScheduleRunner:
             time.sleep(5)  # Check every 5 seconds for minute change
     
     def run_schedule(self, schedule_id):
-        """Execute a schedule's action"""
+        """Execute a schedule's action.
+
+        RACE CONDITION NOTE: Schedules respect the arbitration system.
+        If a higher priority source (effect, manual, etc.) is active,
+        the schedule's action may be denied by arbitration. This is correct
+        behavior - schedules shouldn't override live performances.
+        """
         conn = get_db()
         c = conn.cursor()
         c.execute('SELECT * FROM schedules WHERE schedule_id = ?', (schedule_id,))
@@ -966,27 +1037,39 @@ class ScheduleRunner:
         if not row:
             conn.close()
             return {'success': False, 'error': 'Schedule not found'}
-        
+
         action_type = row[3]
         action_id = row[4]
-        
+        schedule_name = row[1]
+
+        # Check arbitration status before executing (for logging)
+        current_owner = arbitration.current_owner
+        if current_owner not in ('idle', 'scene', 'chase'):
+            print(f"📅 Schedule '{schedule_name}' triggered but {current_owner} has control", flush=True)
+
         # Update last_run
         c.execute('UPDATE schedules SET last_run = ? WHERE schedule_id = ?',
                   (datetime.now().isoformat(), schedule_id))
         conn.commit()
         conn.close()
-        
-        # Execute action
+
+        # Execute action (underlying methods handle arbitration)
         try:
             if action_type == 'scene':
                 result = content_manager.play_scene(action_id)
             elif action_type == 'chase':
                 result = content_manager.play_chase(action_id)
             elif action_type == 'blackout':
+                # Blackout is highest priority - always executes
                 result = content_manager.blackout()
             else:
                 result = {'success': False, 'error': f'Unknown action type: {action_type}'}
-            print(f"📅 Schedule '{row[1]}' executed: {result.get('success', False)}")
+
+            success = result.get('success', False)
+            if success:
+                print(f"📅 Schedule '{schedule_name}' executed successfully", flush=True)
+            else:
+                print(f"📅 Schedule '{schedule_name}' denied: {result.get('error', 'unknown')}", flush=True)
             return result
         except Exception as e:
             print(f"❌ Schedule error: {e}")
@@ -1078,8 +1161,12 @@ timer_runner = TimerRunner()
 # Show Engine (Timeline Playback)
 # ============================================================
 class ShowEngine:
-    """Plays back timeline-based shows with timed events"""
-    
+    """Plays back timeline-based shows with timed events.
+
+    RACE CONDITION FIX: Now integrates with merge layer for proper
+    priority-based merging. Direct channel writes route through merge layer.
+    """
+
     def __init__(self):
         self.current_show = None
         self.running = False
@@ -1088,6 +1175,13 @@ class ShowEngine:
         self.pause_flag = threading.Event()
         self.paused = False
         self.tempo = 1.0
+        # MERGE LAYER: Reference and source tracking
+        self._merge_layer = None
+        self._merge_source_id = None
+
+    def set_merge_layer(self, merge_layer_ref):
+        """Set reference to merge layer for priority-based output"""
+        self._merge_layer = merge_layer_ref
     
     def play_show(self, show_id, universe=1):
         """Play a show timeline"""
@@ -1096,17 +1190,29 @@ class ShowEngine:
         c.execute('SELECT * FROM shows WHERE show_id = ?', (show_id,))
         row = c.fetchone()
         conn.close()
-        
+
         if not row:
             return {'success': False, 'error': 'Show not found'}
-        
+
         timeline = json.loads(row[3]) if row[3] else []
         if not timeline:
             return {'success': False, 'error': 'Show has no timeline events'}
-        
+
         # Stop any current show
         self.stop()
-        
+
+        # MERGE LAYER: Register as a show source for priority handling
+        # Shows get sequence priority (45) for timeline-based playback
+        if self._merge_layer:
+            self._merge_source_id = f"show_{show_id}"
+            # Determine all universes that might be affected by this show
+            show_universes = [universe]
+            if row[6] if len(row) > 6 else False:  # distributed mode
+                # In distributed mode, show might affect multiple universes
+                show_universes = list(range(1, 65))  # Support all possible universes
+            self._merge_layer.register_source(self._merge_source_id, 'sequence', show_universes)
+            print(f"📥 Show '{row[1]}' registered as merge source (priority=45)", flush=True)
+
         self.current_show = {
             'show_id': show_id,
             'name': row[1],
@@ -1116,14 +1222,14 @@ class ShowEngine:
         }
         self.running = True
         self.stop_flag.clear()
-        
+
         self.thread = threading.Thread(
             target=self._run_timeline,
             args=(timeline, universe, True),
             daemon=True
         )
         self.thread.start()
-        
+
         print(f"🎬 Playing show '{row[1]}' on universe {universe}")
         return {'success': True, 'show_id': show_id, 'name': row[1]}
     
@@ -1137,16 +1243,27 @@ class ShowEngine:
             if self.current_show:
                 print(f"⏹️ Show '{self.current_show['name']}' stopped")
             self.current_show = None
+        # MERGE LAYER: Unregister source
+        self._unregister_merge_source()
 
     def stop_silent(self):
-        print(f"🛑 stop_silent called, running={self.running}", flush=True)
         """Stop without blackout (for SSOT transitions)"""
+        print(f"🛑 stop_silent called, running={self.running}", flush=True)
         if self.running:
             self.stop_flag.set()
             self.pause_flag.clear()
             self.running = False
             self.paused = False
             self.current_show = None
+        # MERGE LAYER: Unregister source
+        self._unregister_merge_source()
+
+    def _unregister_merge_source(self):
+        """Unregister from merge layer when stopping"""
+        if self._merge_layer and self._merge_source_id:
+            self._merge_layer.unregister_source(self._merge_source_id)
+            print(f"📤 Show unregistered from merge layer: {self._merge_source_id}", flush=True)
+            self._merge_source_id = None
 
     def pause(self):
         """Pause current show"""
@@ -1214,19 +1331,27 @@ class ShowEngine:
         self.current_show = None
         print("🎬 Show playback stopped")
     def _execute_event(self, event, universe, distributed=False, all_scenes=None, event_index=0):
-        """Execute a single timeline event"""
+        """Execute a single timeline event.
+
+        RACE CONDITION FIX: Check stop flag before each operation.
+        Direct channel writes now route through merge layer for proper priority handling.
+        """
+        # Check stop flag before executing (race condition fix)
+        if self.stop_flag.is_set():
+            return
+
         event_type = event.get('type', 'scene')
-        
+
         try:
             if event_type == 'scene':
                 scene_id = event.get('scene_id')
                 fade_ms = event.get('fade_ms', 500)
-                
+
                 if distributed and all_scenes:
                     # Get all online universes
                     all_nodes = node_manager.get_all_nodes(include_offline=False)
                     universes = sorted(set(node.get('universe', 1) for node in all_nodes))
-                    
+
                     # Send offset scenes to each universe
                     for i, univ in enumerate(universes):
                         if self.stop_flag.is_set():
@@ -1240,23 +1365,41 @@ class ShowEngine:
                         return
                     content_manager.play_scene(scene_id, fade_ms=fade_ms, universe=universe, skip_ssot=True)
                     print(f"  ▶️ Scene '{scene_id}' at {event.get('time_ms')}ms")
-            
+
             elif event_type == 'chase':
+                if self.stop_flag.is_set():
+                    return
                 chase_id = event.get('chase_id')
                 content_manager.play_chase(chase_id, universe=universe)
                 print(f"  ▶️ Chase '{chase_id}' at {event.get('time_ms')}ms")
-            
+
             elif event_type == 'blackout':
+                if self.stop_flag.is_set():
+                    return
                 fade_ms = event.get('fade_ms', 1000)
                 content_manager.blackout(universe=universe, fade_ms=fade_ms)
                 print(f"  ⬛ Blackout at {event.get('time_ms')}ms")
-            
+
             elif event_type == 'channels':
+                if self.stop_flag.is_set():
+                    return
                 channels = event.get('channels', {})
                 fade_ms = event.get('fade_ms', 0)
-                content_manager.set_channels(universe, channels, fade_ms)
+
+                # MERGE LAYER: Route direct channel writes through merge layer
+                if self._merge_layer and self._merge_source_id:
+                    # Convert channels to int keys for merge layer
+                    parsed_channels = {int(k): int(v) for k, v in channels.items()}
+                    self._merge_layer.set_source_channels(self._merge_source_id, universe, parsed_channels)
+                    # Compute merged output
+                    merged = self._merge_layer.compute_merge(universe)
+                    if merged:
+                        content_manager.set_channels(universe, {str(k): v for k, v in merged.items()}, fade_ms)
+                else:
+                    # Fallback: direct write
+                    content_manager.set_channels(universe, channels, fade_ms)
                 print(f"  🎛️ Channels at {event.get('time_ms')}ms")
-            
+
         except Exception as e:
             print(f"  ❌ Event error: {e}")
 
@@ -3434,36 +3577,85 @@ channel_mapper = get_channel_mapper()
 # ============================================================
 # SSOT Output Router - Unified output path for all DMX writes
 # ============================================================
+# Track active effect sources for merge layer
+_effect_merge_sources = {}  # effect_id -> source_id
+
 def ssot_send_frame(universe, channels_array, owner_type='effect'):
     """
     Unified output function for all DMX writes.
-    Routes through ContentManager to reach ALL nodes via UDPJSON.
+    Routes through merge layer for proper priority-based merging.
 
-    This is the ONLY function that should send DMX output.
-    All subsystems (Scenes, Chases, Effects) must go through here.
+    RACE CONDITION FIX: Now routes effects through merge layer to allow
+    concurrent playback with proper HTP/LTP merging.
     """
     try:
         # Check arbitration - if we can't write, skip silently
         if not arbitration.can_write(owner_type):
             return
 
-        # Convert array to dict format for ContentManager
+        # Convert array to dict format
         channels_dict = {}
         for i, value in enumerate(channels_array):
             if value > 0:  # Only include non-zero values
-                channels_dict[str(i + 1)] = value
+                channels_dict[i + 1] = value  # int keys for merge layer
 
         if not channels_dict:
             return
 
-        # Route through ContentManager - sends to nodes via UDPJSON
-        content_manager.set_channels(universe, channels_dict, fade_ms=0)
+        # MERGE LAYER: Route effects through merge layer for proper priority
+        if owner_type == 'effect' and effects_engine.current_effect:
+            effect_id = effects_engine.current_effect
+            source_id = _effect_merge_sources.get(effect_id)
+
+            # Auto-register if not registered
+            if not source_id:
+                source_id = f"effect_{effect_id}"
+                merge_layer.register_source(source_id, 'effect', [universe])
+                _effect_merge_sources[effect_id] = source_id
+
+            # Update merge layer with new channel values
+            merge_layer.set_source_channels(source_id, universe, channels_dict)
+
+            # Compute merged output
+            merged = merge_layer.compute_merge(universe)
+            if merged:
+                content_manager.set_channels(universe, {str(k): v for k, v in merged.items()}, fade_ms=0)
+            return
+
+        # Fallback: direct write for non-effect sources
+        content_manager.set_channels(universe, {str(k): v for k, v in channels_dict.items()}, fade_ms=0)
 
     except Exception as e:
         print(f"❌ SSOT output error U{universe}: {e}")
 
+def cleanup_effect_merge_source(effect_id):
+    """Clean up merge source when effect stops"""
+    source_id = _effect_merge_sources.pop(effect_id, None)
+    if source_id:
+        merge_layer.unregister_source(source_id)
+        print(f"📤 Effect unregistered from merge layer: {source_id}", flush=True)
+
 # Hook up effects engine to SSOT with arbitration
 effects_engine.set_ssot_hooks(dmx_state, ssot_send_frame, arbitration)
+
+# Wrap stop_effect to also clean up merge sources
+_original_stop_effect = effects_engine.stop_effect
+def _wrapped_stop_effect(effect_id=None):
+    """Stop effect and clean up merge layer source"""
+    # Get effect IDs to clean up before stopping
+    if effect_id:
+        effects_to_clean = [effect_id] if effect_id in _effect_merge_sources else []
+    else:
+        effects_to_clean = list(_effect_merge_sources.keys())
+
+    # Call original stop
+    _original_stop_effect(effect_id)
+
+    # Clean up merge sources
+    for eid in effects_to_clean:
+        cleanup_effect_merge_source(eid)
+
+effects_engine.stop_effect = _wrapped_stop_effect
 
 # Hook up render engine to SSOT for Look playback
 def render_engine_output(universe: int, channels: dict):
@@ -3504,6 +3696,126 @@ def merge_layer_output(universe: int, channels: dict):
     content_manager.set_channels(universe, {str(k): v for k, v in channels.items()}, fade_ms=0)
 
 merge_layer.set_output_callback(merge_layer_output)
+
+# RACE CONDITION FIX: Connect ChaseEngine and ShowEngine to merge layer
+# This ensures chases and shows route through priority-based merging
+chase_engine.set_merge_layer(merge_layer)
+show_engine.set_merge_layer(merge_layer)
+print("✓ ChaseEngine and ShowEngine connected to merge layer for SSOT compliance")
+
+# ============================================================
+# Unified Stop All Playback - SSOT Control Point
+# ============================================================
+# This function is the SINGLE SOURCE OF TRUTH for stopping all playback.
+# All frontend stop buttons should call this function to ensure consistent behavior.
+
+def stop_all_playback(blackout=False, fade_ms=1000, universe=None):
+    """
+    SSOT: Stop all active playback sources.
+
+    This is the unified stop function that should be called from ALL frontend
+    stop controls to ensure consistent behavior. It stops:
+    - Shows (timeline playback)
+    - Chases
+    - Effects
+    - Unified playback controller (looks/sequences)
+    - Optionally performs a blackout
+
+    Args:
+        blackout: If True, also send blackout command after stopping
+        fade_ms: Fade time for blackout (only used if blackout=True)
+        universe: Specific universe to stop (None = all)
+
+    Returns:
+        Dict with status of each stopped system
+    """
+    results = {
+        'show': False,
+        'chase': False,
+        'effect': False,
+        'playback': False,
+        'blackout': False
+    }
+
+    print(f"🛑 SSOT: stop_all_playback called (blackout={blackout}, universe={universe})", flush=True)
+
+    # Stop show engine
+    try:
+        if show_engine.running:
+            show_engine.stop_silent()
+            results['show'] = True
+            print("  ✓ Show stopped", flush=True)
+    except Exception as e:
+        print(f"  ❌ Show stop error: {e}", flush=True)
+
+    # Stop all chases
+    try:
+        if chase_engine.running_chases:
+            chase_engine.stop_all()
+            results['chase'] = True
+            print("  ✓ Chases stopped", flush=True)
+    except Exception as e:
+        print(f"  ❌ Chase stop error: {e}", flush=True)
+
+    # Stop all effects
+    try:
+        if effects_engine.running:
+            effects_engine.stop_effect()
+            results['effect'] = True
+            print("  ✓ Effects stopped", flush=True)
+    except Exception as e:
+        print(f"  ❌ Effect stop error: {e}", flush=True)
+
+    # Stop unified playback controller
+    try:
+        status = playback_controller.get_status()
+        if status.get('state') not in ('idle', 'stopped'):
+            if universe:
+                playback_manager.stop(universe)
+            else:
+                playback_controller.stop()
+            results['playback'] = True
+            print("  ✓ Playback controller stopped", flush=True)
+    except Exception as e:
+        print(f"  ❌ Playback stop error: {e}", flush=True)
+
+    # Unregister all merge sources to clear the merge layer
+    try:
+        for source_id in list(_active_merge_sources.values()):
+            merge_layer.unregister_source(source_id)
+        _active_merge_sources.clear()
+        print("  ✓ Merge sources cleared", flush=True)
+    except Exception as e:
+        print(f"  ❌ Merge source cleanup error: {e}", flush=True)
+
+    # Release arbitration to idle
+    try:
+        arbitration.release()
+        print("  ✓ Arbitration released to idle", flush=True)
+    except Exception as e:
+        print(f"  ❌ Arbitration release error: {e}", flush=True)
+
+    # Optionally blackout
+    if blackout:
+        try:
+            content_manager.blackout(universe=universe, fade_ms=fade_ms)
+            results['blackout'] = True
+            print("  ✓ Blackout sent", flush=True)
+        except Exception as e:
+            print(f"  ❌ Blackout error: {e}", flush=True)
+
+    # Broadcast stop event to all connected clients
+    try:
+        broadcast_ws({
+            'type': 'playback_stopped',
+            'all_stopped': True,
+            'blackout': blackout
+        })
+    except Exception as e:
+        print(f"  ⚠️ WebSocket broadcast error: {e}", flush=True)
+
+    print(f"🛑 SSOT: stop_all_playback complete: {results}", flush=True)
+    return {'success': True, 'results': results}
 
 # Active merge sources tracking
 _active_merge_sources = {}  # job_id -> source_id
@@ -5710,33 +6022,29 @@ def get_playback_status():
 
 
 @app.route('/api/playback/stop', methods=['POST'])
-def stop_all_playback():
-    """Stop all playback (Look, Sequence, Chase, Effect)"""
-    # Stop unified playback controller
-    playback_result = playback_controller.stop()
+def api_stop_all_playback():
+    """Stop all playback (Look, Sequence, Chase, Effect, Show).
 
-    # Stop render engine
+    SSOT: This endpoint uses the unified stop_all_playback function to ensure
+    consistent behavior across all stop controls (UI buttons, hotkeys, etc.)
+
+    Optional body params:
+        blackout: bool - If true, also send blackout command
+        fade_ms: int - Fade time for blackout (default 1000)
+        universe: int - Specific universe to stop (default all)
+    """
+    data = request.get_json(silent=True) or {}
+    blackout = data.get('blackout', False)
+    fade_ms = data.get('fade_ms', 1000)
+    universe = data.get('universe')
+
+    # Use unified SSOT stop function
+    result = stop_all_playback(blackout=blackout, fade_ms=fade_ms, universe=universe)
+
+    # Also stop render engine (not in unified function as it's a separate system)
     render_engine.stop_rendering()
 
-    # Stop legacy chase engine
-    chase_engine.stop_all()
-
-    # Stop effects engine
-    effects_engine.stop_effect()
-
-    # Release all arbitration
-    arbitration.release('look')
-    arbitration.release('sequence')
-    arbitration.release('chase')
-    arbitration.release('effect')
-
-    return jsonify({
-        'success': True,
-        'stopped': {
-            'playback': playback_result.get('stopped'),
-            'message': 'All playback stopped'
-        }
-    })
+    return jsonify(result)
 
 
 @app.route('/api/playback/pause', methods=['POST'])
@@ -7815,9 +8123,15 @@ def playback_manager_status():
 
 @app.route('/api/playback-manager/stop', methods=['POST'])
 def stop_playback_manager():
-    """Legacy: Stop via playback manager (use /api/playback/stop for unified controller)"""
+    """Stop all playback via unified SSOT function.
+
+    SSOT: Redirects to unified stop_all_playback for consistent behavior.
+    Use /api/playback/stop for full control with blackout option.
+    """
     data = request.get_json() or {}
-    return jsonify(content_manager.stop_playback(data.get('universe')))
+    universe = data.get('universe')
+    # Use unified SSOT stop function
+    return jsonify(stop_all_playback(blackout=False, universe=universe))
 
 # ─────────────────────────────────────────────────────────
 # Supabase Cloud Sync Routes
