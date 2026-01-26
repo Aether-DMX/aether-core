@@ -1432,9 +1432,20 @@ class SessionFactory:
             else:
                 hold_ms = step_data.get('hold_ms', default_duration)
 
+            # Parse channels - handle both simple "1" and "universe:channel" formats
+            raw_channels = step_data.get('channels', {})
+            parsed_channels = {}
+            for key, value in raw_channels.items():
+                key_str = str(key)
+                if ':' in key_str:
+                    # Format: "universe:channel" - extract just the channel number
+                    parsed_channels[int(key_str.split(':')[1])] = value
+                else:
+                    parsed_channels[int(key_str)] = value
+
             step = Step(
                 step_id=str(i),
-                channels={int(k): v for k, v in step_data.get('channels', {}).items()},
+                channels=parsed_channels,
                 fade_ms=step_data.get('fade_ms', default_fade),
                 hold_ms=hold_ms,
             )
