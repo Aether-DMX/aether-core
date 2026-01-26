@@ -1065,6 +1065,39 @@ class UnifiedPlaybackEngine:
                 if channels_per_fixture > 3:
                     channels[base_ch + 3] = int(50 * brightness)  # W
 
+        elif effect_type == "rainbow_chase":
+            # Rainbow color chase across multiple fixtures
+            # Each fixture gets a phase-offset hue that advances over time
+            speed = params.get('speed', 0.2)  # Full cycle time in seconds
+            fixtures = params.get('fixtures', 5)
+            channels_per_fixture = params.get('channels_per_fixture', 4)  # RGBW
+            start_channel = params.get('start_channel', 1)
+            saturation = params.get('saturation', 1.0)
+            value = params.get('value', 1.0)
+
+            # Base hue advances with time
+            base_hue = (elapsed * speed) % 1.0
+
+            for i in range(fixtures):
+                # Each fixture gets a hue offset: 360 / num_fixtures
+                hue_offset = i / fixtures
+                fixture_hue = (base_hue + hue_offset) % 1.0
+
+                # Convert HSV to RGB
+                r, g, b = self._hsv_to_rgb(fixture_hue, saturation, value)
+
+                # Calculate base channel for this fixture
+                base_ch = start_channel + (i * channels_per_fixture)
+
+                # Set RGB channels
+                channels[base_ch] = int(r * 255)      # R
+                channels[base_ch + 1] = int(g * 255)  # G
+                channels[base_ch + 2] = int(b * 255)  # B
+
+                # White channel stays 0 for pure rainbow colors
+                if channels_per_fixture > 3:
+                    channels[base_ch + 3] = 0  # W
+
         return channels
 
     def _hsv_to_rgb(self, h: float, s: float, v: float) -> Tuple[float, float, float]:
