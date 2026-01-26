@@ -1191,32 +1191,40 @@ class UnifiedPlaybackEngine:
 
         elif effect_type == "fixture_chase":
             # Generic color chase across fixtures
-            # One "active" fixture travels down the line
+            # One "active" fixture travels down the line with smooth Gaussian falloff
             fixture_ids = session.fixture_ids if session.fixture_ids else params.get('fixture_ids', None)
             speed = params.get('speed', 2.0)  # Fixtures per second
             color = params.get('color', [255, 255, 255])  # Active color
             tail_length = params.get('tail_length', 2)  # Number of trailing fixtures
             bg_color = params.get('bg_color', [0, 0, 0])  # Background color
+            smoothing = params.get('smoothing', 0.8)  # 0=sharp, 1=very smooth
 
             fixtures = self._resolve_fixtures(fixture_ids)
             if not fixtures:
                 return channels
 
             num_fixtures = len(fixtures)
-            # Position of the "head" of the chase
+            # Position of the "head" of the chase (continuous float)
             position = (elapsed * speed) % num_fixtures
 
             for i, fixture in enumerate(fixtures):
-                # Distance from current position (wrapping)
-                dist = min(abs(i - position), num_fixtures - abs(i - position))
+                # Distance from current position (wrapping around)
+                raw_dist = i - position
+                # Handle wrap-around: find shortest distance
+                if raw_dist > num_fixtures / 2:
+                    raw_dist -= num_fixtures
+                elif raw_dist < -num_fixtures / 2:
+                    raw_dist += num_fixtures
 
-                if dist < 1:
-                    # Head fixture - full brightness
-                    brightness = 1.0 - dist
-                elif dist < tail_length + 1:
-                    # Tail - fading
-                    brightness = 1.0 - (dist / (tail_length + 1))
-                else:
+                dist = abs(raw_dist)
+
+                # Gaussian-like smooth falloff for fluid motion
+                # sigma controls the spread - larger = smoother/wider
+                sigma = (tail_length + 1) * (0.3 + smoothing * 0.4)
+                brightness = math.exp(-(dist * dist) / (2 * sigma * sigma))
+
+                # Apply minimum threshold to cut off very dim values
+                if brightness < 0.02:
                     brightness = 0.0
 
                 # Interpolate between bg_color and color based on brightness
