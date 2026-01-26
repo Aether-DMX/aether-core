@@ -99,6 +99,21 @@ from final_render_pipeline import (
     RenderTimeContext, RenderJob, FeatureFlags,
 )
 
+# Operator Trust Enforcement (Phase 4 Lane 3)
+from operator_trust import (
+    trust_enforcer, report_node_heartbeat, report_backend_start,
+    check_ui_sync, get_trust_status, get_trust_events,
+    start_trust_monitoring, stop_trust_monitoring, clear_failure_halt,
+)
+
+# RDM Service (Phase 4 Lane 4)
+from rdm_service import (
+    rdm_service, discover_rdm_devices, get_rdm_devices,
+    get_rdm_device_address, set_rdm_device_address, identify_rdm_device,
+    get_rdm_address_suggestions, auto_fix_rdm_addresses,
+    verify_cue_rdm_readiness, get_rdm_status,
+)
+
 # Supabase cloud sync (optional)
 try:
     from services.supabase_service import get_supabase_service, sync_to_cloud
@@ -4085,6 +4100,15 @@ def discovery_listener():
             msg_type = msg.get('type', 'unknown')
             if msg_type in ('register', 'heartbeat'):
                 node_manager.register_node(msg)
+                # Report heartbeat to Trust Enforcer (Phase 4 Lane 3)
+                node_id = msg.get('node_id', msg.get('hostname', 'unknown'))
+                report_node_heartbeat(node_id, {
+                    'ip': addr[0],
+                    'rssi': msg.get('rssi'),
+                    'uptime': msg.get('uptime'),
+                    'stale': msg.get('stale', False),
+                    'type': msg_type
+                })
                 if msg_type == 'register':
                     print(f"📥 Node registered: {msg.get('hostname', 'Unknown')} @ {addr[0]}")
                     # Auto-sync content to newly registered node if paired
@@ -5014,6 +5038,182 @@ def ping_all_nodes():
     results['success'] = results['responded'] == results['total']
     print(f"🏓 Ping all complete: {results['responded']}/{results['total']} nodes responded", flush=True)
     return jsonify(results)
+
+
+# ============================================================
+# Trust Enforcement API (Phase 4 Lane 3)
+# ============================================================
+
+@app.route('/api/trust/status', methods=['GET'])
+def trust_status():
+    """Get current trust enforcement status.
+
+    TRUST RULE: Operator must always see system state.
+    Returns:
+        - monitoring: whether background monitoring is active
+        - node_health: health status for all tracked nodes
+        - playback_halted_due_to_failure: whether playback was halted
+        - active_alerts: list of active alert IDs
+        - recent_events: last 10 trust events
+    """
+    return jsonify(get_trust_status())
+
+
+@app.route('/api/trust/events', methods=['GET'])
+def trust_events():
+    """Get trust event history.
+
+    TRUST RULE: All trust events must be visible to operators.
+    Returns chronological list of trust-related events.
+    """
+    limit = request.args.get('limit', 100, type=int)
+    return jsonify({'events': get_trust_events(limit)})
+
+
+@app.route('/api/trust/ui-sync', methods=['POST'])
+def trust_ui_sync_check():
+    """Check if UI state matches backend reality.
+
+    TRUST RULE: UI desync -> REALITY wins over UI.
+    UI should call this periodically to verify its state matches backend.
+    If mismatch detected, UI must update to match reality.
+    """
+    data = request.get_json() or {}
+    ui_state = data.get('state', {})
+    component = data.get('component', 'unknown')
+
+    result = check_ui_sync(ui_state, component)
+    return jsonify(result)
+
+
+@app.route('/api/trust/clear-halt', methods=['POST'])
+def trust_clear_halt():
+    """Clear playback halt after operator acknowledges failure.
+
+    TRUST RULE: Partial node failure -> SYSTEM HALTS playback + ALERTS.
+    After operator acknowledges the issue, this endpoint clears the halt.
+    """
+    print("🛡️ TRUST: Operator clearing failure halt", flush=True)
+    clear_failure_halt()
+    return jsonify({'success': True, 'message': 'Failure halt cleared'})
+
+
+# ============================================================
+# RDM API (Phase 4 Lane 4)
+# ============================================================
+
+@app.route('/api/rdm/status', methods=['GET'])
+def rdm_status():
+    """Get RDM service status.
+
+    Returns current RDM state including discovered devices.
+    """
+    return jsonify(get_rdm_status())
+
+
+@app.route('/api/rdm/discover', methods=['POST'])
+def rdm_discover():
+    """Run RDM discovery on all nodes.
+
+    AC1: Discovers all RDM-capable fixtures on the DMX bus.
+    Returns list of discovered devices with UIDs.
+    """
+    print("RDM: Discovery requested via API", flush=True)
+    result = discover_rdm_devices()
+    return jsonify(result)
+
+
+@app.route('/api/rdm/devices', methods=['GET'])
+def rdm_devices():
+    """Get cached RDM devices.
+
+    Returns list of previously discovered devices without new discovery.
+    """
+    return jsonify({'devices': get_rdm_devices()})
+
+
+@app.route('/api/rdm/devices/<uid>', methods=['GET'])
+def rdm_device_info(uid):
+    """Get info for a specific RDM device.
+
+    AC3: Returns device info including manufacturer, model, footprint.
+    """
+    return jsonify(rdm_service.get_device_info(uid))
+
+
+@app.route('/api/rdm/devices/<uid>/address', methods=['GET'])
+def rdm_device_get_address(uid):
+    """Get current DMX address for a device.
+
+    AC2: Reads current DMX address for any discovered device.
+    """
+    return jsonify(get_rdm_device_address(uid))
+
+
+@app.route('/api/rdm/devices/<uid>/address', methods=['POST'])
+def rdm_device_set_address(uid):
+    """Set DMX address for a device.
+
+    AC2: Sets new DMX address remotely.
+    """
+    data = request.get_json() or {}
+    address = data.get('address')
+
+    if address is None:
+        return jsonify({'success': False, 'error': 'Address required'}), 400
+
+    print(f"RDM: Setting {uid} to address {address}", flush=True)
+    result = set_rdm_device_address(uid, address)
+    return jsonify(result)
+
+
+@app.route('/api/rdm/devices/<uid>/identify', methods=['POST'])
+def rdm_device_identify(uid):
+    """Turn identify mode on/off for a device.
+
+    AC3: Flashes device LED for identification.
+    """
+    data = request.get_json() or {}
+    state = data.get('state', True)
+
+    print(f"RDM: Identify {uid} = {state}", flush=True)
+    result = identify_rdm_device(uid, state)
+    return jsonify(result)
+
+
+@app.route('/api/rdm/address-suggestions', methods=['GET'])
+def rdm_address_suggestions():
+    """Get address suggestions to fix conflicts.
+
+    AC4: Analyzes current addressing and suggests optimal assignments.
+    Detects address conflicts before they happen.
+    """
+    return jsonify(get_rdm_address_suggestions())
+
+
+@app.route('/api/rdm/auto-fix', methods=['POST'])
+def rdm_auto_fix():
+    """Automatically fix all address conflicts.
+
+    AC4: "Fix All" option to auto-resolve conflicts.
+    """
+    print("RDM: Auto-fix addresses requested", flush=True)
+    result = auto_fix_rdm_addresses()
+    return jsonify(result)
+
+
+@app.route('/api/rdm/verify-cue', methods=['POST'])
+def rdm_verify_cue():
+    """Verify all fixtures for a cue are ready.
+
+    AC5: Before executing a cue, verifies all required fixtures are:
+    - Discovered and responding
+    - Addressed correctly
+    - Have expected footprint
+    """
+    data = request.get_json() or {}
+    result = verify_cue_rdm_readiness(data)
+    return jsonify(result)
 
 
 @app.route('/api/dmx/master', methods=['POST'])
@@ -8834,6 +9034,36 @@ if __name__ == '__main__':
     unified_engine.set_modifier_renderer(ModifierRenderer())
     unified_engine.start()
     print("✓ Unified Playback Engine started (30 fps)")
+
+    # Initialize Operator Trust Enforcement (Phase 4 Lane 3)
+    # TRUST RULES:
+    # 1. Network loss -> Nodes HOLD last DMX value (firmware behavior)
+    # 2. Backend crash -> Nodes CONTINUE output (firmware behavior)
+    # 3. UI desync -> REALITY wins over UI (backend is authoritative)
+    # 4. Partial node failure -> SYSTEM HALTS playback + ALERTS
+    def halt_playback_for_trust():
+        """Called by trust enforcer when partial node failure detected."""
+        print("🚨 TRUST: Halting playback due to node failure", flush=True)
+        unified_engine.stop_all()
+
+    def get_playback_status_for_trust():
+        """Get playback status for trust enforcement checks."""
+        return unified_engine.get_status()
+
+    def get_dmx_state_for_trust():
+        """Get current DMX state (reality) for UI sync checks."""
+        return content_manager.get_all_universes()
+
+    trust_enforcer.set_halt_playback_callback(halt_playback_for_trust)
+    trust_enforcer.set_get_playback_status_callback(get_playback_status_for_trust)
+    trust_enforcer.set_get_dmx_state_callback(get_dmx_state_for_trust)
+    report_backend_start()
+    start_trust_monitoring()
+    print("✓ Operator Trust Enforcer started")
+
+    # Initialize RDM Service (Phase 4 Lane 4)
+    rdm_service.set_node_manager(node_manager)
+    print("✓ RDM Service initialized")
 
     print(f"✓ API server on port {API_PORT}")
     print(f"✓ Discovery on UDP {DISCOVERY_PORT}")
