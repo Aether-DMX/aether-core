@@ -5112,7 +5112,7 @@ def rdm_status():
 
 
 @app.route('/api/rdm/discover', methods=['POST'])
-def rdm_discover():
+def rdm_discover_all():
     """Run RDM discovery on all nodes.
 
     AC1: Discovers all RDM-capable fixtures on the DMX bus.
