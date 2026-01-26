@@ -306,6 +306,11 @@ class PlaybackSession:
     effect_type: str = ""
     effect_params: Dict[str, Any] = field(default_factory=dict)
 
+    # Fixture distribution mode for multi-fixture effects
+    # 'chase' = Each fixture gets phase-offset (colors chase across fixtures)
+    # 'sync' = All fixtures show the same value simultaneously
+    distribution_mode: str = "chase"
+
     # CueStack data
     cue_stack_id: Optional[str] = None
     current_cue_index: int = -1  # -1 = not started
@@ -404,6 +409,7 @@ class UnifiedPlaybackEngine:
         # Look/content resolver
         self._look_resolver: Optional[Callable[[str], Optional[Dict]]] = None
         self._cue_resolver: Optional[Callable[[str, int], Optional[Dict]]] = None
+        self._fixture_resolver: Optional[Callable[[Optional[List[str]]], List[Dict]]] = None
 
         # Modifier renderer (from render_engine.py)
         self._modifier_renderer = None
@@ -437,6 +443,17 @@ class UnifiedPlaybackEngine:
     def set_modifier_renderer(self, renderer):
         """Set the modifier renderer from render_engine.py"""
         self._modifier_renderer = renderer
+
+    def set_fixture_resolver(self, resolver: Callable[[Optional[List[str]]], List[Dict]]):
+        """
+        Set function to resolve fixture IDs to fixture data.
+
+        Resolver signature: resolver(fixture_ids: Optional[List[str]]) -> List[Dict]
+        Each fixture dict should have: fixture_id, universe, start_channel, channel_count
+
+        If fixture_ids is None, returns all fixtures.
+        """
+        self._fixture_resolver = resolver
 
     # ─────────────────────────────────────────────────────────
     # Engine Control
@@ -1098,7 +1115,179 @@ class UnifiedPlaybackEngine:
                 if channels_per_fixture > 3:
                     channels[base_ch + 3] = 0  # W
 
+        elif effect_type == "fixture_rainbow":
+            # Fixture-aware rainbow effect with CHASE or SYNC distribution
+            # Uses fixture IDs from session or params to resolve actual addresses
+            #
+            # session.fixture_ids: List[str] - IDs of fixtures to control (empty = all)
+            # session.distribution_mode: "chase" | "sync"
+            # params.speed: float - Color cycle speed (full cycles per second)
+            # params.saturation: float (0-1) - Color saturation
+            # params.value: float (0-1) - Brightness/value
+            #
+            fixture_ids = session.fixture_ids if session.fixture_ids else params.get('fixture_ids', None)
+            mode = session.distribution_mode or params.get('mode', 'chase')
+            speed = params.get('speed', 0.2)
+            saturation = params.get('saturation', 1.0)
+            value = params.get('value', 1.0)
+
+            # Resolve fixtures from database
+            fixtures = self._resolve_fixtures(fixture_ids)
+
+            if not fixtures:
+                return channels
+
+            # Base hue advances with time
+            base_hue = (elapsed * speed) % 1.0
+
+            for i, fixture in enumerate(fixtures):
+                if mode == 'chase':
+                    # CHASE MODE: Each fixture gets a phase-offset hue
+                    hue_offset = i / len(fixtures)
+                    fixture_hue = (base_hue + hue_offset) % 1.0
+                else:
+                    # SYNC MODE: All fixtures get the same hue
+                    fixture_hue = base_hue
+
+                # Convert HSV to RGB
+                r, g, b = self._hsv_to_rgb(fixture_hue, saturation, value)
+
+                # Apply to fixture
+                self._apply_rgb_to_fixture(channels, fixture, r, g, b, value)
+
+            # Update session universes based on actual fixture locations
+            session.universes = list(set(f.get('universe', 1) for f in fixtures))
+
+        elif effect_type == "fixture_pulse":
+            # Fixture-aware pulse/breathing effect
+            fixture_ids = session.fixture_ids if session.fixture_ids else params.get('fixture_ids', None)
+            mode = session.distribution_mode or params.get('mode', 'sync')
+            speed = params.get('speed', 0.5)  # Pulse cycles per second
+            min_brightness = params.get('min_brightness', 0.1)
+            max_brightness = params.get('max_brightness', 1.0)
+            color = params.get('color', [255, 255, 255])  # RGB color
+
+            fixtures = self._resolve_fixtures(fixture_ids)
+            if not fixtures:
+                return channels
+
+            for i, fixture in enumerate(fixtures):
+                if mode == 'chase':
+                    phase_offset = i / len(fixtures)
+                    phase = (elapsed * speed + phase_offset) % 1.0
+                else:
+                    phase = (elapsed * speed) % 1.0
+
+                # Sinusoidal pulse
+                brightness = min_brightness + (max_brightness - min_brightness) * (0.5 + 0.5 * math.sin(phase * 2 * math.pi))
+
+                r = (color[0] / 255.0) * brightness
+                g = (color[1] / 255.0) * brightness
+                b = (color[2] / 255.0) * brightness
+
+                self._apply_rgb_to_fixture(channels, fixture, r, g, b, brightness)
+
+            session.universes = list(set(f.get('universe', 1) for f in fixtures))
+
+        elif effect_type == "fixture_chase":
+            # Generic color chase across fixtures
+            # One "active" fixture travels down the line
+            fixture_ids = session.fixture_ids if session.fixture_ids else params.get('fixture_ids', None)
+            speed = params.get('speed', 2.0)  # Fixtures per second
+            color = params.get('color', [255, 255, 255])  # Active color
+            tail_length = params.get('tail_length', 2)  # Number of trailing fixtures
+            bg_color = params.get('bg_color', [0, 0, 0])  # Background color
+
+            fixtures = self._resolve_fixtures(fixture_ids)
+            if not fixtures:
+                return channels
+
+            num_fixtures = len(fixtures)
+            # Position of the "head" of the chase
+            position = (elapsed * speed) % num_fixtures
+
+            for i, fixture in enumerate(fixtures):
+                # Distance from current position (wrapping)
+                dist = min(abs(i - position), num_fixtures - abs(i - position))
+
+                if dist < 1:
+                    # Head fixture - full brightness
+                    brightness = 1.0 - dist
+                elif dist < tail_length + 1:
+                    # Tail - fading
+                    brightness = 1.0 - (dist / (tail_length + 1))
+                else:
+                    brightness = 0.0
+
+                # Interpolate between bg_color and color based on brightness
+                r = (bg_color[0] + (color[0] - bg_color[0]) * brightness) / 255.0
+                g = (bg_color[1] + (color[1] - bg_color[1]) * brightness) / 255.0
+                b = (bg_color[2] + (color[2] - bg_color[2]) * brightness) / 255.0
+
+                self._apply_rgb_to_fixture(channels, fixture, r, g, b, max(brightness, 0.01))
+
+            session.universes = list(set(f.get('universe', 1) for f in fixtures))
+
         return channels
+
+    def _resolve_fixtures(self, fixture_ids: Optional[List[str]] = None) -> List[Dict]:
+        """
+        Resolve fixture IDs to fixture data, sorted for consistent ordering.
+
+        Args:
+            fixture_ids: List of fixture IDs, or None for all fixtures
+
+        Returns:
+            List of fixture dicts sorted by universe, then start_channel
+        """
+        if not self._fixture_resolver:
+            return []
+
+        fixtures = self._fixture_resolver(fixture_ids)
+        if not fixtures:
+            return []
+
+        # Sort for consistent ordering
+        return sorted(fixtures, key=lambda f: (f.get('universe', 1), f.get('start_channel', 1)))
+
+    def _apply_rgb_to_fixture(self, channels: Dict[int, int], fixture: Dict,
+                               r: float, g: float, b: float, brightness: float = 1.0):
+        """
+        Apply RGB values to a fixture's channels based on its channel map.
+
+        Args:
+            channels: Output channel dict to modify
+            fixture: Fixture data with start_channel, channel_count, channel_map
+            r, g, b: RGB values 0.0-1.0
+            brightness: Overall brightness multiplier 0.0-1.0
+        """
+        start_ch = fixture.get('start_channel', 1)
+        ch_count = fixture.get('channel_count', 4)
+        channel_map = fixture.get('channel_map', [])
+
+        if channel_map and len(channel_map) >= 3:
+            # Use channel map to find R, G, B, W, Dimmer positions
+            for j, ch_name in enumerate(channel_map):
+                ch_num = start_ch + j
+                name_lower = (ch_name or '').lower()
+
+                if 'red' in name_lower or name_lower == 'r':
+                    channels[ch_num] = int(r * 255)
+                elif 'green' in name_lower or name_lower == 'g':
+                    channels[ch_num] = int(g * 255)
+                elif 'blue' in name_lower or name_lower == 'b':
+                    channels[ch_num] = int(b * 255)
+                elif 'white' in name_lower or name_lower == 'w':
+                    channels[ch_num] = 0  # Effects typically don't use white
+                elif 'dimmer' in name_lower or name_lower == 'd' or 'intensity' in name_lower:
+                    channels[ch_num] = int(brightness * 255)
+        else:
+            # Default: assume RGBW or RGB layout
+            channels[start_ch] = int(r * 255)
+            channels[start_ch + 1] = int(g * 255)
+            channels[start_ch + 2] = int(b * 255)
+            if ch_count > 3:
+                channels[start_ch + 3] = 0  # W
 
     def _hsv_to_rgb(self, h: float, s: float, v: float) -> Tuple[float, float, float]:
         """Convert HSV to RGB"""
@@ -1278,6 +1467,54 @@ class SessionFactory:
         )
 
     @staticmethod
+    def from_fixture_effect(effect_type: str, fixture_ids: List[str] = None,
+                            mode: str = 'chase', params: Dict = None) -> PlaybackSession:
+        """
+        Create session for fixture-aware effect.
+
+        This is the primary way to create effects that target specific fixtures
+        rather than raw DMX channels. The effect will automatically:
+        - Resolve fixture addresses from the database
+        - Apply phase offsets in 'chase' mode or sync all in 'sync' mode
+        - Route output to correct universes based on fixture locations
+
+        Args:
+            effect_type: Effect type - prefix with 'fixture_' for fixture-aware:
+                - 'fixture_rainbow': Rainbow color cycling
+                - 'fixture_pulse': Breathing/pulsing effect
+                - 'fixture_chase': Single-color chase across fixtures
+            fixture_ids: List of fixture IDs (None = all fixtures in database)
+            mode: Distribution mode:
+                - 'chase': Each fixture gets phase-offset (colors chase across)
+                - 'sync': All fixtures show the same value simultaneously
+            params: Additional effect parameters vary by effect type:
+                - speed: Animation speed (cycles/sec or fixtures/sec)
+                - color: [R, G, B] for single-color effects
+                - saturation, value: For rainbow effects
+                - min_brightness, max_brightness: For pulse effects
+
+        Returns:
+            PlaybackSession configured for fixture-based effect
+        """
+        effect_params = params.copy() if params else {}
+
+        # Determine name based on mode
+        mode_name = 'Chase' if mode == 'chase' else 'Sync'
+        effect_name = effect_type.replace('fixture_', '').replace('_', ' ').title()
+
+        return PlaybackSession(
+            session_id=f"fixture_effect_{effect_type}_{mode}_{int(time.time()*1000)}",
+            playback_type=PlaybackType.EFFECT,
+            name=f'{effect_name} ({mode_name})',
+            universes=[1],  # Will be updated during render based on fixture locations
+            priority=Priority.EFFECT,
+            effect_type=effect_type,
+            effect_params=effect_params,
+            fixture_ids=fixture_ids or [],
+            distribution_mode=mode,
+        )
+
+    @staticmethod
     def blackout(universes: List[int] = None, fade_ms: int = 0) -> PlaybackSession:
         """Create blackout session"""
         session = PlaybackSession(
@@ -1357,6 +1594,38 @@ def play_effect(effect_type: str, params: Dict = None,
                 universes: List[int] = None) -> str:
     """Play a built-in effect"""
     session = session_factory.from_effect(effect_type, params, universes)
+    return unified_engine.play(session)
+
+
+def play_fixture_effect(effect_type: str, fixture_ids: List[str] = None,
+                        mode: str = 'chase', params: Dict = None) -> str:
+    """
+    Play a fixture-aware effect.
+
+    This targets specific fixtures in the database rather than raw DMX channels.
+    The effect automatically routes to the correct universes based on fixture locations.
+
+    Args:
+        effect_type: Effect type (fixture_rainbow, fixture_pulse, fixture_chase)
+        fixture_ids: List of fixture IDs (None = all fixtures)
+        mode: 'chase' (phased/distributed) or 'sync' (all same)
+        params: Effect-specific parameters (speed, color, etc.)
+
+    Returns:
+        Session ID for the started playback
+
+    Examples:
+        # Rainbow chase across all fixtures
+        play_fixture_effect('fixture_rainbow', mode='chase', params={'speed': 0.3})
+
+        # Pulse all fixtures in sync
+        play_fixture_effect('fixture_pulse', mode='sync', params={'speed': 0.5, 'color': [255, 0, 0]})
+
+        # Color chase across specific fixtures
+        play_fixture_effect('fixture_chase', fixture_ids=['fixture_1', 'fixture_2'],
+                           params={'color': [0, 255, 0], 'speed': 3.0})
+    """
+    session = session_factory.from_fixture_effect(effect_type, fixture_ids, mode, params)
     return unified_engine.play(session)
 
 

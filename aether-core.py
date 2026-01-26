@@ -7801,6 +7801,153 @@ def get_running_effects():
     return jsonify({'running': list(effects_engine.running.keys()), 'count': len(effects_engine.running)})
 
 # ─────────────────────────────────────────────────────────
+# Fixture-Aware Effects (Intelligent Distribution)
+# ─────────────────────────────────────────────────────────
+@app.route('/api/effects/fixture', methods=['POST'])
+def play_fixture_effect_endpoint():
+    """
+    Play a fixture-aware effect with intelligent distribution.
+
+    This targets specific fixtures in the database rather than raw channels.
+    Supports two distribution modes:
+    - 'chase': Each fixture gets a phase offset (colors chase across fixtures)
+    - 'sync': All fixtures show the same value simultaneously
+
+    Request body:
+    {
+        "effect_type": "fixture_rainbow" | "fixture_pulse" | "fixture_chase",
+        "fixture_ids": ["fixture_1", "fixture_2"] | null (null = all fixtures),
+        "mode": "chase" | "sync",
+        "params": {
+            "speed": 0.3,           // Animation speed
+            "color": [255, 0, 0],   // For single-color effects
+            "saturation": 1.0,      // For rainbow
+            "value": 1.0            // Brightness
+        }
+    }
+
+    Returns:
+        {
+            "success": true,
+            "session_id": "fixture_effect_...",
+            "fixtures_count": 5,
+            "universes": [1, 4]
+        }
+    """
+    data = request.get_json() or {}
+    effect_type = data.get('effect_type', 'fixture_rainbow')
+    fixture_ids = data.get('fixture_ids')  # None = all fixtures
+    mode = data.get('mode', 'chase')
+    params = data.get('params', {})
+
+    # Validate mode
+    if mode not in ['chase', 'sync']:
+        return jsonify({'success': False, 'error': f"Invalid mode: {mode}. Must be 'chase' or 'sync'"}), 400
+
+    # Validate effect type
+    valid_effects = ['fixture_rainbow', 'fixture_pulse', 'fixture_chase']
+    if effect_type not in valid_effects:
+        return jsonify({'success': False, 'error': f"Invalid effect_type: {effect_type}. Must be one of {valid_effects}"}), 400
+
+    try:
+        # Import and use the convenience function
+        from unified_playback import play_fixture_effect, unified_engine
+
+        session_id = play_fixture_effect(effect_type, fixture_ids, mode, params)
+
+        # Get session info for response
+        session = unified_engine.get_session(session_id)
+        fixtures_count = len(fixture_ids) if fixture_ids else len(content_manager.get_fixtures())
+        universes = session.universes if session else [1]
+
+        return jsonify({
+            'success': True,
+            'session_id': session_id,
+            'fixtures_count': fixtures_count,
+            'universes': universes,
+            'mode': mode,
+            'effect_type': effect_type
+        })
+    except Exception as e:
+        print(f"❌ Fixture effect error: {e}", flush=True)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/effects/fixture/stop', methods=['POST'])
+def stop_fixture_effect_endpoint():
+    """
+    Stop fixture-aware effects.
+
+    Request body:
+    {
+        "session_id": "fixture_effect_..." | null (null = stop all fixture effects)
+    }
+    """
+    data = request.get_json() or {}
+    session_id = data.get('session_id')
+
+    try:
+        from unified_playback import unified_engine
+
+        if session_id:
+            unified_engine.stop_session(session_id)
+        else:
+            # Stop all fixture effects
+            status = unified_engine.get_status()
+            for session_info in status.get('sessions', []):
+                if session_info['id'].startswith('fixture_effect_'):
+                    unified_engine.stop_session(session_info['id'])
+
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/effects/fixture/types', methods=['GET'])
+def get_fixture_effect_types():
+    """
+    Get available fixture-aware effect types with their parameters.
+    """
+    return jsonify({
+        'effect_types': [
+            {
+                'id': 'fixture_rainbow',
+                'name': 'Rainbow',
+                'description': 'Color-cycling rainbow effect across fixtures',
+                'params': {
+                    'speed': {'type': 'float', 'default': 0.2, 'min': 0.01, 'max': 2.0, 'description': 'Color cycle speed'},
+                    'saturation': {'type': 'float', 'default': 1.0, 'min': 0, 'max': 1.0, 'description': 'Color saturation'},
+                    'value': {'type': 'float', 'default': 1.0, 'min': 0, 'max': 1.0, 'description': 'Brightness'}
+                }
+            },
+            {
+                'id': 'fixture_pulse',
+                'name': 'Pulse',
+                'description': 'Breathing/pulsing effect with configurable color',
+                'params': {
+                    'speed': {'type': 'float', 'default': 0.5, 'min': 0.1, 'max': 5.0, 'description': 'Pulse speed'},
+                    'color': {'type': 'rgb', 'default': [255, 255, 255], 'description': 'Pulse color'},
+                    'min_brightness': {'type': 'float', 'default': 0.1, 'min': 0, 'max': 1.0, 'description': 'Minimum brightness'},
+                    'max_brightness': {'type': 'float', 'default': 1.0, 'min': 0, 'max': 1.0, 'description': 'Maximum brightness'}
+                }
+            },
+            {
+                'id': 'fixture_chase',
+                'name': 'Chase',
+                'description': 'Single-color chase that travels across fixtures',
+                'params': {
+                    'speed': {'type': 'float', 'default': 2.0, 'min': 0.5, 'max': 10.0, 'description': 'Fixtures per second'},
+                    'color': {'type': 'rgb', 'default': [255, 255, 255], 'description': 'Chase color'},
+                    'tail_length': {'type': 'int', 'default': 2, 'min': 0, 'max': 10, 'description': 'Trailing fixtures'},
+                    'bg_color': {'type': 'rgb', 'default': [0, 0, 0], 'description': 'Background color'}
+                }
+            }
+        ],
+        'modes': [
+            {'id': 'chase', 'name': 'Chase', 'description': 'Each fixture gets a phase offset - effect travels across fixtures'},
+            {'id': 'sync', 'name': 'Sync', 'description': 'All fixtures show the same value simultaneously'}
+        ]
+    })
+
+# ─────────────────────────────────────────────────────────
 # Fixture Routes
 # ─────────────────────────────────────────────────────────
 @app.route('/api/fixtures', methods=['GET'])
@@ -9029,8 +9176,29 @@ if __name__ == '__main__':
             print(f"⚠️ Look resolver error for {look_id}: {e}")
             return None
 
+    def unified_fixture_resolver(fixture_ids=None):
+        """
+        Resolve fixture IDs to fixture data for fixture-aware effects.
+
+        Args:
+            fixture_ids: List of fixture IDs to resolve, or None for all fixtures
+
+        Returns:
+            List of fixture dicts with: fixture_id, universe, start_channel,
+            channel_count, channel_map
+        """
+        try:
+            all_fixtures = content_manager.get_fixtures()
+            if fixture_ids is None or len(fixture_ids) == 0:
+                return all_fixtures
+            return [f for f in all_fixtures if f.get('fixture_id') in fixture_ids]
+        except Exception as e:
+            print(f"⚠️ Fixture resolver error: {e}")
+            return []
+
     unified_engine.set_output_callback(unified_output_callback)
     unified_engine.set_look_resolver(unified_look_resolver)
+    unified_engine.set_fixture_resolver(unified_fixture_resolver)
     unified_engine.set_modifier_renderer(ModifierRenderer())
     unified_engine.start()
     print("✓ Unified Playback Engine started (30 fps)")
