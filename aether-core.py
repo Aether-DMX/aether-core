@@ -1916,23 +1916,61 @@ class NodeManager:
         return self.send_udpjson(node_ip, AETHER_UDPJSON_PORT, payload)
 
     def send_udpjson_panic(self, node_ip, universe):
-        """Send a 'panic' command - immediate blackout with no fade."""
+        """Send a 'panic' command - immediate blackout with no fade.
+
+        SAFETY ACTION: This bypasses all playback/effects and commands
+        immediate zero output on the target universe.
+        """
+        print(f"🚨 PANIC: Sending to {node_ip} universe {universe}", flush=True)
         payload = {
             "v": self.PROTOCOL_VERSION,
             "type": "panic",
             "u": universe,
             "seq": self._next_seq()
         }
-        return self.send_udpjson(node_ip, AETHER_UDPJSON_PORT, payload)
+        result = self.send_udpjson(node_ip, AETHER_UDPJSON_PORT, payload)
+        if result:
+            print(f"   ✓ PANIC sent successfully to {node_ip}:{universe}", flush=True)
+        else:
+            print(f"   ✗ PANIC FAILED to {node_ip}:{universe}", flush=True)
+        return result
 
     def send_udpjson_ping(self, node_ip):
-        """Send a 'ping' command to a node and expect a 'pong' response."""
+        """Send a 'ping' command to a node and expect a 'pong' response.
+
+        SAFETY ACTION: Health check for node connectivity.
+        """
+        print(f"🏓 PING: Sending to {node_ip}", flush=True)
         payload = {
             "v": self.PROTOCOL_VERSION,
             "type": "ping",
             "seq": self._next_seq()
         }
-        return self.send_udpjson(node_ip, AETHER_UDPJSON_PORT, payload)
+        result = self.send_udpjson(node_ip, AETHER_UDPJSON_PORT, payload)
+        if result:
+            print(f"   ✓ PING sent to {node_ip}", flush=True)
+        else:
+            print(f"   ✗ PING FAILED to {node_ip}", flush=True)
+        return result
+
+    def send_udpjson_reset(self, node_ip):
+        """Send a 'reset' command to a node.
+
+        SAFETY ACTION: Commands node to reset its internal state.
+        This clears any stuck effects, resets DMX output, and reinitializes.
+        """
+        print(f"🔄 RESET: Sending to {node_ip}", flush=True)
+        payload = {
+            "v": self.PROTOCOL_VERSION,
+            "type": "reset",
+            "seq": self._next_seq()
+        }
+        result = self.send_udpjson(node_ip, AETHER_UDPJSON_PORT, payload)
+        if result:
+            print(f"   ✓ RESET sent to {node_ip}", flush=True)
+        else:
+            print(f"   ✗ RESET FAILED to {node_ip}", flush=True)
+        return result
 
     def start_dmx_refresh(self):
         """Start the continuous DMX refresh loop.
@@ -4798,6 +4836,184 @@ def dmx_blackout():
         return jsonify({'error': 'Universe 1 is offline. Use universes 2-5.', 'success': False}), 400
     # If no universe specified, blackout all online universes (2-5)
     return jsonify(content_manager.blackout(universe, data.get('fade_ms', 1000)))
+
+
+# ============================================================
+# SAFETY ACTIONS - Phase 4 Hardening
+# ============================================================
+# These endpoints MUST work regardless of:
+# - UI state
+# - Playback state
+# - AI layer availability
+# - Backend degradation
+#
+# Each action logs success/failure explicitly.
+# ============================================================
+
+@app.route('/api/dmx/panic', methods=['POST'])
+def dmx_panic():
+    """SAFETY ACTION: Immediate blackout with no fade.
+
+    Bypasses all playback/effects and commands immediate zero output.
+    Use this when something is wrong and you need lights OFF NOW.
+
+    Request body:
+        universe (optional): Target universe. If not specified, panics all universes.
+    """
+    print("🚨 SAFETY ACTION: /api/dmx/panic called", flush=True)
+    data = request.get_json() or {}
+    universe = data.get('universe')
+
+    results = {'success': True, 'action': 'panic', 'universes': []}
+
+    # Stop all playback first (bypasses normal paths)
+    try:
+        stop_all_playback(blackout=False)
+        print("   ✓ All playback stopped", flush=True)
+    except Exception as e:
+        print(f"   ⚠️ Failed to stop playback: {e}", flush=True)
+
+    # Get all online nodes
+    all_nodes = node_manager.get_all_nodes(include_offline=False)
+
+    if universe is not None:
+        # Panic specific universe
+        target_nodes = [n for n in all_nodes if n.get('universe') == universe]
+        universes_to_panic = [universe]
+    else:
+        # Panic all universes
+        target_nodes = all_nodes
+        universes_to_panic = list(set(n.get('universe', 1) for n in all_nodes))
+
+    for univ in universes_to_panic:
+        univ_nodes = [n for n in target_nodes if n.get('universe') == univ]
+        for node in univ_nodes:
+            node_ip = node.get('ip')
+            if node_ip:
+                try:
+                    ssot.send_udpjson_panic(node_ip, univ)
+                    results['universes'].append({'universe': univ, 'node': node_ip, 'success': True})
+                except Exception as e:
+                    results['universes'].append({'universe': univ, 'node': node_ip, 'success': False, 'error': str(e)})
+                    results['success'] = False
+
+    # Also clear SSOT state
+    for univ in universes_to_panic:
+        try:
+            dmx_state.universes[univ] = [0] * 512
+            print(f"   ✓ SSOT cleared for universe {univ}", flush=True)
+        except Exception as e:
+            print(f"   ⚠️ Failed to clear SSOT for universe {univ}: {e}", flush=True)
+
+    print(f"🚨 PANIC complete: {len(results['universes'])} nodes commanded", flush=True)
+    return jsonify(results)
+
+
+@app.route('/api/nodes/<node_id>/ping', methods=['POST'])
+def ping_node(node_id):
+    """SAFETY ACTION: Health check for a specific node.
+
+    Sends a ping command to verify node connectivity.
+    Returns success/failure status.
+    """
+    print(f"🏓 SAFETY ACTION: /api/nodes/{node_id}/ping called", flush=True)
+
+    node = node_manager.get_node(node_id)
+    if not node:
+        print(f"   ✗ Node {node_id} not found", flush=True)
+        return jsonify({'success': False, 'error': 'Node not found'}), 404
+
+    node_ip = node.get('ip')
+    if not node_ip:
+        print(f"   ✗ Node {node_id} has no IP address", flush=True)
+        return jsonify({'success': False, 'error': 'Node has no IP address'}), 400
+
+    try:
+        result = ssot.send_udpjson_ping(node_ip)
+        success = result is not None
+        print(f"   {'✓' if success else '✗'} Ping to {node_id} ({node_ip}): {'success' if success else 'failed'}", flush=True)
+        return jsonify({
+            'success': success,
+            'node_id': node_id,
+            'ip': node_ip,
+            'action': 'ping'
+        })
+    except Exception as e:
+        print(f"   ✗ Ping to {node_id} failed: {e}", flush=True)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/nodes/<node_id>/reset', methods=['POST'])
+def reset_node(node_id):
+    """SAFETY ACTION: Reset a specific node.
+
+    Commands the node to reset its internal state:
+    - Clears any stuck effects
+    - Resets DMX output to zero
+    - Reinitializes the node
+
+    Use this when a node is misbehaving or stuck.
+    """
+    print(f"🔄 SAFETY ACTION: /api/nodes/{node_id}/reset called", flush=True)
+
+    node = node_manager.get_node(node_id)
+    if not node:
+        print(f"   ✗ Node {node_id} not found", flush=True)
+        return jsonify({'success': False, 'error': 'Node not found'}), 404
+
+    node_ip = node.get('ip')
+    if not node_ip:
+        print(f"   ✗ Node {node_id} has no IP address", flush=True)
+        return jsonify({'success': False, 'error': 'Node has no IP address'}), 400
+
+    try:
+        result = ssot.send_udpjson_reset(node_ip)
+        success = result is not None
+        print(f"   {'✓' if success else '✗'} Reset {node_id} ({node_ip}): {'success' if success else 'failed'}", flush=True)
+        return jsonify({
+            'success': success,
+            'node_id': node_id,
+            'ip': node_ip,
+            'action': 'reset'
+        })
+    except Exception as e:
+        print(f"   ✗ Reset {node_id} failed: {e}", flush=True)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/nodes/ping', methods=['POST'])
+def ping_all_nodes():
+    """SAFETY ACTION: Health check for all online nodes.
+
+    Sends ping commands to all known online nodes.
+    Returns a summary of which nodes responded.
+    """
+    print("🏓 SAFETY ACTION: /api/nodes/ping (all) called", flush=True)
+
+    all_nodes = node_manager.get_all_nodes(include_offline=False)
+    results = {'success': True, 'nodes': [], 'total': len(all_nodes), 'responded': 0}
+
+    for node in all_nodes:
+        node_id = node.get('node_id')
+        node_ip = node.get('ip')
+
+        if not node_ip:
+            results['nodes'].append({'node_id': node_id, 'success': False, 'error': 'No IP'})
+            continue
+
+        try:
+            result = ssot.send_udpjson_ping(node_ip)
+            success = result is not None
+            results['nodes'].append({'node_id': node_id, 'ip': node_ip, 'success': success})
+            if success:
+                results['responded'] += 1
+        except Exception as e:
+            results['nodes'].append({'node_id': node_id, 'ip': node_ip, 'success': False, 'error': str(e)})
+
+    # Overall success only if all nodes responded
+    results['success'] = results['responded'] == results['total']
+    print(f"🏓 Ping all complete: {results['responded']}/{results['total']} nodes responded", flush=True)
+    return jsonify(results)
 
 
 @app.route('/api/dmx/master', methods=['POST'])
