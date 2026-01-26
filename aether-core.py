@@ -4679,61 +4679,9 @@ def rdm_devices_for_node(node_id):
     devices = rdm_manager.get_devices_for_node(node_id)
     return jsonify(devices)
 
-@app.route('/api/rdm/devices', methods=['GET'])
-def rdm_all_devices():
-    """List all RDM devices across all nodes"""
-    devices = rdm_manager.get_all_devices()
-    return jsonify(devices)
-
-@app.route('/api/rdm/devices/<uid>', methods=['GET'])
-def rdm_device_detail(uid):
-    """Get detailed info for a specific RDM device"""
-    # Find which node has this device
-    conn = get_db()
-    c = conn.cursor()
-    c.execute('SELECT node_id FROM rdm_devices WHERE uid = ?', (uid,))
-    row = c.fetchone()
-    if not row:
-        return jsonify({'error': 'Device not found'}), 404
-
-    result = rdm_manager.get_device_info(row[0], uid)
-    return jsonify(result)
-
-@app.route('/api/rdm/devices/<uid>/identify', methods=['POST'])
-def rdm_identify(uid):
-    """Identify a device (flash its LED)"""
-    data = request.get_json() or {}
-    state = data.get('state', True)
-
-    # Find which node has this device
-    conn = get_db()
-    c = conn.cursor()
-    c.execute('SELECT node_id FROM rdm_devices WHERE uid = ?', (uid,))
-    row = c.fetchone()
-    if not row:
-        return jsonify({'error': 'Device not found'}), 404
-
-    result = rdm_manager.identify_device(row[0], uid, state)
-    return jsonify(result)
-
-@app.route('/api/rdm/devices/<uid>/address', methods=['POST'])
-def rdm_set_address(uid):
-    """Set DMX start address for a device"""
-    data = request.get_json() or {}
-    address = data.get('address')
-    if not address or address < 1 or address > 512:
-        return jsonify({'error': 'Address must be between 1 and 512'}), 400
-
-    # Find which node has this device
-    conn = get_db()
-    c = conn.cursor()
-    c.execute('SELECT node_id FROM rdm_devices WHERE uid = ?', (uid,))
-    row = c.fetchone()
-    if not row:
-        return jsonify({'error': 'Device not found'}), 404
-
-    result = rdm_manager.set_dmx_address(row[0], uid, address)
-    return jsonify(result)
+# Note: /api/rdm/devices, /api/rdm/devices/<uid>, /api/rdm/devices/<uid>/identify,
+# and /api/rdm/devices/<uid>/address are defined in Phase 4 RDM API section below
+# to avoid duplicate route definitions.
 
 @app.route('/api/rdm/devices/<uid>/label', methods=['POST'])
 def rdm_set_label(uid):
@@ -7601,9 +7549,9 @@ def get_recommended_transition_route():
 # ─────────────────────────────────────────────────────────
 # Render Pipeline API (Phase 3 - Fixture-Centric Architecture)
 # ─────────────────────────────────────────────────────────
-@app.route('/api/render/status', methods=['GET'])
+@app.route('/api/render/pipeline/status', methods=['GET'])
 def get_render_pipeline_status_route():
-    """Get status of the final render pipeline"""
+    """Get status of the final render pipeline (Phase 3 fixture-centric)"""
     pipeline = get_render_pipeline()
     return jsonify(pipeline.get_status())
 
