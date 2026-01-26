@@ -9122,8 +9122,37 @@ if __name__ == '__main__':
         If the channels represent a single-fixture pattern (e.g., channels 1-4),
         automatically expand to all fixtures in the universe using their actual
         start channels from the database.
+
+        Handles both simple channel keys (1, 2, 3) and universe:channel format (4:1, 4:2).
         """
         if not channels:
+            content_manager.set_channels(universe, channels, fade_ms=fade_ms)
+            return
+
+        # Helper to parse channel key - handles both "1" and "4:1" formats
+        def parse_channel_key(key, target_universe):
+            key_str = str(key)
+            if ':' in key_str:
+                # Format: "universe:channel" - only include if universe matches
+                parts = key_str.split(':')
+                if int(parts[0]) == target_universe:
+                    return int(parts[1])
+                return None  # Wrong universe
+            else:
+                # Simple channel number
+                try:
+                    return int(key_str)
+                except ValueError:
+                    return None
+
+        # Parse channels, filtering by universe
+        parsed_channels = {}
+        for key, value in channels.items():
+            ch = parse_channel_key(key, universe)
+            if ch is not None:
+                parsed_channels[ch] = value
+
+        if not parsed_channels:
             content_manager.set_channels(universe, channels, fade_ms=fade_ms)
             return
 
@@ -9132,7 +9161,7 @@ if __name__ == '__main__':
 
         if fixtures and len(fixtures) > 1:
             # Detect if this is a single-fixture pattern that should be expanded
-            ch_nums = sorted(int(k) for k in channels.keys() if str(k).isdigit() or isinstance(k, int))
+            ch_nums = sorted(parsed_channels.keys())
             if ch_nums:
                 min_ch = min(ch_nums)
                 max_ch = max(ch_nums)
@@ -9142,9 +9171,8 @@ if __name__ == '__main__':
                 if pattern_size <= 8:
                     # Build base pattern normalized to offset 0
                     base_pattern = {}
-                    for ch, value in channels.items():
-                        ch_int = int(ch) if isinstance(ch, str) else ch
-                        offset = (ch_int - 1) % pattern_size
+                    for ch, value in parsed_channels.items():
+                        offset = (ch - 1) % pattern_size
                         base_pattern[offset] = value
 
                     # Expand to all fixtures
@@ -9158,9 +9186,9 @@ if __name__ == '__main__':
                                 expanded[start + offset] = value
 
                     if expanded:
-                        channels = expanded
+                        parsed_channels = expanded
 
-        content_manager.set_channels(universe, channels, fade_ms=fade_ms)
+        content_manager.set_channels(universe, parsed_channels, fade_ms=fade_ms)
 
     def unified_look_resolver(look_id: str):
         """Resolve Look ID to Look data"""
