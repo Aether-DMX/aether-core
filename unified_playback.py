@@ -1190,11 +1190,11 @@ class UnifiedPlaybackEngine:
             session.universes = list(set(f.get('universe', 1) for f in fixtures))
 
         elif effect_type == "fixture_chase":
-            # Generic color chase across fixtures - comet style with bright head and fading tail
+            # Galactic wave chase - smooth sine-based flowing motion
             fixture_ids = session.fixture_ids if session.fixture_ids else params.get('fixture_ids', None)
-            speed = params.get('speed', 2.0)  # Fixtures per second
+            speed = params.get('speed', 2.0)  # Wave cycles per second (lower = slower)
             color = params.get('color', [255, 255, 255])  # Active color
-            tail_length = params.get('tail_length', 2)  # Number of trailing fixtures
+            tail_length = params.get('tail_length', 2)  # Controls wave width (higher = wider wave)
             bg_color = params.get('bg_color', [0, 0, 0])  # Background color
 
             fixtures = self._resolve_fixtures(fixture_ids)
@@ -1202,41 +1202,48 @@ class UnifiedPlaybackEngine:
                 return channels
 
             num_fixtures = len(fixtures)
-            # Position of the "head" of the chase (continuous float for smooth motion)
-            position = (elapsed * speed) % num_fixtures
+
+            # Wave width as fraction of total fixtures (tail_length controls this)
+            # tail_length 0 = very narrow wave, tail_length 8 = very wide wave
+            wave_width = 0.15 + (tail_length / 8.0) * 0.6  # 15% to 75% of fixtures
+
+            # Phase position moves smoothly through the fixtures
+            # Speed controls how fast the wave moves
+            phase = (elapsed * speed * 0.5) % 1.0  # 0.0 to 1.0 position in cycle
 
             for i, fixture in enumerate(fixtures):
-                # Distance from current position (wrapping around)
-                raw_dist = i - position
-                # Handle wrap-around: find shortest distance
-                if raw_dist > num_fixtures / 2:
-                    raw_dist -= num_fixtures
-                elif raw_dist < -num_fixtures / 2:
-                    raw_dist += num_fixtures
+                # Fixture's position as fraction (0.0 to 1.0)
+                fixture_pos = i / num_fixtures
 
-                # Use signed distance - tail trails behind (positive = ahead, negative = behind)
-                signed_dist = raw_dist
+                # Distance from wave center, accounting for wrap-around
+                dist = fixture_pos - phase
+                if dist > 0.5:
+                    dist -= 1.0
+                elif dist < -0.5:
+                    dist += 1.0
 
-                # Comet shape: bright head, trailing tail behind
-                if abs(signed_dist) < 0.6:
-                    # Head - full brightness with smooth interpolation
-                    brightness = 1.0 - (abs(signed_dist) * 0.3)
-                elif signed_dist < 0 and abs(signed_dist) < tail_length + 1:
-                    # Tail - smooth cosine falloff (only behind the head)
-                    t = abs(signed_dist) / (tail_length + 1)
-                    brightness = 0.7 * (1 - t) ** 1.5  # Power curve for smoother tail
-                elif signed_dist > 0 and signed_dist < 0.8:
-                    # Slight leading edge glow
-                    brightness = 0.3 * (1 - signed_dist / 0.8)
+                # Smooth sine-based falloff for galactic wave feel
+                # The wave_width controls how wide the bright region is
+                normalized_dist = abs(dist) / wave_width
+
+                if normalized_dist < 1.0:
+                    # Inside the wave - use smooth cosine curve for natural falloff
+                    # This creates a bell-curve shape that's very smooth
+                    brightness = 0.5 * (1.0 + math.cos(normalized_dist * math.pi))
+                    # Add subtle secondary ripple for depth
+                    ripple = 0.1 * math.sin(elapsed * 3.0 + i * 0.5) * (1.0 - normalized_dist)
+                    brightness = min(1.0, brightness + ripple)
                 else:
-                    brightness = 0.0
+                    # Outside the wave - gentle ambient glow
+                    falloff = (normalized_dist - 1.0) * 2.0
+                    brightness = max(0.0, 0.08 * math.exp(-falloff))
 
                 # Interpolate between bg_color and color based on brightness
                 r = (bg_color[0] + (color[0] - bg_color[0]) * brightness) / 255.0
                 g = (bg_color[1] + (color[1] - bg_color[1]) * brightness) / 255.0
                 b = (bg_color[2] + (color[2] - bg_color[2]) * brightness) / 255.0
 
-                self._apply_rgb_to_fixture(channels, fixture, r, g, b, max(brightness, 0.01))
+                self._apply_rgb_to_fixture(channels, fixture, r, g, b, max(brightness, 0.02))
 
             session.universes = list(set(f.get('universe', 1) for f in fixtures))
 
