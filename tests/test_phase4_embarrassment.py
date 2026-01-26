@@ -56,7 +56,7 @@ class TestLightingDesignerPerspective:
     """
 
     def test_blackout_is_instant(self):
-        """Blackout happens immediately, not faded."""
+        """Blackout (stop_all) happens immediately, not faded."""
         print("\n" + "="*70)
         print("TEST: LD - Blackout Is Instant")
         print("="*70)
@@ -66,13 +66,13 @@ class TestLightingDesignerPerspective:
         engine = UnifiedPlaybackEngine()
         engine.start()
 
-        # Blackout should be immediate
+        # stop_all (the blackout action) should be immediate
         start = time.time()
-        engine.blackout()
+        engine.stop_all(fade_ms=0)  # Immediate blackout
         elapsed = time.time() - start
 
         # Should complete quickly (under 100ms)
-        assert elapsed < 0.1, f"Blackout took {elapsed:.3f}s - too slow!"
+        assert elapsed < 0.1, f"Blackout (stop_all) took {elapsed:.3f}s - too slow!"
 
         engine.stop()
         print("[PASS] Blackout is instant")
@@ -218,10 +218,17 @@ class TestControlsEngineerPerspective:
         from unified_playback import PlaybackState
 
         # Verify all expected states exist
-        expected_states = ['IDLE', 'PLAYING', 'PAUSED', 'STOPPED']
+        # Note: AETHER uses STOPPED instead of IDLE
+        expected_states = ['STOPPED', 'PLAYING', 'PAUSED']
 
         for state in expected_states:
             assert hasattr(PlaybackState, state), f"Missing state: {state}"
+
+        # Additional states for crossfade support
+        optional_states = ['FADING_IN', 'FADING_OUT', 'ARMED']
+        found_optional = sum(1 for s in optional_states if hasattr(PlaybackState, s))
+        print(f"   Core states: {expected_states}")
+        print(f"   Optional states found: {found_optional}/{len(optional_states)}")
 
         print("[PASS] State machine is predictable")
 
