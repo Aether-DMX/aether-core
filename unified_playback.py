@@ -1190,21 +1190,19 @@ class UnifiedPlaybackEngine:
             session.universes = list(set(f.get('universe', 1) for f in fixtures))
 
         elif effect_type == "fixture_chase":
-            # Generic color chase across fixtures
-            # One "active" fixture travels down the line with smooth Gaussian falloff
+            # Generic color chase across fixtures - comet style with bright head and fading tail
             fixture_ids = session.fixture_ids if session.fixture_ids else params.get('fixture_ids', None)
             speed = params.get('speed', 2.0)  # Fixtures per second
             color = params.get('color', [255, 255, 255])  # Active color
             tail_length = params.get('tail_length', 2)  # Number of trailing fixtures
             bg_color = params.get('bg_color', [0, 0, 0])  # Background color
-            smoothing = params.get('smoothing', 0.8)  # 0=sharp, 1=very smooth
 
             fixtures = self._resolve_fixtures(fixture_ids)
             if not fixtures:
                 return channels
 
             num_fixtures = len(fixtures)
-            # Position of the "head" of the chase (continuous float)
+            # Position of the "head" of the chase (continuous float for smooth motion)
             position = (elapsed * speed) % num_fixtures
 
             for i, fixture in enumerate(fixtures):
@@ -1216,15 +1214,21 @@ class UnifiedPlaybackEngine:
                 elif raw_dist < -num_fixtures / 2:
                     raw_dist += num_fixtures
 
-                dist = abs(raw_dist)
+                # Use signed distance - tail trails behind (positive = ahead, negative = behind)
+                signed_dist = raw_dist
 
-                # Gaussian-like smooth falloff for fluid motion
-                # sigma controls the spread - larger = smoother/wider
-                sigma = (tail_length + 1) * (0.3 + smoothing * 0.4)
-                brightness = math.exp(-(dist * dist) / (2 * sigma * sigma))
-
-                # Apply minimum threshold to cut off very dim values
-                if brightness < 0.02:
+                # Comet shape: bright head, trailing tail behind
+                if abs(signed_dist) < 0.6:
+                    # Head - full brightness with smooth interpolation
+                    brightness = 1.0 - (abs(signed_dist) * 0.3)
+                elif signed_dist < 0 and abs(signed_dist) < tail_length + 1:
+                    # Tail - smooth cosine falloff (only behind the head)
+                    t = abs(signed_dist) / (tail_length + 1)
+                    brightness = 0.7 * (1 - t) ** 1.5  # Power curve for smoother tail
+                elif signed_dist > 0 and signed_dist < 0.8:
+                    # Slight leading edge glow
+                    brightness = 0.3 * (1 - signed_dist / 0.8)
+                else:
                     brightness = 0.0
 
                 # Interpolate between bg_color and color based on brightness
