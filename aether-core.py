@@ -9117,7 +9117,49 @@ if __name__ == '__main__':
 
     # Initialize Unified Playback Engine
     def unified_output_callback(universe: int, channels: dict, fade_ms: int = 0):
-        """Route unified playback output through SSOT"""
+        """Route unified playback output through SSOT with fixture-aware expansion.
+
+        If the channels represent a single-fixture pattern (e.g., channels 1-4),
+        automatically expand to all fixtures in the universe using their actual
+        start channels from the database.
+        """
+        if not channels:
+            content_manager.set_channels(universe, channels, fade_ms=fade_ms)
+            return
+
+        # Get fixtures for this universe to expand pattern intelligently
+        fixtures = content_manager.get_fixtures(universe)
+
+        if fixtures and len(fixtures) > 1:
+            # Detect if this is a single-fixture pattern that should be expanded
+            ch_nums = sorted(int(k) for k in channels.keys() if str(k).isdigit() or isinstance(k, int))
+            if ch_nums:
+                min_ch = min(ch_nums)
+                max_ch = max(ch_nums)
+                pattern_size = max_ch - min_ch + 1
+
+                # Only expand if pattern is fixture-sized (1-8 channels typical)
+                if pattern_size <= 8:
+                    # Build base pattern normalized to offset 0
+                    base_pattern = {}
+                    for ch, value in channels.items():
+                        ch_int = int(ch) if isinstance(ch, str) else ch
+                        offset = (ch_int - 1) % pattern_size
+                        base_pattern[offset] = value
+
+                    # Expand to all fixtures
+                    expanded = {}
+                    fixtures = sorted(fixtures, key=lambda f: f.get('start_channel', 1))
+                    for fix in fixtures:
+                        start = fix.get('start_channel', 1)
+                        count = fix.get('channel_count', pattern_size)
+                        for offset, value in base_pattern.items():
+                            if offset < count:
+                                expanded[start + offset] = value
+
+                    if expanded:
+                        channels = expanded
+
         content_manager.set_channels(universe, channels, fade_ms=fade_ms)
 
     def unified_look_resolver(look_id: str):
