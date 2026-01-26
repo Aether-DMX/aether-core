@@ -1,6 +1,39 @@
 """
 Live Preview Service - Preview Look/Sequence edits without affecting live output
 
+# ============================================================================
+# ⚠️  AUTHORITY VIOLATION WARNING (TASK-0009)
+# ============================================================================
+#
+# This module contains PreviewService, which owns an independent render loop.
+#
+# Per AETHER Hard Rule 1.1:
+#   "Flask UnifiedPlaybackEngine is the ONLY authority allowed to generate
+#    final DMX output. No other system may run an independent render loop."
+#
+# SPECIAL CASE - PREVIEW:
+#   PreviewService is a borderline case because:
+#   - SANDBOX mode: Doesn't output to live, so technically not a violation
+#   - ARMED mode: DOES output to live, which IS a violation
+#
+# CURRENT VIOLATION:
+#   - PreviewService.start() spawns its own render thread
+#   - When armed, outputs directly via _live_output_callback
+#   - Bypasses UnifiedPlaybackEngine when in ARMED mode
+#
+# ALLOWED USAGE:
+#   - SANDBOX mode preview is acceptable (no live output)
+#   - Preview frame computation may be a utility
+#
+# PROHIBITED USAGE:
+#   - ARMED mode should route through UnifiedPlaybackEngine instead
+#
+# This needs review in Phase 2. Until then, armed mode should log warnings.
+# See TASK_LEDGER.md for full details.
+#
+# TODO: TASK-0009 - Route armed preview through UnifiedPlaybackEngine
+# ============================================================================
+
 This module provides:
 - PreviewSession: Isolated preview rendering for editing
 - Sandbox output: Preview renders to virtual buffer, not live
@@ -99,6 +132,15 @@ class PreviewSession:
 class PreviewService:
     """
     Manages preview sessions for live editing.
+
+    # ⚠️ AUTHORITY VIOLATION (TASK-0009) ⚠️
+    # This service owns an independent render loop.
+    # Playback timing is owned by UnifiedPlaybackEngine.
+    #
+    # SANDBOX mode: Acceptable (no live output)
+    # ARMED mode: VIOLATION - should route through UnifiedPlaybackEngine
+    #
+    # See TASK_LEDGER.md for resolution plan.
 
     Features:
     - Multiple concurrent preview sessions
@@ -234,7 +276,23 @@ class PreviewService:
     # ─────────────────────────────────────────────────────────
 
     def arm_session(self, session_id: str) -> bool:
-        """Arm a session for live output (preview affects real universes)"""
+        """
+        Arm a session for live output (preview affects real universes).
+
+        # ⚠️ AUTHORITY VIOLATION WARNING ⚠️
+        # When armed, this preview outputs to live universes, bypassing
+        # UnifiedPlaybackEngine. This violates AETHER Hard Rule 1.1.
+        # See TASK-0009 in TASK_LEDGER.md
+        """
+        # PHASE 1 GUARD: Log violation when session is armed for live output
+        import logging
+        logging.warning(
+            "⚠️ AUTHORITY VIOLATION: PreviewService.arm_session() enables live "
+            "output bypassing UnifiedPlaybackEngine. This violates AETHER Hard "
+            "Rule 1.1 - Only UnifiedPlaybackEngine should output to live. "
+            "See TASK-0009"
+        )
+
         with self._lock:
             session = self._sessions.get(session_id)
             if not session:

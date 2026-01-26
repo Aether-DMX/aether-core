@@ -1,6 +1,37 @@
 """
 Unified Playback System - One Engine to Rule Them All
 
+# ============================================================================
+# AUTHORITY DECLARATION (AETHER Hard Rules - Non-Negotiable)
+# ============================================================================
+#
+# THIS IS THE SOLE AUTHORITY FOR DMX PLAYBACK OUTPUT.
+#
+# Per AETHER Hard Rule 1.1:
+#   "Flask UnifiedPlaybackEngine is the ONLY authority allowed to generate
+#    final DMX output."
+#
+# NO OTHER SYSTEM MAY:
+#   - Run an independent render loop
+#   - Own playback timing
+#   - Bypass this engine for DMX output
+#
+# Authorized output path:
+#   UnifiedPlaybackEngine → MergeLayer → SSOT (ContentManager) → UDPJSON
+#
+# REMAINING VIOLATIONS (as of Phase 3):
+#   - RenderEngine (render_engine.py) - has parallel render loop
+#   - DynamicEffectsEngine (effects_engine.py) - has parallel render loop
+#   - ChaseEngine (aether-core.py) - has parallel render loop
+#   - ShowEngine (aether-core.py) - has parallel render loop
+#   - PreviewService (preview_service.py) - armed mode bypasses this engine
+#
+# DELETED IN PHASE 3:
+#   - UnifiedPlaybackController (playback_controller.py) - DELETED 2026-01-26
+#
+# See TASK_LEDGER.md for consolidation progress.
+# ============================================================================
+
 This module consolidates all playback types into a single, coherent system:
 - Looks (static channels + modifiers)
 - Sequences (multi-step with transitions)
@@ -337,7 +368,16 @@ class ModifierState:
 
 class UnifiedPlaybackEngine:
     """
-    Single render engine for all playback types.
+    CANONICAL AUTHORITY FOR DMX PLAYBACK OUTPUT.
+
+    ╔════════════════════════════════════════════════════════════════════════╗
+    ║  THIS ENGINE IS THE SOLE AUTHORITY FOR PLAYBACK TIMING AND OUTPUT.    ║
+    ║                                                                        ║
+    ║  Hard Rule 1.1: No other system may own a render loop.                 ║
+    ║  Hard Rule 1.1: All DMX output must route through this engine.         ║
+    ║                                                                        ║
+    ║  Violations of this rule are logged in TASK_LEDGER.md                  ║
+    ╚════════════════════════════════════════════════════════════════════════╝
 
     Features:
     - 30 FPS frame-based rendering
@@ -1082,8 +1122,22 @@ class SessionFactory:
 
     @staticmethod
     def from_sequence(sequence_id: str, sequence_data: Dict,
-                      universes: List[int] = None) -> PlaybackSession:
-        """Create session from Sequence data"""
+                      universes: List[int] = None,
+                      start_step: int = 0,
+                      seed: int = None) -> PlaybackSession:
+        """
+        Create session from Sequence data.
+
+        Args:
+            sequence_id: Unique identifier for the sequence
+            sequence_data: Dict containing steps, loop_mode, bpm, name
+            universes: Target universes (default: [1])
+            start_step: Starting step index (default: 0)
+            seed: Random seed for deterministic modifier behavior (default: auto)
+
+        Returns:
+            PlaybackSession configured for sequence playback
+        """
         steps = []
         for step_data in sequence_data.get('steps', []):
             step = Step(
@@ -1100,6 +1154,14 @@ class SessionFactory:
         loop_mode_str = sequence_data.get('loop_mode', 'loop')
         loop_mode = LoopMode[loop_mode_str.upper()] if loop_mode_str else LoopMode.LOOP
 
+        # Validate start_step
+        if start_step < 0 or (steps and start_step >= len(steps)):
+            start_step = 0
+
+        # Generate seed if not provided
+        if seed is None:
+            seed = int(time.time() * 1000) % 2**31
+
         return PlaybackSession(
             session_id=f"seq_{sequence_id}_{int(time.time()*1000)}",
             playback_type=PlaybackType.SEQUENCE,
@@ -1109,6 +1171,8 @@ class SessionFactory:
             steps=steps,
             loop_mode=loop_mode,
             bpm=sequence_data.get('bpm', 120),
+            current_step_index=start_step,
+            seed=seed,
         )
 
     @staticmethod
@@ -1219,9 +1283,26 @@ def play_look(look_id: str, look_data: Dict, universes: List[int] = None,
 
 
 def play_sequence(sequence_id: str, sequence_data: Dict,
-                  universes: List[int] = None) -> str:
-    """Play a Sequence"""
-    session = session_factory.from_sequence(sequence_id, sequence_data, universes)
+                  universes: List[int] = None,
+                  start_step: int = 0,
+                  seed: int = None) -> str:
+    """
+    Play a Sequence through the canonical UnifiedPlaybackEngine.
+
+    Args:
+        sequence_id: Unique identifier for the sequence
+        sequence_data: Dict containing steps, loop_mode, bpm, name
+        universes: Target universes (default: [1])
+        start_step: Starting step index (default: 0)
+        seed: Random seed for deterministic modifier behavior (default: auto)
+
+    Returns:
+        Session ID for the started playback
+    """
+    session = session_factory.from_sequence(
+        sequence_id, sequence_data, universes,
+        start_step=start_step, seed=seed
+    )
     return unified_engine.play(session)
 
 
@@ -1253,12 +1334,71 @@ def blackout(universes: List[int] = None, fade_ms: int = 0,
     return unified_engine.play(session, fade_from)
 
 
-def stop(session_id: str = None, fade_ms: int = 0):
-    """Stop playback"""
+def stop(session_id: str = None, fade_ms: int = 0) -> Dict:
+    """
+    Stop playback.
+
+    Args:
+        session_id: Specific session to stop (None = stop all)
+        fade_ms: Fade out duration in milliseconds
+
+    Returns:
+        Dict with success status and stopped session info
+    """
     if session_id:
         unified_engine.stop_session(session_id, fade_ms)
+        return {'success': True, 'stopped': session_id}
     else:
         unified_engine.stop_all(fade_ms)
+        return {'success': True, 'stopped': 'all'}
+
+
+def pause(session_id: str = None) -> Dict:
+    """
+    Pause playback.
+
+    Args:
+        session_id: Specific session to pause. If None, pauses the first playing session.
+
+    Returns:
+        Dict with success status and paused session info
+    """
+    if session_id:
+        success = unified_engine.pause(session_id)
+        return {'success': success, 'paused': session_id if success else None}
+    else:
+        # Pause first playing session (for compatibility with playback_controller behavior)
+        status = unified_engine.get_status()
+        for session_info in status.get('sessions', []):
+            if session_info.get('state') == 'playing':
+                sid = session_info.get('session_id')
+                success = unified_engine.pause(sid)
+                return {'success': success, 'paused': sid if success else None}
+        return {'success': False, 'error': 'Nothing playing to pause'}
+
+
+def resume(session_id: str = None) -> Dict:
+    """
+    Resume paused playback.
+
+    Args:
+        session_id: Specific session to resume. If None, resumes the first paused session.
+
+    Returns:
+        Dict with success status and resumed session info
+    """
+    if session_id:
+        success = unified_engine.resume(session_id)
+        return {'success': success, 'resumed': session_id if success else None}
+    else:
+        # Resume first paused session (for compatibility with playback_controller behavior)
+        status = unified_engine.get_status()
+        for session_info in status.get('sessions', []):
+            if session_info.get('state') == 'paused':
+                sid = session_info.get('session_id')
+                success = unified_engine.resume(sid)
+                return {'success': success, 'resumed': sid if success else None}
+        return {'success': False, 'error': 'Nothing paused to resume'}
 
 
 def get_status() -> Dict:

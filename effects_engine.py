@@ -1,7 +1,37 @@
 """
 Dynamic Effects Engine - AI-guided patterns with smooth frame-by-frame fades
 Routes ALL output through SSOT for consistent state management.
+
+# ============================================================================
+# ⚠️  AUTHORITY VIOLATION WARNING (TASK-0005)
+# ============================================================================
+#
+# This module contains DynamicEffectsEngine, which ILLEGALLY owns timing loops.
+#
+# Per AETHER Hard Rule 1.1:
+#   "Flask UnifiedPlaybackEngine is the ONLY authority allowed to generate
+#    final DMX output. No other system may run an independent render loop."
+#
+# CURRENT VIOLATION:
+#   - DynamicEffectsEngine spawns threads per effect
+#   - Each effect (christmas_stagger, etc.) runs its own timing loop at 30 FPS
+#   - Effects bypass UnifiedPlaybackEngine's render authority
+#
+# ALLOWED USAGE:
+#   - Effect computation logic may be extracted as UTILITIES
+#   - Called BY UnifiedPlaybackEngine, not independently
+#
+# PROHIBITED USAGE:
+#   - Spawning independent effect threads
+#   - Owning frame timing
+#
+# This will be fixed in Phase 2. Until then, effect starts should log warnings.
+# See TASK_LEDGER.md for full details.
+#
+# TODO: TASK-0005 - Retire DynamicEffectsEngine loops, extract utilities
+# ============================================================================
 """
+import logging
 import threading
 import time
 import random
@@ -9,6 +39,15 @@ import random
 
 class DynamicEffectsEngine:
     """Creates dynamic lighting effects with frame-by-frame interpolation for smooth fades.
+
+    # ⚠️ AUTHORITY VIOLATION (TASK-0005) ⚠️
+    # This engine MUST NOT own timing loops.
+    # Playback timing is owned by UnifiedPlaybackEngine.
+    #
+    # This class will be retired in Phase 2. Effect computation logic
+    # will be preserved as utilities called BY UnifiedPlaybackEngine.
+    #
+    # DO NOT START EFFECTS INDEPENDENTLY - See TASK_LEDGER.md
 
     All output routes through SSOT (dmx_state + node_manager.send_via_ola).
     Properly integrates with ArbitrationManager for priority-based control.
@@ -179,6 +218,13 @@ class DynamicEffectsEngine:
             self.running.pop(effect_id, None)
             if self.current_effect == effect_id:
                 self.current_effect = None
+
+        # PHASE 1 GUARD: Log violation when effect spawns independent thread
+        logging.warning(
+            "⚠️ AUTHORITY VIOLATION: DynamicEffectsEngine spawning independent "
+            "timing thread. This violates AETHER Hard Rule 1.1 - Only "
+            "UnifiedPlaybackEngine should own playback timing. See TASK-0005"
+        )
 
         thread = threading.Thread(target=run, daemon=True)
         self.threads[effect_id] = thread

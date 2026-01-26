@@ -45,10 +45,9 @@ from render_engine import (
     render_engine, render_look_frame, RenderEngine,
     ModifierRenderer, TimeContext, MergeMode,
 )
-from playback_controller import (
-    playback_controller, UnifiedPlaybackController,
-    LoopMode, PlaybackState,
-)
+# DELETED (Phase 3): playback_controller import removed
+# UnifiedPlaybackEngine (unified_playback.py) is now the sole authority
+# See TASK-0021 in TASK_LEDGER.md
 from merge_layer import (
     merge_layer, channel_classifier, MergeLayer,
     ChannelClassifier, ChannelType, get_priority,
@@ -77,6 +76,7 @@ from unified_playback import (
     play_sequence as unified_play_sequence, play_chase as unified_play_chase,
     play_scene as unified_play_scene, play_effect as unified_play_effect,
     blackout as unified_blackout, stop as unified_stop, get_status as unified_get_status,
+    pause as unified_pause, resume as unified_resume,
 )
 
 # Fixture-Centric Architecture (Phase 0-3)
@@ -547,8 +547,37 @@ playback_manager = PlaybackManager()
 # ============================================================
 # Chase Playback Engine (streams steps via UDPJSON)
 # ============================================================
+# ⚠️  AUTHORITY VIOLATION WARNING (TASK-0006)
+# ============================================================================
+#
+# ChaseEngine ILLEGALLY owns timing loops.
+#
+# Per AETHER Hard Rule 1.1:
+#   "Flask UnifiedPlaybackEngine is the ONLY authority allowed to generate
+#    final DMX output. No other system may run an independent render loop."
+#
+# CURRENT VIOLATION:
+#   - ChaseEngine.start_chase() spawns threads in self.running_chases
+#   - _run_chase() runs its own timing loop per chase
+#   - Bypasses UnifiedPlaybackEngine's render authority
+#
+# ALLOWED USAGE:
+#   - Chase step computation may be extracted as UTILITIES
+#   - Called BY UnifiedPlaybackEngine, not independently
+#
+# TODO: TASK-0006 - Retire ChaseEngine loops, extract chase step logic
+# ============================================================================
 class ChaseEngine:
     """Runs chases by streaming each step via UDPJSON to all universes.
+
+    # ⚠️ AUTHORITY VIOLATION (TASK-0006) ⚠️
+    # This engine MUST NOT own timing loops.
+    # Playback timing is owned by UnifiedPlaybackEngine.
+    #
+    # This class will be retired in Phase 2. Chase step computation
+    # will be preserved as utilities called BY UnifiedPlaybackEngine.
+    #
+    # DO NOT START CHASES INDEPENDENTLY - See TASK_LEDGER.md
 
     RACE CONDITION FIX: Now routes all output through merge layer for proper
     priority-based merging with other playback sources (effects, scenes, etc.)
@@ -569,7 +598,21 @@ class ChaseEngine:
         self._merge_layer = merge_layer_ref
 
     def start_chase(self, chase, universes, fade_ms_override=None):
-        """Start a chase on the given universes with optional fade override"""
+        """
+        Start a chase on the given universes with optional fade override.
+
+        # ⚠️ AUTHORITY VIOLATION WARNING ⚠️
+        # This method spawns an independent chase thread, violating
+        # AETHER Hard Rule 1.1. Only UnifiedPlaybackEngine should own timing.
+        # See TASK-0006 in TASK_LEDGER.md
+        """
+        # PHASE 1 GUARD: Log violation when chase spawns independent thread
+        logging.warning(
+            "⚠️ AUTHORITY VIOLATION: ChaseEngine.start_chase() spawning "
+            "independent timing thread. This violates AETHER Hard Rule 1.1 - "
+            "Only UnifiedPlaybackEngine should own playback timing. See TASK-0006"
+        )
+
         chase_id = chase['chase_id']
 
         # ARBITRATION: Acquire chase ownership
@@ -1160,8 +1203,37 @@ timer_runner = TimerRunner()
 # ============================================================
 # Show Engine (Timeline Playback)
 # ============================================================
+# ⚠️  AUTHORITY VIOLATION WARNING (TASK-0007)
+# ============================================================================
+#
+# ShowEngine ILLEGALLY owns timing loops.
+#
+# Per AETHER Hard Rule 1.1:
+#   "Flask UnifiedPlaybackEngine is the ONLY authority allowed to generate
+#    final DMX output. No other system may run an independent render loop."
+#
+# CURRENT VIOLATION:
+#   - ShowEngine.play_show() spawns self.thread for timeline playback
+#   - _timeline_loop() runs its own timing independently
+#   - Bypasses UnifiedPlaybackEngine's render authority
+#
+# ALLOWED USAGE:
+#   - Timeline event scheduling may be extracted as UTILITIES
+#   - Called BY UnifiedPlaybackEngine, not independently
+#
+# TODO: TASK-0007 - Retire ShowEngine loops, extract timeline event logic
+# ============================================================================
 class ShowEngine:
     """Plays back timeline-based shows with timed events.
+
+    # ⚠️ AUTHORITY VIOLATION (TASK-0007) ⚠️
+    # This engine MUST NOT own timing loops.
+    # Playback timing is owned by UnifiedPlaybackEngine.
+    #
+    # This class will be retired in Phase 2. Timeline event scheduling
+    # will be preserved as utilities called BY UnifiedPlaybackEngine.
+    #
+    # DO NOT START SHOWS INDEPENDENTLY - See TASK_LEDGER.md
 
     RACE CONDITION FIX: Now integrates with merge layer for proper
     priority-based merging. Direct channel writes route through merge layer.
@@ -1184,7 +1256,21 @@ class ShowEngine:
         self._merge_layer = merge_layer_ref
     
     def play_show(self, show_id, universe=1):
-        """Play a show timeline"""
+        """
+        Play a show timeline.
+
+        # ⚠️ AUTHORITY VIOLATION WARNING ⚠️
+        # This method spawns an independent timeline thread, violating
+        # AETHER Hard Rule 1.1. Only UnifiedPlaybackEngine should own timing.
+        # See TASK-0007 in TASK_LEDGER.md
+        """
+        # PHASE 1 GUARD: Log violation when show spawns independent thread
+        logging.warning(
+            "⚠️ AUTHORITY VIOLATION: ShowEngine.play_show() spawning "
+            "independent timing thread. This violates AETHER Hard Rule 1.1 - "
+            "Only UnifiedPlaybackEngine should own playback timing. See TASK-0007"
+        )
+
         conn = get_db()
         c = conn.cursor()
         c.execute('SELECT * FROM shows WHERE show_id = ?', (show_id,))
@@ -3766,18 +3852,15 @@ def stop_all_playback(blackout=False, fade_ms=1000, universe=None):
     except Exception as e:
         print(f"  ❌ Effect stop error: {e}", flush=True)
 
-    # Stop unified playback controller
+    # Stop UnifiedPlaybackEngine (canonical authority)
     try:
-        status = playback_controller.get_status()
-        if status.get('state') not in ('idle', 'stopped'):
-            if universe:
-                playback_manager.stop(universe)
-            else:
-                playback_controller.stop()
+        status = unified_get_status()
+        if status.get('sessions'):
+            unified_stop()
             results['playback'] = True
-            print("  ✓ Playback controller stopped", flush=True)
+            print("  ✓ UnifiedPlaybackEngine stopped", flush=True)
     except Exception as e:
-        print(f"  ❌ Playback stop error: {e}", flush=True)
+        print(f"  ❌ Unified playback stop error: {e}", flush=True)
 
     # Unregister all merge sources to clear the merge layer
     try:
@@ -3837,21 +3920,32 @@ def get_active_source_id(job_id):
     """Get the merge source ID for a playback job"""
     return _active_merge_sources.get(job_id)
 
-# Hook up unified playback controller to merge layer
+# Hook up UnifiedPlaybackEngine to merge layer
 def playback_output(universe: int, channels: dict):
-    """Callback for playback controller - routes through merge layer"""
-    # Get the current job from playback controller
-    status = playback_controller.get_status()
-    job_id = status.get('job_id')
+    """Callback for UnifiedPlaybackEngine - routes through merge layer"""
+    # Get the current session from unified engine
+    status = unified_get_status()
+    sessions = status.get('sessions', [])
+
+    # Use first active session as source identifier
+    job_id = None
+    source_type = 'look'
+    universes = [universe]
+    for session in sessions:
+        if session.get('state') in ('playing', 'fading_in'):
+            job_id = session.get('session_id')
+            source_type = session.get('playback_type', 'look')
+            universes = session.get('universes', [universe])
+            break
 
     if not job_id:
+        # No active session, just output directly
+        merge_layer_output(universe, channels)
         return
 
     source_id = get_active_source_id(job_id)
     if not source_id:
-        # Auto-register if not registered (backward compatibility)
-        source_type = status.get('job_type', 'look')
-        universes = status.get('universes', [universe])
+        # Auto-register if not registered
         source_id = register_playback_source(job_id, source_type, universes)
 
     # Update merge layer with new channel values
@@ -3862,8 +3956,9 @@ def playback_output(universe: int, channels: dict):
     if merged:
         merge_layer_output(universe, merged)
 
-playback_controller.set_output_callback(playback_output)
-playback_controller.set_modifier_renderer(ModifierRenderer())
+# DELETED (Phase 3): playback_controller configuration removed
+# playback_controller.set_output_callback(playback_output)
+# playback_controller.set_modifier_renderer(ModifierRenderer())
 
 # Set look resolver for Sequence playback (to resolve Look references in steps)
 def resolve_look(look_id: str):
@@ -3873,7 +3968,25 @@ def resolve_look(look_id: str):
         return look.to_dict()
     return None
 
-playback_controller.set_look_resolver(resolve_look)
+# DELETED (Phase 3): playback_controller.set_look_resolver removed
+
+# ============================================================
+# UnifiedPlaybackEngine Configuration (Canonical Authority)
+# ============================================================
+# Configure the canonical UnifiedPlaybackEngine with proper callbacks.
+#
+# NOTE: The actual startup happens in __main__ block (line ~8690) which
+# re-configures with the proper SSOT callbacks. This pre-configuration
+# ensures unified_engine is ready if anything tries to use it before __main__.
+
+# Output callback - routes DMX through MergeLayer (fallback, overridden in __main__)
+unified_engine.set_output_callback(playback_output)
+
+# Look resolver - resolves Look IDs to Look data for sequence steps
+unified_engine.set_look_resolver(resolve_look)
+
+# NOTE: Engine startup is handled in __main__ block to ensure proper initialization order
+print("[MIGRATION] UnifiedPlaybackEngine pre-configured (will start in __main__)", flush=True)
 
 # Load fixtures on startup (deferred until content_manager is ready)
 threading.Timer(2.0, load_fixtures_into_classifier).start()
@@ -5430,10 +5543,30 @@ def revert_look_version(look_id, version_id):
         return jsonify({'error': 'Version not found or revert failed'}), 404
     return jsonify({'success': True, 'look': result})
 
+# ============================================================================
+# ⚠️  SMOKING GUN VIOLATION (TASK-0018)
+# ============================================================================
+# This endpoint uses RenderEngine DIRECTLY instead of UnifiedPlaybackEngine.
+# This is the primary example of the authority violation in production code.
+#
+# VIOLATION: render_engine.start() + render_engine.render_look()
+# SHOULD BE: unified_playback_engine.play_look()
+#
+# Per AETHER Hard Rule 1.1: UnifiedPlaybackEngine is the ONLY authority.
+# This endpoint must be refactored in Phase 2/3 to route through the
+# canonical playback system.
+#
+# See TASK_LEDGER.md TASK-0018 for full details.
+# ============================================================================
 @app.route('/api/looks/<look_id>/play', methods=['POST'])
 def play_look(look_id):
     """
     Play a Look with real-time modifier rendering.
+
+    # ⚠️ AUTHORITY VIOLATION (TASK-0018) ⚠️
+    # This endpoint uses RenderEngine directly instead of UnifiedPlaybackEngine.
+    # This MUST be refactored to route through canonical playback.
+    # See TASK_LEDGER.md
 
     POST body:
     {
@@ -5442,6 +5575,13 @@ def play_look(look_id):
         "seed": 12345              // Random seed for determinism (optional)
     }
     """
+    # PHASE 1 GUARD: Log violation when this endpoint is hit
+    logging.warning(
+        "⚠️ AUTHORITY VIOLATION: /api/looks/{id}/play uses RenderEngine directly "
+        "instead of UnifiedPlaybackEngine. This violates AETHER Hard Rule 1.1. "
+        "See TASK-0018 in TASK_LEDGER.md"
+    )
+
     data = request.get_json() or {}
 
     # Get the look
@@ -5698,6 +5838,9 @@ def play_sequence(sequence_id):
     """
     Play a Sequence with step timing and modifiers.
 
+    Uses UnifiedPlaybackEngine (unified_playback.py) as the canonical authority.
+    playback_controller.py was deleted in Phase 3.
+
     POST body:
     {
         "universes": [1, 2],        // Target universes (default: all online)
@@ -5725,10 +5868,10 @@ def play_sequence(sequence_id):
             'current_owner': arbitration.current_owner
         }), 409
 
-    # Stop any existing playback
+    # Stop any existing playback (all engines)
     render_engine.stop_rendering()
-    playback_controller.stop()
     chase_engine.stop_all()
+    unified_stop()  # Canonical authority for playback
 
     # Determine target universes
     universes = data.get('universes')
@@ -5742,10 +5885,6 @@ def play_sequence(sequence_id):
 
     # Parse loop mode
     loop_mode_str = data.get('loop_mode', 'loop' if sequence.loop else 'one_shot')
-    try:
-        loop_mode = LoopMode(loop_mode_str)
-    except ValueError:
-        loop_mode = LoopMode.LOOP
 
     # Get BPM (override or sequence default)
     bpm = data.get('bpm', sequence.bpm)
@@ -5764,34 +5903,72 @@ def play_sequence(sequence_id):
         }
         steps.append(step_data)
 
-    # Start playback
-    result = playback_controller.play_sequence(
+    # =========================================================================
+    # MIGRATION (TASK-0021): Use UnifiedPlaybackEngine as canonical authority
+    # =========================================================================
+    # Build sequence_data dict for unified_play_sequence
+    sequence_data = {
+        'name': sequence.name,
+        'steps': steps,
+        'loop_mode': loop_mode_str,
+        'bpm': bpm,
+    }
+
+    # Start playback via canonical UnifiedPlaybackEngine
+    start_step = data.get('start_step', 0)
+    seed = data.get('seed')
+
+    print(f"[MIGRATION] play_sequence: Using UnifiedPlaybackEngine (canonical)", flush=True)
+    print(f"[MIGRATION]   sequence_id={sequence_id}, universes={universes}, "
+          f"start_step={start_step}, bpm={bpm}, loop_mode={loop_mode_str}", flush=True)
+
+    session_id = unified_play_sequence(
         sequence_id=sequence_id,
-        steps=steps,
+        sequence_data=sequence_data,
         universes=universes,
-        bpm=bpm,
-        loop_mode=loop_mode,
-        seed=data.get('seed'),
-        start_step=data.get('start_step', 0),
+        start_step=start_step,
+        seed=seed,
     )
 
-    if result.get('success'):
-        print(f"🎬 Playing sequence '{sequence.name}' on universes {universes}", flush=True)
+    # Build result compatible with old format
+    result = {
+        'success': True,
+        'job_id': session_id,  # session_id maps to job_id for compatibility
+        'session_id': session_id,
+        'sequence_id': sequence_id,
+        'universes': universes,
+        'step_count': len(steps),
+        'bpm': bpm,
+        'loop_mode': loop_mode_str,
+    }
+
+    print(f"[MIGRATION] Sequence '{sequence.name}' playing via UnifiedPlaybackEngine "
+          f"(session: {session_id})", flush=True)
 
     return jsonify({
         **result,
         'name': sequence.name,
+        'engine': 'unified',  # Indicates which engine is active
     })
 
 
 @app.route('/api/sequences/<sequence_id>/stop', methods=['POST'])
 def stop_sequence(sequence_id):
-    """Stop sequence playback"""
-    status = playback_controller.get_status()
-    if status.get('sequence_id') == sequence_id:
-        result = playback_controller.stop()
-        arbitration.release('sequence')
-        return jsonify({**result, 'sequence_id': sequence_id})
+    """
+    Stop sequence playback.
+
+    MIGRATION NOTE (TASK-0021): Now uses UnifiedPlaybackEngine.
+    """
+    # Check unified engine (canonical authority)
+    unified_status = unified_get_status()
+    for session_info in unified_status.get('sessions', []):
+        sid = session_info.get('session_id', '')
+        # Check if this session matches the sequence
+        if f"seq_{sequence_id}_" in sid:
+            result = unified_stop(sid)
+            arbitration.release('sequence')
+            return jsonify({**result, 'sequence_id': sequence_id})
+
     return jsonify({'success': True, 'message': 'Sequence was not playing'})
 
 
@@ -6017,8 +6194,11 @@ def unified_api_get_sessions():
 
 @app.route('/api/playback/status', methods=['GET'])
 def get_playback_status():
-    """Get unified playback controller status"""
-    return jsonify(playback_controller.get_status())
+    """Get playback status from UnifiedPlaybackEngine (canonical authority)."""
+    status = unified_get_status()
+    # Add playing flag for backward compatibility
+    status['playing'] = bool(status.get('sessions'))
+    return jsonify(status)
 
 
 @app.route('/api/playback/stop', methods=['POST'])
@@ -6049,14 +6229,16 @@ def api_stop_all_playback():
 
 @app.route('/api/playback/pause', methods=['POST'])
 def pause_playback():
-    """Pause current playback"""
-    return jsonify(playback_controller.pause())
+    """Pause current playback via UnifiedPlaybackEngine (canonical authority)."""
+    return jsonify(unified_pause())
 
 
 @app.route('/api/playback/resume', methods=['POST'])
 def resume_playback():
-    """Resume paused playback"""
-    return jsonify(playback_controller.resume())
+    """Resume paused playback via UnifiedPlaybackEngine (canonical authority)."""
+    return jsonify(unified_resume())
+
+    return jsonify({'success': False, 'error': 'Nothing paused to resume'})
 
 
 # ─────────────────────────────────────────────────────────

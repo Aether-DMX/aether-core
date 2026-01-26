@@ -1,9 +1,39 @@
 """
 Render Engine - Real-time modifier composition for Looks and Sequences
 
+# ============================================================================
+# ⚠️  AUTHORITY VIOLATION WARNING (TASK-0004)
+# ============================================================================
+#
+# This module contains RenderEngine, which ILLEGALLY owns a render loop.
+#
+# Per AETHER Hard Rule 1.1:
+#   "Flask UnifiedPlaybackEngine is the ONLY authority allowed to generate
+#    final DMX output. No other system may run an independent render loop."
+#
+# CURRENT VIOLATION:
+#   - RenderEngine.start() spawns its own thread
+#   - RenderEngine._render_loop() runs at 30 FPS independently
+#   - /api/looks/{id}/play calls RenderEngine directly, bypassing
+#     UnifiedPlaybackEngine (see TASK-0018)
+#
+# ALLOWED USAGE:
+#   - ModifierRenderer class may be used as a UTILITY by UnifiedPlaybackEngine
+#   - TimeContext, MergeMode, ModifierState are safe data classes
+#
+# PROHIBITED USAGE:
+#   - RenderEngine.start() - DO NOT CALL INDEPENDENTLY
+#   - RenderEngine._render_loop() - MUST NOT OWN TIMING
+#
+# This will be fixed in Phase 2. Until then, any use of RenderEngine.start()
+# should log a warning. See TASK_LEDGER.md for full details.
+#
+# TODO: TASK-0004 - Retire RenderEngine loop, keep ModifierRenderer as utility
+# ============================================================================
+
 This module provides:
-- ModifierRenderer: Computes modifier effects on base channels
-- RenderEngine: Single scheduler loop for rendering at target FPS
+- ModifierRenderer: Computes modifier effects on base channels (SAFE - utility)
+- RenderEngine: Single scheduler loop for rendering at target FPS (VIOLATION)
 - Deterministic output with seeded random for reproducibility
 - Composition rules for stacking multiple modifiers
 
@@ -767,6 +797,15 @@ class RenderEngine:
     """
     Single scheduler loop for rendering Looks with modifiers.
 
+    # ⚠️ AUTHORITY VIOLATION (TASK-0004) ⚠️
+    # This engine MUST NOT own a render loop.
+    # Playback timing is owned by UnifiedPlaybackEngine.
+    #
+    # This class will be retired in Phase 2. ModifierRenderer (above)
+    # will be preserved as a utility called BY UnifiedPlaybackEngine.
+    #
+    # DO NOT CALL start() INDEPENDENTLY - See TASK_LEDGER.md
+
     Features:
     - Target FPS with frame timing
     - Modifier state management
@@ -803,7 +842,22 @@ class RenderEngine:
         self._send_callback = callback
 
     def start(self):
-        """Start the render loop"""
+        """
+        Start the render loop.
+
+        # ⚠️ AUTHORITY VIOLATION WARNING ⚠️
+        # This method spawns an independent render thread, violating
+        # AETHER Hard Rule 1.1. Only UnifiedPlaybackEngine should own timing.
+        # See TASK-0004 in TASK_LEDGER.md
+        """
+        # PHASE 1 GUARD: Log violation when this is called independently
+        import logging
+        logging.warning(
+            "⚠️ AUTHORITY VIOLATION: RenderEngine.start() called independently. "
+            "This violates AETHER Hard Rule 1.1 - Only UnifiedPlaybackEngine "
+            "should own playback timing. See TASK-0004 in TASK_LEDGER.md"
+        )
+
         if self._running:
             return
 
