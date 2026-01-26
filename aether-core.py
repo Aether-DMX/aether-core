@@ -6496,17 +6496,21 @@ def unified_api_blackout():
 
 @app.route('/api/unified/stop', methods=['POST'])
 def unified_api_stop():
-    """Stop unified playback"""
+    """Stop unified playback - uses SSOT stop_all_playback for complete stop"""
     data = request.get_json() or {}
     session_id = data.get('session_id')
     fade_ms = data.get('fade_ms', 0)
 
     if session_id:
+        # Stop specific session only
         unified_engine.stop_session(session_id, fade_ms)
+        return jsonify({'success': True, 'stopped': session_id})
     else:
+        # Stop ALL playback sources (shows, chases, effects, unified engine)
+        result = stop_all_playback(blackout=False, fade_ms=fade_ms)
+        # Also stop unified engine sessions
         unified_engine.stop_all(fade_ms)
-
-    return jsonify({'success': True, 'stopped': session_id or 'all'})
+        return jsonify({'success': True, 'stopped': 'all', 'results': result})
 
 
 @app.route('/api/unified/stop/<playback_type>', methods=['POST'])
