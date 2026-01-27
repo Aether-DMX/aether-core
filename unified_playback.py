@@ -633,6 +633,7 @@ class UnifiedPlaybackEngine:
                         'state': s.state.value,
                         'priority': s.priority.value,
                         'universes': s.universes,
+                        'is_modifier': s.is_brightness_modifier,
                     }
                     for s in self._sessions.values()
                 ]
