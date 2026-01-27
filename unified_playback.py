@@ -311,6 +311,10 @@ class PlaybackSession:
     # 'sync' = All fixtures show the same value simultaneously
     distribution_mode: str = "chase"
 
+    # Effect stacking - if True, this effect modifies other effects' output
+    # instead of outputting independently (e.g., wave modifies rainbow's brightness)
+    is_brightness_modifier: bool = False
+
     # CueStack data
     cue_stack_id: Optional[str] = None
     current_cue_index: int = -1  # -1 = not started
@@ -646,21 +650,67 @@ class UnifiedPlaybackEngine:
         while not self._stop_flag.is_set():
             frame_start = time.monotonic()
 
-            # Render all active sessions
+            # Render all active sessions with effect stacking support
             with self._session_lock:
                 sessions_to_remove = []
 
+                # Separate base effects from brightness modifiers
+                base_sessions = []
+                modifier_sessions = []
+
                 for session_id, session in self._sessions.items():
                     if session.state in (PlaybackState.PLAYING, PlaybackState.FADING_IN, PlaybackState.FADING_OUT):
-                        try:
-                            self._render_session(session)
-                        except Exception as e:
-                            print(f"❌ Render error for {session.name}: {e}")
+                        if session.is_brightness_modifier:
+                            modifier_sessions.append(session)
+                        else:
+                            base_sessions.append(session)
 
                         # Check for fade-out completion
                         if session.state == PlaybackState.FADING_OUT:
                             if session.fade_state and session.fade_state.is_complete:
                                 sessions_to_remove.append(session_id)
+
+                # Render base sessions first, collect their outputs per universe
+                universe_outputs = {}  # {universe: {channel: value}}
+
+                for session in base_sessions:
+                    try:
+                        channels = self._render_session_to_channels(session)
+                        for universe in session.universes:
+                            if universe not in universe_outputs:
+                                universe_outputs[universe] = {}
+                            # Merge (HTP - highest takes precedence)
+                            for ch, val in channels.items():
+                                if ch not in universe_outputs[universe] or val > universe_outputs[universe][ch]:
+                                    universe_outputs[universe][ch] = val
+                    except Exception as e:
+                        print(f"❌ Render error for {session.name}: {e}")
+
+                # Apply brightness modifiers to the combined output
+                for session in modifier_sessions:
+                    try:
+                        brightness_map = self._render_brightness_modifier(session)
+                        # Apply brightness multipliers to all universe outputs
+                        for universe in session.universes:
+                            if universe in universe_outputs:
+                                for ch, val in universe_outputs[universe].items():
+                                    if ch in brightness_map:
+                                        universe_outputs[universe][ch] = int(val * brightness_map[ch])
+                    except Exception as e:
+                        print(f"❌ Modifier render error for {session.name}: {e}")
+
+                # Output combined results to each universe
+                if self._output_callback:
+                    for universe, channels in universe_outputs.items():
+                        if channels:
+                            self._output_callback(universe, channels, 0)
+
+                # Also render non-stacked sessions normally (legacy behavior)
+                # This handles sessions that don't have modifiers active
+                if not modifier_sessions:
+                    for session in base_sessions:
+                        session.frame_count += 1
+                        session.last_output_time = time.monotonic()
 
                 # Clean up completed fade-outs
                 for sid in sessions_to_remove:
@@ -682,8 +732,129 @@ class UnifiedPlaybackEngine:
             if sleep_time > 0:
                 time.sleep(sleep_time)
 
+    def _render_session_to_channels(self, session: PlaybackSession) -> Dict[int, int]:
+        """Render a session and return its channel output (for stacking)"""
+        # Handle fade transitions
+        if session.fade_state:
+            if session.fade_state.is_complete:
+                if session.state == PlaybackState.FADING_IN:
+                    session.state = PlaybackState.PLAYING
+                session.fade_state = None
+
+        # Get base channels based on playback type
+        base_channels = self._get_session_channels(session)
+
+        # Apply fade interpolation if active
+        if session.fade_state:
+            base_channels = session.fade_state.interpolate()
+
+        # Apply modifiers
+        final_channels = self._apply_modifiers(session, base_channels)
+
+        # Advance playback state
+        self._advance_session(session)
+
+        session.frame_count += 1
+        session.last_output_time = time.monotonic()
+
+        return final_channels
+
+    def _render_brightness_modifier(self, session: PlaybackSession) -> Dict[int, float]:
+        """Render a brightness modifier session and return brightness multipliers per channel"""
+        effect_type = session.effect_type
+        params = session.effect_params
+        elapsed = session.elapsed_time
+
+        brightness_map = {}  # channel -> brightness multiplier (0.0 to 1.0)
+
+        # Get fixtures for this modifier
+        fixture_ids = session.fixture_ids if session.fixture_ids else params.get('fixture_ids', None)
+        fixtures = self._resolve_fixtures(fixture_ids)
+        if not fixtures:
+            return brightness_map
+
+        num_fixtures = len(fixtures)
+
+        if effect_type == "wave":
+            speed = params.get('speed', 0.5)
+            min_brightness = params.get('min_brightness', 0.0)
+
+            for i, fixture in enumerate(fixtures):
+                pos = i / num_fixtures
+                wave_pos = (elapsed * speed + pos) % 1.0
+                brightness = min_brightness + (1.0 - min_brightness) * (0.5 + 0.5 * math.sin(wave_pos * 2 * math.pi))
+
+                # Map fixture channels to brightness
+                start_ch = fixture.get('start_channel', 1)
+                ch_count = fixture.get('channel_count', 4)
+                for ch_offset in range(ch_count):
+                    brightness_map[start_ch + ch_offset] = brightness
+
+        elif effect_type == "strobe":
+            speed = params.get('speed', 0.5)
+            duty_cycle = params.get('duty_cycle', 0.5)
+
+            rate = 1.0 / max(0.05, speed)
+            phase = (elapsed * rate) % 1.0
+            brightness = 1.0 if phase < duty_cycle else 0.0
+
+            # Apply to all fixture channels
+            for fixture in fixtures:
+                start_ch = fixture.get('start_channel', 1)
+                ch_count = fixture.get('channel_count', 4)
+                for ch_offset in range(ch_count):
+                    brightness_map[start_ch + ch_offset] = brightness
+
+        elif effect_type in ("sweep_lr", "sweep_rl"):
+            speed = params.get('speed', 0.5)
+            width = params.get('width', 0.2)
+            bg_brightness = params.get('bg_brightness', 0.0)
+
+            if effect_type == "sweep_lr":
+                sweep_pos = (elapsed / max(0.1, speed)) % 1.0
+            else:
+                sweep_pos = 1.0 - ((elapsed / max(0.1, speed)) % 1.0)
+
+            for i, fixture in enumerate(fixtures):
+                pos = i / num_fixtures
+                dist = abs(pos - sweep_pos)
+                if dist > 0.5:
+                    dist = 1.0 - dist
+
+                if dist < width / 2:
+                    brightness = 1.0 - (dist / (width / 2)) * 0.3
+                else:
+                    brightness = bg_brightness
+
+                start_ch = fixture.get('start_channel', 1)
+                ch_count = fixture.get('channel_count', 4)
+                for ch_offset in range(ch_count):
+                    brightness_map[start_ch + ch_offset] = brightness
+
+        elif effect_type == "random":
+            speed = params.get('speed', 0.5)
+            density = params.get('density', 0.3)
+
+            import random as py_random
+            rng = py_random.Random(session.seed)
+            time_seed = int(elapsed / max(0.05, speed))
+
+            for i, fixture in enumerate(fixtures):
+                rng.seed(session.seed + i + time_seed * 1000)
+                brightness = 1.0 if rng.random() < density else 0.1
+
+                start_ch = fixture.get('start_channel', 1)
+                ch_count = fixture.get('channel_count', 4)
+                for ch_offset in range(ch_count):
+                    brightness_map[start_ch + ch_offset] = brightness
+
+        session.frame_count += 1
+        session.last_output_time = time.monotonic()
+
+        return brightness_map
+
     def _render_session(self, session: PlaybackSession):
-        """Render a single session frame"""
+        """Render a single session frame (legacy, outputs directly)"""
         # Handle fade transitions
         if session.fade_state:
             if session.fade_state.is_complete:
@@ -1664,7 +1835,8 @@ class SessionFactory:
 
     @staticmethod
     def from_fixture_effect(effect_type: str, fixture_ids: List[str] = None,
-                            mode: str = 'chase', params: Dict = None) -> PlaybackSession:
+                            mode: str = 'chase', params: Dict = None,
+                            is_modifier: bool = False) -> PlaybackSession:
         """
         Create session for fixture-aware effect.
 
@@ -1679,6 +1851,8 @@ class SessionFactory:
                 - 'fixture_rainbow': Rainbow color cycling
                 - 'fixture_pulse': Breathing/pulsing effect
                 - 'fixture_chase': Single-color chase across fixtures
+                Motion modifiers (can stack on other effects):
+                - 'strobe', 'wave', 'sweep_lr', 'sweep_rl', 'random'
             fixture_ids: List of fixture IDs (None = all fixtures in database)
             mode: Distribution mode:
                 - 'chase': Each fixture gets phase-offset (colors chase across)
@@ -1688,6 +1862,8 @@ class SessionFactory:
                 - color: [R, G, B] for single-color effects
                 - saturation, value: For rainbow effects
                 - min_brightness, max_brightness: For pulse effects
+            is_modifier: If True, this effect acts as a brightness modifier
+                for other running effects (for effect stacking)
 
         Returns:
             PlaybackSession configured for fixture-based effect
@@ -1697,6 +1873,10 @@ class SessionFactory:
         # Determine name based on mode
         mode_name = 'Chase' if mode == 'chase' else 'Sync'
         effect_name = effect_type.replace('fixture_', '').replace('_', ' ').title()
+
+        # Motion effects can be brightness modifiers when stacking
+        motion_effects = ['strobe', 'wave', 'sweep_lr', 'sweep_rl', 'random']
+        is_brightness_mod = is_modifier and effect_type in motion_effects
 
         return PlaybackSession(
             session_id=f"fixture_effect_{effect_type}_{mode}_{int(time.time()*1000)}",
@@ -1708,6 +1888,7 @@ class SessionFactory:
             effect_params=effect_params,
             fixture_ids=fixture_ids or [],
             distribution_mode=mode,
+            is_brightness_modifier=is_brightness_mod,
         )
 
     @staticmethod
@@ -1794,7 +1975,8 @@ def play_effect(effect_type: str, params: Dict = None,
 
 
 def play_fixture_effect(effect_type: str, fixture_ids: List[str] = None,
-                        mode: str = 'chase', params: Dict = None) -> str:
+                        mode: str = 'chase', params: Dict = None,
+                        is_modifier: bool = False) -> str:
     """
     Play a fixture-aware effect.
 
@@ -1803,9 +1985,11 @@ def play_fixture_effect(effect_type: str, fixture_ids: List[str] = None,
 
     Args:
         effect_type: Effect type (fixture_rainbow, fixture_pulse, fixture_chase)
+            or motion modifier (strobe, wave, sweep_lr, sweep_rl, random)
         fixture_ids: List of fixture IDs (None = all fixtures)
         mode: 'chase' (phased/distributed) or 'sync' (all same)
         params: Effect-specific parameters (speed, color, etc.)
+        is_modifier: If True, run as brightness modifier that stacks on other effects
 
     Returns:
         Session ID for the started playback
@@ -1817,11 +2001,11 @@ def play_fixture_effect(effect_type: str, fixture_ids: List[str] = None,
         # Pulse all fixtures in sync
         play_fixture_effect('fixture_pulse', mode='sync', params={'speed': 0.5, 'color': [255, 0, 0]})
 
-        # Color chase across specific fixtures
-        play_fixture_effect('fixture_chase', fixture_ids=['fixture_1', 'fixture_2'],
-                           params={'color': [0, 255, 0], 'speed': 3.0})
+        # Stack wave modifier on rainbow (rainbow + wave brightness)
+        play_fixture_effect('fixture_rainbow', mode='chase', params={'speed': 0.3})
+        play_fixture_effect('wave', mode='chase', params={'speed': 0.8}, is_modifier=True)
     """
-    session = session_factory.from_fixture_effect(effect_type, fixture_ids, mode, params)
+    session = session_factory.from_fixture_effect(effect_type, fixture_ids, mode, params, is_modifier)
     return unified_engine.play(session)
 
 
