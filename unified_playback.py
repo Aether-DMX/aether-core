@@ -1287,6 +1287,50 @@ class UnifiedPlaybackEngine:
                 if channels_per_fixture > 3:
                     channels[base_ch + 3] = 0  # W
 
+        elif effect_type == "fixture_gradient":
+            # Custom color gradient effect - cycles through user-defined colors
+            # Like rainbow but with specific colors instead of full spectrum
+            fixture_ids = session.fixture_ids if session.fixture_ids else params.get('fixture_ids', None)
+            mode = session.distribution_mode or params.get('mode', 'chase')
+            speed = params.get('speed', 0.3)
+            # colors: List of [R, G, B] arrays defining the gradient
+            colors = params.get('colors', [[255, 100, 0], [255, 50, 150], [180, 0, 255]])  # Orange, Pink, Purple default
+            value = params.get('value', 1.0)
+
+            fixtures = self._resolve_fixtures(fixture_ids)
+            if not fixtures:
+                return channels
+
+            num_colors = len(colors)
+            # Phase position in the gradient (0.0 to 1.0)
+            base_phase = (elapsed * speed) % 1.0
+
+            for i, fixture in enumerate(fixtures):
+                if mode == 'chase':
+                    # Each fixture gets a phase offset
+                    phase_offset = i / len(fixtures)
+                    phase = (base_phase + phase_offset) % 1.0
+                else:
+                    phase = base_phase
+
+                # Map phase to color interpolation
+                # phase 0.0-1.0 maps across all colors smoothly
+                scaled_phase = phase * num_colors
+                color_idx = int(scaled_phase) % num_colors
+                next_color_idx = (color_idx + 1) % num_colors
+                blend = scaled_phase - int(scaled_phase)  # 0.0 to 1.0 between colors
+
+                # Interpolate between adjacent colors
+                c1 = colors[color_idx]
+                c2 = colors[next_color_idx]
+                r = (c1[0] + (c2[0] - c1[0]) * blend) / 255.0 * value
+                g = (c1[1] + (c2[1] - c1[1]) * blend) / 255.0 * value
+                b = (c1[2] + (c2[2] - c1[2]) * blend) / 255.0 * value
+
+                self._apply_rgb_to_fixture(channels, fixture, r, g, b, value)
+
+            session.universes = list(set(f.get('universe', 1) for f in fixtures))
+
         elif effect_type == "fixture_rainbow":
             # Fixture-aware rainbow effect with CHASE or SYNC distribution
             # Uses fixture IDs from session or params to resolve actual addresses

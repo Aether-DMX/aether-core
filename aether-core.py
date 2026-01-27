@@ -7799,7 +7799,7 @@ def play_fixture_effect_endpoint():
         return jsonify({'success': False, 'error': f"Invalid mode: {mode}. Must be 'chase' or 'sync'"}), 400
 
     # Color effects (base layer) vs Motion effects (can be modifiers)
-    color_effects = ['fixture_rainbow', 'fixture_pulse', 'fixture_chase']
+    color_effects = ['fixture_rainbow', 'fixture_gradient', 'fixture_pulse', 'fixture_chase']
     motion_effects = ['strobe', 'wave', 'sweep_lr', 'sweep_rl', 'random']
     valid_effects = color_effects + motion_effects
 
