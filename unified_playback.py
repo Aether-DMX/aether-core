@@ -1247,6 +1247,172 @@ class UnifiedPlaybackEngine:
 
             session.universes = list(set(f.get('universe', 1) for f in fixtures))
 
+        elif effect_type == "strobe":
+            # Strobe effect - rapid on/off flashing
+            fixture_ids = session.fixture_ids if session.fixture_ids else params.get('fixture_ids', None)
+            speed = params.get('speed', 0.5)  # Lower = faster strobe
+            duty_cycle = params.get('duty_cycle', 0.5)  # On time ratio
+            color = params.get('color', [255, 255, 255])
+
+            fixtures = self._resolve_fixtures(fixture_ids)
+            if not fixtures:
+                return channels
+
+            # Calculate strobe phase (0 = off, 1 = on)
+            rate = 1.0 / max(0.05, speed)  # Convert speed to Hz
+            phase = (elapsed * rate) % 1.0
+            is_on = phase < duty_cycle
+
+            brightness = 1.0 if is_on else 0.0
+
+            for fixture in fixtures:
+                r = (color[0] / 255.0) * brightness
+                g = (color[1] / 255.0) * brightness
+                b = (color[2] / 255.0) * brightness
+                self._apply_rgb_to_fixture(channels, fixture, r, g, b, brightness)
+
+            session.universes = list(set(f.get('universe', 1) for f in fixtures))
+
+        elif effect_type == "wave":
+            # Wave effect - smooth sine wave rolling through fixtures
+            fixture_ids = session.fixture_ids if session.fixture_ids else params.get('fixture_ids', None)
+            speed = params.get('speed', 0.5)  # Cycles per second
+            width = params.get('width', 0.3)  # Wave width as fraction
+            color = params.get('color', [255, 255, 255])
+            min_brightness = params.get('min_brightness', 0.0)
+
+            fixtures = self._resolve_fixtures(fixture_ids)
+            if not fixtures:
+                return channels
+
+            num_fixtures = len(fixtures)
+
+            for i, fixture in enumerate(fixtures):
+                # Position in wave
+                pos = i / num_fixtures
+                wave_pos = (elapsed * speed + pos) % 1.0
+
+                # Sine wave brightness
+                brightness = min_brightness + (1.0 - min_brightness) * (0.5 + 0.5 * math.sin(wave_pos * 2 * math.pi))
+
+                r = (color[0] / 255.0) * brightness
+                g = (color[1] / 255.0) * brightness
+                b = (color[2] / 255.0) * brightness
+                self._apply_rgb_to_fixture(channels, fixture, r, g, b, brightness)
+
+            session.universes = list(set(f.get('universe', 1) for f in fixtures))
+
+        elif effect_type == "sweep_lr":
+            # Sweep left-to-right - light bar moves across fixtures
+            fixture_ids = session.fixture_ids if session.fixture_ids else params.get('fixture_ids', None)
+            speed = params.get('speed', 0.5)  # Sweep time in seconds
+            width = params.get('width', 0.2)  # Bar width as fraction
+            color = params.get('color', [255, 255, 255])
+            bg_brightness = params.get('bg_brightness', 0.0)
+
+            fixtures = self._resolve_fixtures(fixture_ids)
+            if not fixtures:
+                return channels
+
+            num_fixtures = len(fixtures)
+            # Position of sweep center (0 to 1, wraps)
+            sweep_pos = (elapsed / max(0.1, speed)) % 1.0
+
+            for i, fixture in enumerate(fixtures):
+                pos = i / num_fixtures
+                # Distance from sweep center
+                dist = abs(pos - sweep_pos)
+                if dist > 0.5:
+                    dist = 1.0 - dist  # Handle wrap
+
+                if dist < width / 2:
+                    # Inside the sweep bar
+                    brightness = 1.0 - (dist / (width / 2)) * 0.3  # Slight falloff
+                else:
+                    brightness = bg_brightness
+
+                r = (color[0] / 255.0) * brightness
+                g = (color[1] / 255.0) * brightness
+                b = (color[2] / 255.0) * brightness
+                self._apply_rgb_to_fixture(channels, fixture, r, g, b, brightness)
+
+            session.universes = list(set(f.get('universe', 1) for f in fixtures))
+
+        elif effect_type == "sweep_rl":
+            # Sweep right-to-left - reverse direction
+            fixture_ids = session.fixture_ids if session.fixture_ids else params.get('fixture_ids', None)
+            speed = params.get('speed', 0.5)
+            width = params.get('width', 0.2)
+            color = params.get('color', [255, 255, 255])
+            bg_brightness = params.get('bg_brightness', 0.0)
+
+            fixtures = self._resolve_fixtures(fixture_ids)
+            if not fixtures:
+                return channels
+
+            num_fixtures = len(fixtures)
+            # Reverse direction
+            sweep_pos = 1.0 - ((elapsed / max(0.1, speed)) % 1.0)
+
+            for i, fixture in enumerate(fixtures):
+                pos = i / num_fixtures
+                dist = abs(pos - sweep_pos)
+                if dist > 0.5:
+                    dist = 1.0 - dist
+
+                if dist < width / 2:
+                    brightness = 1.0 - (dist / (width / 2)) * 0.3
+                else:
+                    brightness = bg_brightness
+
+                r = (color[0] / 255.0) * brightness
+                g = (color[1] / 255.0) * brightness
+                b = (color[2] / 255.0) * brightness
+                self._apply_rgb_to_fixture(channels, fixture, r, g, b, brightness)
+
+            session.universes = list(set(f.get('universe', 1) for f in fixtures))
+
+        elif effect_type == "random":
+            # Random - random fixtures light up at random times
+            fixture_ids = session.fixture_ids if session.fixture_ids else params.get('fixture_ids', None)
+            speed = params.get('speed', 0.5)  # Change rate
+            density = params.get('density', 0.3)  # Fraction of fixtures lit at once
+            color = params.get('color', [255, 255, 255])
+            fade = params.get('fade', True)  # Smooth fade between states
+
+            fixtures = self._resolve_fixtures(fixture_ids)
+            if not fixtures:
+                return channels
+
+            # Use deterministic random based on session seed
+            import random as py_random
+            rng = py_random.Random(session.seed)
+
+            # Time-based seed that changes with speed
+            time_seed = int(elapsed / max(0.05, speed))
+
+            for i, fixture in enumerate(fixtures):
+                # Each fixture gets its own random sequence
+                fixture_rng = py_random.Random(session.seed + i + time_seed * 1000)
+                is_active = fixture_rng.random() < density
+
+                if fade:
+                    # Smooth fade based on sub-position within time slot
+                    sub_phase = (elapsed / max(0.05, speed)) % 1.0
+                    if is_active:
+                        brightness = 0.5 + 0.5 * math.sin(sub_phase * math.pi)
+                    else:
+                        brightness = 0.0
+                else:
+                    brightness = 1.0 if is_active else 0.0
+
+                r = (color[0] / 255.0) * brightness
+                g = (color[1] / 255.0) * brightness
+                b = (color[2] / 255.0) * brightness
+                self._apply_rgb_to_fixture(channels, fixture, r, g, b, brightness)
+
+            session.universes = list(set(f.get('universe', 1) for f in fixtures))
+
         return channels
 
     def _resolve_fixtures(self, fixture_ids: Optional[List[str]] = None) -> List[Dict]:

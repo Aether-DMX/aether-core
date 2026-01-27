@@ -7797,14 +7797,20 @@ def play_fixture_effect_endpoint():
     if mode not in ['chase', 'sync']:
         return jsonify({'success': False, 'error': f"Invalid mode: {mode}. Must be 'chase' or 'sync'"}), 400
 
-    # Validate effect type
-    valid_effects = ['fixture_rainbow', 'fixture_pulse', 'fixture_chase']
+    # Validate effect type - includes motion effects (strobe, wave, sweep, random)
+    valid_effects = ['fixture_rainbow', 'fixture_pulse', 'fixture_chase', 'strobe', 'wave', 'sweep_lr', 'sweep_rl', 'random']
     if effect_type not in valid_effects:
         return jsonify({'success': False, 'error': f"Invalid effect_type: {effect_type}. Must be one of {valid_effects}"}), 400
 
     try:
         # Import and use the convenience function
         from unified_playback import play_fixture_effect, unified_engine
+
+        # Stop any existing fixture effects first to prevent stacking/fighting
+        status = unified_engine.get_status()
+        for session_info in status.get('sessions', []):
+            if session_info['id'].startswith('fixture_effect_'):
+                unified_engine.stop_session(session_info['id'])
 
         session_id = play_fixture_effect(effect_type, fixture_ids, mode, params)
 
@@ -7858,13 +7864,76 @@ def stop_fixture_effect_endpoint():
 def get_fixture_effect_types():
     """
     Get available fixture-aware effect types with their parameters.
+    Includes both color effects and motion effects.
     """
     return jsonify({
         'effect_types': [
+            # Motion Effects (Primary)
+            {
+                'id': 'strobe',
+                'name': 'Strobe',
+                'description': 'Rapid on/off flashing',
+                'category': 'motion',
+                'params': {
+                    'speed': {'type': 'float', 'default': 0.1, 'min': 0.05, 'max': 1.0, 'description': 'Flash interval (lower = faster)'},
+                    'duty_cycle': {'type': 'float', 'default': 0.5, 'min': 0.1, 'max': 0.9, 'description': 'On-time ratio'},
+                    'color': {'type': 'rgb', 'default': [255, 255, 255], 'description': 'Strobe color'}
+                }
+            },
+            {
+                'id': 'wave',
+                'name': 'Wave',
+                'description': 'Smooth wave rolling through fixtures',
+                'category': 'motion',
+                'params': {
+                    'speed': {'type': 'float', 'default': 0.5, 'min': 0.1, 'max': 2.0, 'description': 'Wave speed'},
+                    'width': {'type': 'float', 'default': 0.3, 'min': 0.1, 'max': 0.8, 'description': 'Wave width'},
+                    'color': {'type': 'rgb', 'default': [255, 255, 255], 'description': 'Wave color'},
+                    'min_brightness': {'type': 'float', 'default': 0.0, 'min': 0, 'max': 0.5, 'description': 'Background brightness'}
+                }
+            },
+            {
+                'id': 'sweep_lr',
+                'name': 'Sweep →',
+                'description': 'Light bar sweeps left to right',
+                'category': 'motion',
+                'params': {
+                    'speed': {'type': 'float', 'default': 0.5, 'min': 0.1, 'max': 2.0, 'description': 'Sweep time (seconds)'},
+                    'width': {'type': 'float', 'default': 0.2, 'min': 0.05, 'max': 0.5, 'description': 'Bar width'},
+                    'color': {'type': 'rgb', 'default': [255, 255, 255], 'description': 'Sweep color'},
+                    'bg_brightness': {'type': 'float', 'default': 0.0, 'min': 0, 'max': 0.3, 'description': 'Background brightness'}
+                }
+            },
+            {
+                'id': 'sweep_rl',
+                'name': '← Sweep',
+                'description': 'Light bar sweeps right to left',
+                'category': 'motion',
+                'params': {
+                    'speed': {'type': 'float', 'default': 0.5, 'min': 0.1, 'max': 2.0, 'description': 'Sweep time (seconds)'},
+                    'width': {'type': 'float', 'default': 0.2, 'min': 0.05, 'max': 0.5, 'description': 'Bar width'},
+                    'color': {'type': 'rgb', 'default': [255, 255, 255], 'description': 'Sweep color'},
+                    'bg_brightness': {'type': 'float', 'default': 0.0, 'min': 0, 'max': 0.3, 'description': 'Background brightness'}
+                }
+            },
+            {
+                'id': 'random',
+                'name': 'Random',
+                'description': 'Random fixtures light up',
+                'category': 'motion',
+                'params': {
+                    'speed': {'type': 'float', 'default': 0.3, 'min': 0.1, 'max': 1.0, 'description': 'Change rate'},
+                    'density': {'type': 'float', 'default': 0.3, 'min': 0.1, 'max': 0.8, 'description': 'Fraction of fixtures lit'},
+                    'color': {'type': 'rgb', 'default': [255, 255, 255], 'description': 'Light color'},
+                    'fade': {'type': 'bool', 'default': True, 'description': 'Smooth fade between states'}
+                }
+            },
+            # Color Effects (Legacy but still useful)
             {
                 'id': 'fixture_rainbow',
                 'name': 'Rainbow',
-                'description': 'Color-cycling rainbow effect across fixtures',
+                'description': 'Color-cycling rainbow effect',
+                'category': 'color',
                 'params': {
                     'speed': {'type': 'float', 'default': 0.2, 'min': 0.01, 'max': 2.0, 'description': 'Color cycle speed'},
                     'saturation': {'type': 'float', 'default': 1.0, 'min': 0, 'max': 1.0, 'description': 'Color saturation'},
@@ -7874,7 +7943,8 @@ def get_fixture_effect_types():
             {
                 'id': 'fixture_pulse',
                 'name': 'Pulse',
-                'description': 'Breathing/pulsing effect with configurable color',
+                'description': 'Breathing/pulsing effect',
+                'category': 'color',
                 'params': {
                     'speed': {'type': 'float', 'default': 0.5, 'min': 0.1, 'max': 5.0, 'description': 'Pulse speed'},
                     'color': {'type': 'rgb', 'default': [255, 255, 255], 'description': 'Pulse color'},
@@ -7885,7 +7955,8 @@ def get_fixture_effect_types():
             {
                 'id': 'fixture_chase',
                 'name': 'Chase',
-                'description': 'Single-color chase that travels across fixtures',
+                'description': 'Traveling chase across fixtures',
+                'category': 'color',
                 'params': {
                     'speed': {'type': 'float', 'default': 2.0, 'min': 0.5, 'max': 10.0, 'description': 'Fixtures per second'},
                     'color': {'type': 'rgb', 'default': [255, 255, 255], 'description': 'Chase color'},
