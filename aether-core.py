@@ -9338,8 +9338,7 @@ if __name__ == '__main__':
 
     # Initialize Unified Playback Engine
     # Cache for fixture expansion (refreshed every 5 seconds)
-    _fixture_cache = {}
-    _fixture_cache_time = 0
+    _fx_cache = {'fixtures': {}, 'time': 0.0}
 
     def unified_output_callback(universe: int, channels: dict, fade_ms: int = 0):
         """Route unified playback output directly to dmx_state (SSOT).
@@ -9351,8 +9350,6 @@ if __name__ == '__main__':
         pattern (e.g., channels 1-4), expands to all fixtures in the universe.
         Handles both simple channel keys (1, 2, 3) and universe:channel format (4:1, 4:2).
         """
-        nonlocal _fixture_cache, _fixture_cache_time
-
         if not channels:
             return
 
@@ -9375,20 +9372,21 @@ if __name__ == '__main__':
 
         # Refresh fixture cache every 5 seconds (not per frame)
         now = time.monotonic()
-        if now - _fixture_cache_time > 5.0:
+        if now - _fx_cache['time'] > 5.0:
             try:
-                _fixture_cache = {}
+                new_cache = {}
                 for f in content_manager.get_fixtures():
                     u = f.get('universe', 1)
-                    if u not in _fixture_cache:
-                        _fixture_cache[u] = []
-                    _fixture_cache[u].append(f)
-                _fixture_cache_time = now
+                    if u not in new_cache:
+                        new_cache[u] = []
+                    new_cache[u].append(f)
+                _fx_cache['fixtures'] = new_cache
+                _fx_cache['time'] = now
             except Exception:
                 pass
 
         # Expand single-fixture patterns to all fixtures
-        fixtures = _fixture_cache.get(universe, [])
+        fixtures = _fx_cache['fixtures'].get(universe, [])
         if fixtures and len(fixtures) > 1:
             ch_nums = sorted(parsed_channels.keys())
             if ch_nums:
