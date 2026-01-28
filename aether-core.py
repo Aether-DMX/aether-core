@@ -343,6 +343,7 @@ class DMXStateManager:
         self.master_base = {}  # Captured state at 100%
         self.lock = threading.Lock()
         self._save_timer = None
+        self._last_emit_time = 0.0  # Throttle socketio emit to ~10fps
         self._load_state()
 
     def _load_state(self):
@@ -463,11 +464,15 @@ class DMXStateManager:
                 # Clear any fade in progress
                 self.fade_info.pop(universe, None)
 
-        socketio.emit('dmx_state', {
-            'universe': universe,
-            'channels': self.get_output_values(universe)
-        })
-        self._schedule_save()
+        # Throttle socketio emit to ~10fps (avoid blocking render thread)
+        now = time.monotonic()
+        if now - self._last_emit_time > 0.1:
+            self._last_emit_time = now
+            socketio.emit('dmx_state', {
+                'universe': universe,
+                'channels': self.get_output_values(universe)
+            })
+            self._schedule_save()
 
     def get_output_values(self, universe):
         """Get current output values, including fade interpolation.
