@@ -7880,6 +7880,10 @@ def play_fixture_effect_endpoint():
     mode = data.get('mode', 'chase')
     params = data.get('params', {})
     stack = data.get('stack', False)  # If true, add as modifier layer instead of replacing
+    target_universes = data.get('universes')  # Optional: specific universes to target
+    is_modifier = data.get('is_modifier', False)  # If true, stack on existing playback
+
+    print(f"🎨 Fixture effect request: type={effect_type}, mode={mode}, universes={target_universes}, is_modifier={is_modifier}", flush=True)
 
     # Validate mode
     if mode not in ['chase', 'sync', 'wave']:
@@ -7900,29 +7904,36 @@ def play_fixture_effect_endpoint():
         # Import and use the convenience function
         from unified_playback import play_fixture_effect, unified_engine
 
-        if stack:
-            # Stacking mode: Only stop effects of the same category
-            # (color effects replace color, motion modifiers stack)
-            is_motion = effect_type in motion_effects
-            status = unified_engine.get_status()
-            for session_info in status.get('sessions', []):
-                if session_info['id'].startswith('fixture_effect_'):
-                    # Extract the effect type from session ID
-                    session_effect = session_info['id'].split('_')[2] if len(session_info['id'].split('_')) > 2 else ''
-                    session_is_motion = session_effect in motion_effects
-                    # Only stop same-category effects
-                    if is_motion == session_is_motion:
+        # If is_modifier is True, we're stacking - don't stop other effects
+        if not is_modifier:
+            if stack:
+                # Stacking mode: Only stop effects of the same category
+                # (color effects replace color, motion modifiers stack)
+                is_motion_effect = effect_type in motion_effects
+                status = unified_engine.get_status()
+                for session_info in status.get('sessions', []):
+                    if session_info['id'].startswith('fixture_effect_'):
+                        # Extract the effect type from session ID
+                        session_effect = session_info['id'].split('_')[2] if len(session_info['id'].split('_')) > 2 else ''
+                        session_is_motion = session_effect in motion_effects
+                        # Only stop same-category effects
+                        if is_motion_effect == session_is_motion:
+                            unified_engine.stop_session(session_info['id'])
+            else:
+                # Default: Stop all existing fixture effects first
+                status = unified_engine.get_status()
+                for session_info in status.get('sessions', []):
+                    if session_info['id'].startswith('fixture_effect_'):
                         unified_engine.stop_session(session_info['id'])
-        else:
-            # Default: Stop all existing fixture effects first
-            status = unified_engine.get_status()
-            for session_info in status.get('sessions', []):
-                if session_info['id'].startswith('fixture_effect_'):
-                    unified_engine.stop_session(session_info['id'])
 
-        # Determine if this should run as a modifier (stacking mode + motion effect)
-        is_modifier = stack and effect_type in motion_effects
+        # If target_universes provided and no fixture_ids, filter fixtures by universe
+        if target_universes and not fixture_ids:
+            all_fixtures = content_manager.get_fixtures()
+            fixture_ids = [f['fixture_id'] for f in all_fixtures if f.get('universe') in target_universes]
+            print(f"🎨 Filtered to {len(fixture_ids)} fixtures in universes {target_universes}", flush=True)
+
         session_id = play_fixture_effect(effect_type, fixture_ids, mode, params, is_modifier)
+        print(f"🎨 Effect started: session_id={session_id}", flush=True)
 
         # Get session info for response
         session = unified_engine.get_session(session_id)
