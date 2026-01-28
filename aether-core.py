@@ -1786,6 +1786,14 @@ def init_database():
     except sqlite3.OperationalError:
         pass  # Column already exists
 
+    # Add hidden_from_dashboard to nodes table (hide built-in node from dashboard)
+    try:
+        c.execute('ALTER TABLE nodes ADD COLUMN hidden_from_dashboard BOOLEAN DEFAULT 0')
+        conn.commit()
+        print("✓ Added hidden_from_dashboard column to nodes table")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
     # NOTE: Universe 1 built-in node removed - all nodes are WiFi ESP32 via UDPJSON
 
     print("✓ Database initialized")
@@ -4800,6 +4808,21 @@ def unpair_node(node_id):
 def delete_node(node_id):
     node_manager.delete_node(node_id)
     return jsonify({'success': True})
+
+@app.route('/api/nodes/<node_id>/toggle-visibility', methods=['POST'])
+def toggle_node_visibility(node_id):
+    """Toggle whether a node is hidden from the dashboard"""
+    data = request.get_json() or {}
+    hidden = data.get('hidden', False)
+
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('UPDATE nodes SET hidden_from_dashboard = ? WHERE node_id = ?', (1 if hidden else 0, node_id))
+    conn.commit()
+    conn.close()
+
+    node_manager.broadcast_status()
+    return jsonify({'success': True, 'hidden_from_dashboard': hidden})
 
 @app.route('/api/nodes/<node_id>/sync', methods=['POST'])
 def sync_node(node_id):
