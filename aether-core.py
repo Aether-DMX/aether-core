@@ -26,11 +26,37 @@ import subprocess
 import uuid
 import platform
 import logging
+import tempfile
 from datetime import datetime, timedelta
 from typing import Dict, Optional
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit
+
+# ============================================================
+# Speech-to-Text (Whisper) - Lazy loaded
+# ============================================================
+_whisper_model = None
+_whisper_lock = threading.Lock()
+
+def get_whisper_model():
+    """Lazy-load faster-whisper model on first use"""
+    global _whisper_model
+    if _whisper_model is None:
+        with _whisper_lock:
+            if _whisper_model is None:
+                try:
+                    from faster_whisper import WhisperModel
+                    # Use tiny model for speed on Pi - still accurate for short commands
+                    _whisper_model = WhisperModel("tiny", device="cpu", compute_type="int8")
+                    logging.info("✅ Whisper model loaded (tiny/int8)")
+                except ImportError:
+                    logging.warning("⚠️ faster-whisper not installed, STT disabled")
+                    _whisper_model = False
+                except Exception as e:
+                    logging.error(f"❌ Failed to load Whisper: {e}")
+                    _whisper_model = False
+    return _whisper_model if _whisper_model else None
 import ai_ssot
 import ai_ops_registry
 from effects_engine import DynamicEffectsEngine
@@ -4216,6 +4242,54 @@ def dismiss_session():
     """Dismiss the resume prompt without resuming"""
     dmx_state.last_session = None
     return jsonify({'success': True})
+
+# ============================================================
+# Speech-to-Text (STT) API
+# ============================================================
+@app.route('/api/stt', methods=['POST'])
+def speech_to_text():
+    """
+    Transcribe audio using local Whisper model.
+    Expects multipart form with 'audio' file (webm/wav/mp3).
+    Returns: { "text": "transcribed text" } or { "error": "message" }
+    """
+    model = get_whisper_model()
+    if model is None:
+        return jsonify({'error': 'STT not available - Whisper not installed'}), 503
+
+    if 'audio' not in request.files:
+        return jsonify({'error': 'No audio file provided'}), 400
+
+    audio_file = request.files['audio']
+    if not audio_file.filename:
+        return jsonify({'error': 'Empty audio file'}), 400
+
+    # Save to temp file for Whisper
+    try:
+        # Get file extension from filename or default to webm
+        ext = os.path.splitext(audio_file.filename)[1] or '.webm'
+        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+            audio_file.save(tmp.name)
+            tmp_path = tmp.name
+
+        # Transcribe with Whisper
+        segments, info = model.transcribe(tmp_path, beam_size=1, language='en')
+        text = ' '.join(seg.text.strip() for seg in segments)
+
+        # Clean up temp file
+        os.unlink(tmp_path)
+
+        logging.info(f"🎤 STT: '{text}' (duration: {info.duration:.1f}s)")
+        return jsonify({'text': text})
+
+    except Exception as e:
+        logging.error(f"❌ STT error: {e}")
+        # Clean up temp file on error
+        try:
+            os.unlink(tmp_path)
+        except:
+            pass
+        return jsonify({'error': f'Transcription failed: {str(e)}'}), 500
 
 
 @app.route('/api/system/info', methods=['GET'])
