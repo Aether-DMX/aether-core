@@ -9334,7 +9334,7 @@ if __name__ == '__main__':
     threading.Thread(target=discovery_listener, daemon=True).start()
     threading.Thread(target=stale_checker, daemon=True).start()
     schedule_runner.start()
-    # node_manager.start_dmx_refresh()  # Disabled - UDPJSON is on-demand
+    node_manager.start_dmx_refresh()  # 40Hz refresh loop sends DMX to nodes via UDPJSON
 
     # Initialize Unified Playback Engine
     # Cache for fixture expansion (refreshed every 5 seconds)
