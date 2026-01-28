@@ -2056,6 +2056,7 @@ class NodeManager:
         frame_interval = 1.0 / self._refresh_rate
         frame_count = 0
         self._node_cache = {}
+        self._last_sent = {}  # {universe:ip -> {ch_str: val}} delta tracking
         print(f"🔄 DMX Refresh loop starting (interval={frame_interval:.3f}s) - UDPJSON on port {AETHER_UDPJSON_PORT}")
 
         # Start background node cache refresh thread
@@ -2090,16 +2091,26 @@ class NodeManager:
                     # Send to each node in this universe via UDPJSON
                     nodes = universe_to_nodes.get(universe, [])
                     for target_ip, slice_start, slice_end, original_ip, via_seance in nodes:
-                        # Build channels dict directly for this node's slice (no intermediate dict)
+                        node_key = f"{universe}:{target_ip}"
+                        prev_sent = self._last_sent.get(node_key, {})
+
+                        # Build channels dict: include non-zero AND channels that changed to zero
                         node_channels = {}
                         for ch in range(slice_start, slice_end + 1):
                             val = dmx_values[ch - 1]
+                            ch_str = str(ch)
                             if val > 0:
-                                node_channels[str(ch)] = val
+                                node_channels[ch_str] = val
+                            elif ch_str in prev_sent:
+                                # Was non-zero last frame, now zero — must send the zero
+                                node_channels[ch_str] = 0
 
                         # Send either when there's data, or once per second for keepalive
                         if node_channels or frame_count % self._refresh_rate == 0:
                             self.send_udpjson_set(target_ip, universe, node_channels, source="refresh")
+
+                        # Track what we sent for next frame's delta
+                        self._last_sent[node_key] = {k: v for k, v in node_channels.items() if v > 0}
 
                 # Maintain consistent frame rate using monotonic clock
                 elapsed = time.monotonic() - loop_start
