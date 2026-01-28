@@ -438,22 +438,28 @@ class DMXStateManager:
             if universe not in self.targets:
                 self.targets[universe] = [0] * 512
 
-            # Update both current and target values for all cases
-            # ESP handles fades locally, so SSOT should reflect final state
-            for ch_str, value in channels_dict.items():
-                ch = int(ch_str)
-                if 1 <= ch <= 512:
-                    self.universes[universe][ch - 1] = int(value)
-                    self.targets[universe][ch - 1] = int(value)
-
             if fade_ms > 0:
-                # Store fade info for any components that need it
+                # CRITICAL: Capture start values BEFORE updating targets
+                start_snapshot = list(self.universes[universe])
+
+                # Only update targets — current values will be interpolated
+                for ch_str, value in channels_dict.items():
+                    ch = int(ch_str)
+                    if 1 <= ch <= 512:
+                        self.targets[universe][ch - 1] = int(value)
+
                 self.fade_info[universe] = {
-                    'start_time': time.time(),
+                    'start_time': time.monotonic(),
                     'duration': fade_ms / 1000.0,
-                    'start_values': list(self.universes[universe])  # Already updated to target
+                    'start_values': start_snapshot
                 }
             else:
+                # Immediate snap — update both current and target
+                for ch_str, value in channels_dict.items():
+                    ch = int(ch_str)
+                    if 1 <= ch <= 512:
+                        self.universes[universe][ch - 1] = int(value)
+                        self.targets[universe][ch - 1] = int(value)
                 # Clear any fade in progress
                 self.fade_info.pop(universe, None)
 
@@ -464,10 +470,10 @@ class DMXStateManager:
         self._schedule_save()
 
     def get_output_values(self, universe):
-        """Get current output values, including fade interpolation
+        """Get current output values, including fade interpolation.
 
         This is what the refresh loop should use to get the actual values to send.
-        It handles fade interpolation automatically.
+        It handles fade interpolation automatically using monotonic clock.
         """
         with self.lock:
             if universe not in self.universes:
@@ -475,29 +481,32 @@ class DMXStateManager:
                 return [0] * 512
 
             fade = self.fade_info.get(universe)
-            if fade:
-                elapsed = time.time() - fade['start_time']
-                progress = min(1.0, elapsed / fade['duration'])
-
-                if progress >= 1.0:
-                    # Fade complete - snap to target and clear fade
-                    if universe in self.targets:
-                        self.universes[universe] = list(self.targets[universe])
-                    self.fade_info.pop(universe, None)
-                    return list(self.universes[universe])
-                else:
-                    # Interpolate between start and target
-                    start = fade['start_values']
-                    target = self.targets.get(universe, self.universes[universe])
-                    interpolated = [
-                        int(start[i] + (target[i] - start[i]) * progress)
-                        for i in range(512)
-                    ]
-                    # Update current state so websocket sees progress
-                    self.universes[universe] = interpolated
-                    return interpolated
-            else:
+            if not fade:
                 return list(self.universes[universe])
+
+            elapsed = time.monotonic() - fade['start_time']
+            duration = fade['duration']
+            progress = min(1.0, elapsed / duration) if duration > 0 else 1.0
+
+            if progress >= 1.0:
+                # Fade complete — snap to target and clear
+                if universe in self.targets:
+                    self.universes[universe] = list(self.targets[universe])
+                self.fade_info.pop(universe, None)
+                return list(self.universes[universe])
+
+            # Smooth interpolation with eased progress (ease-in-out for natural fades)
+            # Hermite smoothstep: 3t² - 2t³
+            smooth = progress * progress * (3.0 - 2.0 * progress)
+
+            start = fade['start_values']
+            target = self.targets.get(universe, self.universes[universe])
+            interpolated = [
+                int(start[i] + (target[i] - start[i]) * smooth + 0.5)
+                for i in range(512)
+            ]
+            self.universes[universe] = interpolated
+            return interpolated
 
     def blackout(self, universe, fade_ms=0):
         """Set all channels to 0 with optional fade"""
@@ -2010,52 +2019,58 @@ class NodeManager:
             self._refresh_thread.join(timeout=1.0)
         print("⏹️ DMX Refresh: Stopped")
 
+    def _refresh_node_cache(self):
+        """Background refresh of node-to-universe mapping (runs off render thread)."""
+        while self._refresh_running:
+            try:
+                conn = get_db()
+                c = conn.cursor()
+                c.execute("""
+                    SELECT universe, ip, channel_start, channel_end, via_seance, seance_ip
+                    FROM nodes
+                    WHERE is_paired = 1 AND ip IS NOT NULL AND type = 'wifi'
+                """)
+                new_cache = {}
+                for row in c.fetchall():
+                    u, ip, ch_start, ch_end, via_seance, seance_ip = row
+                    if u == 1:
+                        continue
+                    if u not in new_cache:
+                        new_cache[u] = []
+                    target_ip = seance_ip if via_seance and seance_ip else ip
+                    s = ch_start or 1
+                    e = ch_end or 512
+                    new_cache[u].append((target_ip, s, e, ip, via_seance))
+                conn.close()
+                self._node_cache = new_cache
+            except Exception as ex:
+                print(f"⚠️ Node cache refresh error: {ex}")
+            time.sleep(2.0)
+
     def _dmx_refresh_loop(self):
         """Background thread that sends DMX data to nodes via UDPJSON.
 
         All output uses the new UDPJSON protocol on port 6455.
+        Optimized for smooth fading: monotonic timing, no blocking I/O in hot path.
         """
         frame_interval = 1.0 / self._refresh_rate
         frame_count = 0
+        self._node_cache = {}
         print(f"🔄 DMX Refresh loop starting (interval={frame_interval:.3f}s) - UDPJSON on port {AETHER_UDPJSON_PORT}")
 
-        # Cache node IPs by universe
-        universe_to_nodes = {}  # {universe: [(node_ip, slice_start, slice_end), ...]}
+        # Start background node cache refresh thread
+        import threading
+        node_thread = threading.Thread(target=self._refresh_node_cache, daemon=True)
+        node_thread.start()
 
         while self._refresh_running:
             try:
-                loop_start = time.time()
+                loop_start = time.monotonic()
 
-                # Get active universes from dmx_state
+                # Get active universes from dmx_state + cached nodes
                 active_universes = set(dmx_state.universes.keys())
-
-                # Build universe->nodes mapping from database (refresh periodically)
-                if frame_count % (self._refresh_rate * 2) == 0:  # Every 2 seconds
-                    try:
-                        conn = get_db()
-                        c = conn.cursor()
-                        # Only get WiFi nodes with IPs (not built-in universe 1)
-                        # Include via_seance and seance_ip for Seance bridge routing
-                        c.execute("""
-                            SELECT universe, ip, channel_start, channel_end, via_seance, seance_ip
-                            FROM nodes
-                            WHERE is_paired = 1 AND ip IS NOT NULL AND type = 'wifi'
-                        """)
-                        universe_to_nodes = {}
-                        for row in c.fetchall():
-                            u, ip, ch_start, ch_end, via_seance, seance_ip = row
-                            # Skip universe 1 (offline)
-                            if u == 1:
-                                continue
-                            if u not in universe_to_nodes:
-                                universe_to_nodes[u] = []
-                            # Store target_ip: use seance_ip if via_seance is set, otherwise direct ip
-                            target_ip = seance_ip if via_seance and seance_ip else ip
-                            universe_to_nodes[u].append((target_ip, ch_start or 1, ch_end or 512, ip, via_seance))
-                            active_universes.add(u)
-                        conn.close()
-                    except Exception as e:
-                        print(f"⚠️ Node query error: {e}")
+                universe_to_nodes = self._node_cache
+                active_universes.update(universe_to_nodes.keys())
 
                 # Log active universes periodically (every 5 seconds)
                 frame_count += 1
@@ -2067,41 +2082,32 @@ class NodeManager:
                     if not self._refresh_running:
                         break
                     if universe == 1:
-                        continue  # Universe 1 is offline - skip
+                        continue
 
                     # Get output values (handles fade interpolation internally)
                     dmx_values = dmx_state.get_output_values(universe)
 
-                    # Build channels dict for UDPJSON (only non-zero for efficiency)
-                    channels_dict = {}
-                    for i, val in enumerate(dmx_values):
-                        if val > 0:
-                            channels_dict[str(i + 1)] = val
-
                     # Send to each node in this universe via UDPJSON
                     nodes = universe_to_nodes.get(universe, [])
                     for target_ip, slice_start, slice_end, original_ip, via_seance in nodes:
-                        # Filter channels for this node's slice
+                        # Build channels dict directly for this node's slice (no intermediate dict)
                         node_channels = {}
-                        for ch_str, val in channels_dict.items():
-                            ch = int(ch_str)
-                            if slice_start <= ch <= slice_end:
-                                node_channels[ch_str] = val
+                        for ch in range(slice_start, slice_end + 1):
+                            val = dmx_values[ch - 1]
+                            if val > 0:
+                                node_channels[str(ch)] = val
 
-                        # Send UDPJSON set command
+                        # Send either when there's data, or once per second for keepalive
                         if node_channels or frame_count % self._refresh_rate == 0:
-                            # Send either when there's data, or once per second for keepalive
-                            # Use target_ip which routes through Seance if via_seance is set
                             self.send_udpjson_set(target_ip, universe, node_channels, source="refresh")
 
-                # Maintain consistent frame rate for fade interpolation
-                elapsed = time.time() - loop_start
+                # Maintain consistent frame rate using monotonic clock
+                elapsed = time.monotonic() - loop_start
                 sleep_time = frame_interval - elapsed
                 if sleep_time > 0:
                     time.sleep(sleep_time)
 
             except Exception as e:
-                # Log errors but don't crash the loop
                 print(f"❌ DMX Refresh error: {e}")
                 time.sleep(0.1)
 
