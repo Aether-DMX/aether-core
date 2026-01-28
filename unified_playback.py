@@ -1629,7 +1629,343 @@ class UnifiedPlaybackEngine:
 
             session.universes = list(set(f.get('universe', 1) for f in fixtures))
 
+        elif effect_type == "fixture_hue_shift":
+            fixture_ids = session.fixture_ids if session.fixture_ids else params.get('fixture_ids', None)
+            mode = session.distribution_mode or params.get('mode', 'sync')
+            speed = params.get('speed', 0.2)
+            hue_range = params.get('range', 360) / 360.0
+            hue_offset_param = params.get('offset', 0) / 360.0
+            depth = params.get('depth', 100) / 100.0
+
+            fixtures = self._resolve_fixtures(fixture_ids)
+            if not fixtures:
+                return channels
+
+            for i, fixture in enumerate(fixtures):
+                phase_off = (i / len(fixtures)) if mode == 'chase' else 0
+                shift = ((elapsed * speed + phase_off) % 1.0) * hue_range
+
+                # Get current fixture color from channels or use white
+                base_r, base_g, base_b = self._get_fixture_rgb(channels, fixture)
+                h, s, v = self._rgb_to_hsv(base_r, base_g, base_b)
+                h = (h + shift + hue_offset_param) % 1.0
+                nr, ng, nb = self._hsv_to_rgb(h, s, v)
+
+                # Blend with depth
+                fr = base_r + (nr - base_r) * depth
+                fg = base_g + (ng - base_g) * depth
+                fb = base_b + (nb - base_b) * depth
+                self._apply_rgb_to_fixture(channels, fixture, fr, fg, fb, v)
+
+            session.universes = list(set(f.get('universe', 1) for f in fixtures))
+
+        elif effect_type == "fixture_color_temp":
+            fixture_ids = session.fixture_ids if session.fixture_ids else params.get('fixture_ids', None)
+            mode = session.distribution_mode or params.get('mode', 'sync')
+            temperature = params.get('temperature', 0)
+            speed = params.get('speed', 0.0)
+            depth = params.get('depth', 100) / 100.0
+
+            fixtures = self._resolve_fixtures(fixture_ids)
+            if not fixtures:
+                return channels
+
+            for i, fixture in enumerate(fixtures):
+                temp = temperature
+                if speed > 0:
+                    phase_off = (i / len(fixtures)) if mode == 'chase' else 0
+                    phase = (elapsed * speed + phase_off) % 1.0
+                    temp = temperature * math.sin(phase * 2 * math.pi)
+                temp_f = temp / 100.0
+
+                base_r, base_g, base_b = self._get_fixture_rgb(channels, fixture)
+                r, g, b = base_r, base_g, base_b
+                if temp_f > 0:
+                    r = min(1.0, r + 0.3 * temp_f)
+                    g = min(1.0, g + 0.1 * temp_f)
+                    b = max(0.0, b - 0.3 * temp_f)
+                else:
+                    r = max(0.0, r + 0.3 * temp_f)
+                    g = min(1.0, g + 0.05 * abs(temp_f))
+                    b = min(1.0, b + 0.3 * abs(temp_f))
+
+                fr = base_r + (r - base_r) * depth
+                fg = base_g + (g - base_g) * depth
+                fb = base_b + (b - base_b) * depth
+                self._apply_rgb_to_fixture(channels, fixture, fr, fg, fb, max(fr, fg, fb))
+
+            session.universes = list(set(f.get('universe', 1) for f in fixtures))
+
+        elif effect_type == "fixture_saturation_pulse":
+            fixture_ids = session.fixture_ids if session.fixture_ids else params.get('fixture_ids', None)
+            mode = session.distribution_mode or params.get('mode', 'sync')
+            speed = params.get('speed', 0.5)
+            min_sat = params.get('min_saturation', 0) / 100.0
+            max_sat = params.get('max_saturation', 100) / 100.0
+            depth = params.get('depth', 100) / 100.0
+
+            fixtures = self._resolve_fixtures(fixture_ids)
+            if not fixtures:
+                return channels
+
+            for i, fixture in enumerate(fixtures):
+                phase_off = (i / len(fixtures)) if mode == 'chase' else 0
+                phase = (elapsed * speed + phase_off) % 1.0
+                sat_value = (math.sin(phase * 2 * math.pi) + 1) / 2
+                new_s = min_sat + sat_value * (max_sat - min_sat)
+
+                base_r, base_g, base_b = self._get_fixture_rgb(channels, fixture)
+                h, s, v = self._rgb_to_hsv(base_r, base_g, base_b)
+                nr, ng, nb = self._hsv_to_rgb(h, new_s, v)
+
+                fr = base_r + (nr - base_r) * depth
+                fg = base_g + (ng - base_g) * depth
+                fb = base_b + (nb - base_b) * depth
+                self._apply_rgb_to_fixture(channels, fixture, fr, fg, fb, v)
+
+            session.universes = list(set(f.get('universe', 1) for f in fixtures))
+
+        elif effect_type == "fixture_color_fade":
+            fixture_ids = session.fixture_ids if session.fixture_ids else params.get('fixture_ids', None)
+            mode = session.distribution_mode or params.get('mode', 'sync')
+            speed = params.get('speed', 0.2)
+            colors = params.get('colors', [[255, 0, 0], [0, 255, 0], [0, 0, 255]])
+            depth = params.get('depth', 100) / 100.0
+
+            fixtures = self._resolve_fixtures(fixture_ids)
+            if not fixtures or len(colors) < 2:
+                return channels
+
+            num_colors = len(colors)
+            for i, fixture in enumerate(fixtures):
+                phase_off = (i / len(fixtures)) if mode == 'chase' else 0
+                phase = (elapsed * speed + phase_off) % 1.0
+                scaled = phase * num_colors
+                idx = int(scaled) % num_colors
+                next_idx = (idx + 1) % num_colors
+                blend = scaled - int(scaled)
+
+                c1, c2 = colors[idx], colors[next_idx]
+                tr = (c1[0] + (c2[0] - c1[0]) * blend) / 255.0
+                tg = (c1[1] + (c2[1] - c1[1]) * blend) / 255.0
+                tb = (c1[2] + (c2[2] - c1[2]) * blend) / 255.0
+
+                base_r, base_g, base_b = self._get_fixture_rgb(channels, fixture)
+                fr = base_r + (tr - base_r) * depth
+                fg = base_g + (tg - base_g) * depth
+                fb = base_b + (tb - base_b) * depth
+                self._apply_rgb_to_fixture(channels, fixture, fr, fg, fb, max(fr, fg, fb, 0.01))
+
+            session.universes = list(set(f.get('universe', 1) for f in fixtures))
+
+        elif effect_type == "fixture_gradient":
+            fixture_ids = session.fixture_ids if session.fixture_ids else params.get('fixture_ids', None)
+            mode = session.distribution_mode or params.get('mode', 'chase')
+            speed = params.get('speed', 0.2)
+            colors = params.get('colors', [[255, 100, 0], [255, 50, 150], [180, 0, 255]])
+            spread = params.get('spread', 100) / 100.0
+            depth = params.get('depth', 100) / 100.0
+            value = params.get('value', 1.0)
+
+            fixtures = self._resolve_fixtures(fixture_ids)
+            if not fixtures or len(colors) < 2:
+                return channels
+
+            num_colors = len(colors)
+            base_phase = (elapsed * speed) % 1.0
+
+            for i, fixture in enumerate(fixtures):
+                fixture_phase = (i / len(fixtures)) * spread if mode == 'chase' else 0
+                phase = (base_phase + fixture_phase) % 1.0
+                scaled = phase * num_colors
+                idx = int(scaled) % num_colors
+                next_idx = (idx + 1) % num_colors
+                blend = scaled - int(scaled)
+
+                c1, c2 = colors[idx], colors[next_idx]
+                tr = (c1[0] + (c2[0] - c1[0]) * blend) / 255.0 * value
+                tg = (c1[1] + (c2[1] - c1[1]) * blend) / 255.0 * value
+                tb = (c1[2] + (c2[2] - c1[2]) * blend) / 255.0 * value
+
+                base_r, base_g, base_b = self._get_fixture_rgb(channels, fixture)
+                fr = base_r + (tr - base_r) * depth
+                fg = base_g + (tg - base_g) * depth
+                fb = base_b + (tb - base_b) * depth
+                self._apply_rgb_to_fixture(channels, fixture, fr, fg, fb, value)
+
+            session.universes = list(set(f.get('universe', 1) for f in fixtures))
+
+        elif effect_type == "fixture_scanner":
+            fixture_ids = session.fixture_ids if session.fixture_ids else params.get('fixture_ids', None)
+            speed = params.get('speed', 1.5)
+            width = params.get('width', 2)
+            direction = params.get('direction', 'bounce')
+            depth = params.get('depth', 100) / 100.0
+
+            fixtures = self._resolve_fixtures(fixture_ids)
+            if not fixtures:
+                return channels
+
+            num_fixtures = len(fixtures)
+            if direction == "bounce":
+                cycle = (elapsed * speed) % 2.0
+                beam_pos = cycle * (num_fixtures - 1) if cycle < 1.0 else (2.0 - cycle) * (num_fixtures - 1)
+            elif direction == "forward":
+                beam_pos = (elapsed * speed * num_fixtures) % num_fixtures
+            else:
+                beam_pos = num_fixtures - (elapsed * speed * num_fixtures) % num_fixtures
+
+            for i, fixture in enumerate(fixtures):
+                distance = abs(i - beam_pos)
+                if distance >= width:
+                    multiplier = 0.0
+                else:
+                    multiplier = (math.cos((distance / width) * math.pi) + 1) / 2
+
+                # Apply depth: blend between 1.0 (no effect) and multiplier
+                final_mult = 1.0 + (multiplier - 1.0) * depth
+
+                base_r, base_g, base_b = self._get_fixture_rgb(channels, fixture)
+                self._apply_rgb_to_fixture(channels, fixture,
+                                           base_r * final_mult, base_g * final_mult, base_b * final_mult,
+                                           final_mult)
+
+            session.universes = list(set(f.get('universe', 1) for f in fixtures))
+
+        elif effect_type == "fixture_sparkle":
+            fixture_ids = session.fixture_ids if session.fixture_ids else params.get('fixture_ids', None)
+            density = params.get('density', 30) / 100.0
+            flash_duration = params.get('flash_duration', 200) / 1000.0
+            sparkle_color = params.get('color', [255, 255, 255])
+            depth = params.get('depth', 100) / 100.0
+
+            fixtures = self._resolve_fixtures(fixture_ids)
+            if not fixtures:
+                return channels
+
+            # Manage sparkle state per fixture
+            state_key = session.session_id
+            if state_key not in self._modifier_states:
+                self._modifier_states[state_key] = {}
+            states = self._modifier_states[state_key]
+
+            import random as py_random
+
+            for i, fixture in enumerate(fixtures):
+                fkey = f"sparkle_{i}"
+                if fkey not in states:
+                    states[fkey] = {"active": False, "start": 0.0, "next_check": 0.0}
+                fs = states[fkey]
+
+                if not fs["active"]:
+                    if elapsed >= fs["next_check"]:
+                        rng = py_random.Random(session.seed + i + int(elapsed * 20) * 1000)
+                        if rng.random() < density * 0.05:
+                            fs["active"] = True
+                            fs["start"] = elapsed
+                        fs["next_check"] = elapsed + 0.05
+
+                base_r, base_g, base_b = self._get_fixture_rgb(channels, fixture)
+
+                if fs["active"]:
+                    flash_elapsed = elapsed - fs["start"]
+                    if flash_elapsed >= flash_duration:
+                        fs["active"] = False
+                        self._apply_rgb_to_fixture(channels, fixture, base_r, base_g, base_b, max(base_r, base_g, base_b, 0.01))
+                    else:
+                        brightness = (1.0 - flash_elapsed / flash_duration) * depth
+                        tr = sparkle_color[0] / 255.0
+                        tg = sparkle_color[1] / 255.0
+                        tb = sparkle_color[2] / 255.0
+                        fr = base_r + (tr - base_r) * brightness
+                        fg = base_g + (tg - base_g) * brightness
+                        fb = base_b + (tb - base_b) * brightness
+                        self._apply_rgb_to_fixture(channels, fixture, fr, fg, fb, max(fr, fg, fb, 0.01))
+                else:
+                    self._apply_rgb_to_fixture(channels, fixture, base_r, base_g, base_b, max(base_r, base_g, base_b, 0.01))
+
+            session.universes = list(set(f.get('universe', 1) for f in fixtures))
+
+        elif effect_type == "fixture_lightning":
+            fixture_ids = session.fixture_ids if session.fixture_ids else params.get('fixture_ids', None)
+            frequency = params.get('frequency', 0.5)
+            intensity = params.get('intensity', 100) / 100.0
+            decay = params.get('decay', 200) / 1000.0
+            depth = params.get('depth', 100) / 100.0
+
+            fixtures = self._resolve_fixtures(fixture_ids)
+            if not fixtures:
+                return channels
+
+            state_key = session.session_id
+            if state_key not in self._modifier_states:
+                self._modifier_states[state_key] = {"flash_active": False, "flash_start": 0.0, "next_check": 0.0}
+            fs = self._modifier_states[state_key]
+
+            import random as py_random
+
+            if not fs.get("flash_active", False):
+                if elapsed >= fs.get("next_check", 0.0):
+                    rng = py_random.Random(session.seed + int(elapsed * 10))
+                    if rng.random() < frequency * 0.1:
+                        fs["flash_active"] = True
+                        fs["flash_start"] = elapsed
+                    fs["next_check"] = elapsed + 0.1
+
+            for fixture in fixtures:
+                base_r, base_g, base_b = self._get_fixture_rgb(channels, fixture)
+
+                if fs.get("flash_active", False):
+                    flash_elapsed = elapsed - fs["flash_start"]
+                    if flash_elapsed >= decay:
+                        fs["flash_active"] = False
+                        self._apply_rgb_to_fixture(channels, fixture, base_r, base_g, base_b, max(base_r, base_g, base_b, 0.01))
+                    else:
+                        flash_brightness = intensity * math.exp(-3 * flash_elapsed / decay) * depth
+                        fr = base_r + (1.0 - base_r) * flash_brightness
+                        fg = base_g + (1.0 - base_g) * flash_brightness
+                        fb = base_b + (1.0 - base_b) * flash_brightness
+                        self._apply_rgb_to_fixture(channels, fixture, fr, fg, fb, max(fr, fg, fb))
+                else:
+                    self._apply_rgb_to_fixture(channels, fixture, base_r, base_g, base_b, max(base_r, base_g, base_b, 0.01))
+
+            session.universes = list(set(f.get('universe', 1) for f in fixtures))
+
         return channels
+
+    def _get_fixture_rgb(self, channels: Dict[int, int], fixture: Dict) -> Tuple[float, float, float]:
+        """Get current RGB values for a fixture from the channel dict. Returns 0-1 floats."""
+        universe = fixture.get('universe', 1)
+        start_ch = fixture.get('start_channel', 1)
+        channel_map = fixture.get('channel_map', {})
+
+        r_ch = channel_map.get('red', 0) + start_ch if channel_map.get('red') is not None else start_ch
+        g_ch = channel_map.get('green', 1) + start_ch if channel_map.get('green') is not None else start_ch + 1
+        b_ch = channel_map.get('blue', 2) + start_ch if channel_map.get('blue') is not None else start_ch + 2
+
+        r = channels.get(r_ch, 0) / 255.0
+        g = channels.get(g_ch, 0) / 255.0
+        b = channels.get(b_ch, 0) / 255.0
+        return r, g, b
+
+    def _rgb_to_hsv(self, r: float, g: float, b: float) -> Tuple[float, float, float]:
+        """Convert RGB (0-1) to HSV (0-1)"""
+        max_c = max(r, g, b)
+        min_c = min(r, g, b)
+        delta = max_c - min_c
+        v = max_c
+        s = delta / max_c if max_c > 0 else 0.0
+        if delta == 0:
+            h = 0.0
+        elif max_c == r:
+            h = ((g - b) / delta) % 6 / 6.0
+        elif max_c == g:
+            h = ((b - r) / delta + 2) / 6.0
+        else:
+            h = ((r - g) / delta + 4) / 6.0
+        if h < 0:
+            h += 1.0
+        return h, s, v
 
     def _resolve_fixtures(self, fixture_ids: Optional[List[str]] = None) -> List[Dict]:
         """

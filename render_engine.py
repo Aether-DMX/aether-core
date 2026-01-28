@@ -66,6 +66,7 @@ class MergeMode(Enum):
     MAX = "max"              # max(value, modifier) - HTP style
     MIN = "min"              # min(value, modifier)
     BLEND = "blend"          # lerp based on modifier intensity
+    DEPTH_BLEND = "depth_blend"  # lerp(base, modifier_output, depth%) - for color modifiers
 
 
 # Modifier type -> default merge mode
@@ -74,8 +75,16 @@ DEFAULT_MERGE_MODES = {
     "strobe": MergeMode.MULTIPLY,
     "flicker": MergeMode.MULTIPLY,
     "wave": MergeMode.MULTIPLY,
-    "rainbow": MergeMode.REPLACE,  # Rainbow replaces color channels
+    "rainbow": MergeMode.REPLACE,
     "twinkle": MergeMode.MULTIPLY,
+    "hue_shift": MergeMode.DEPTH_BLEND,
+    "color_temp": MergeMode.DEPTH_BLEND,
+    "saturation_pulse": MergeMode.DEPTH_BLEND,
+    "color_fade": MergeMode.DEPTH_BLEND,
+    "gradient": MergeMode.DEPTH_BLEND,
+    "scanner": MergeMode.MULTIPLY,
+    "sparkle": MergeMode.DEPTH_BLEND,
+    "lightning": MergeMode.DEPTH_BLEND,
 }
 
 
@@ -134,6 +143,14 @@ class ModifierRenderer:
             "wave": self._render_wave,
             "rainbow": self._render_rainbow,
             "twinkle": self._render_twinkle,
+            "hue_shift": self._render_hue_shift,
+            "color_temp": self._render_color_temp,
+            "saturation_pulse": self._render_saturation_pulse,
+            "color_fade": self._render_color_fade,
+            "gradient": self._render_gradient,
+            "scanner": self._render_scanner,
+            "sparkle": self._render_sparkle,
+            "lightning": self._render_lightning,
         }
         # Distribution calculator instance
         self._distribution_calculator = None
@@ -263,8 +280,9 @@ class ModifierRenderer:
             )
 
             # Apply modifier output to fixture attributes
+            depth = params.get("depth", 100) / 100.0
             result[fixture_id] = self._apply_modifier_to_attrs(
-                fixture_attrs, mod_output, modifier_type
+                fixture_attrs, mod_output, modifier_type, depth=depth
             )
 
         return result
@@ -301,7 +319,8 @@ class ModifierRenderer:
         self,
         original_attrs: Dict[str, Any],
         mod_output: Dict[int, float],
-        modifier_type: str
+        modifier_type: str,
+        depth: float = 1.0,
     ) -> Dict[str, Any]:
         """
         Apply modifier output back to fixture attributes.
@@ -310,6 +329,7 @@ class ModifierRenderer:
             original_attrs: Original fixture attributes
             mod_output: Modifier output (channel -> multiplier/value)
             modifier_type: Type of modifier (for merge mode determination)
+            depth: 0.0-1.0 blend factor (0=no effect, 1=full effect)
 
         Returns:
             Modified fixture attributes
@@ -321,11 +341,18 @@ class ModifierRenderer:
         if 0 in mod_output:
             original_intensity = original_attrs.get("intensity", 255)
             if merge_mode == MergeMode.MULTIPLY:
-                result["intensity"] = int(original_intensity * mod_output[0])
+                effected = int(original_intensity * mod_output[0])
+                result["intensity"] = int(original_intensity + (effected - original_intensity) * depth)
             elif merge_mode == MergeMode.REPLACE:
-                result["intensity"] = int(mod_output[0])
+                effected = int(mod_output[0])
+                result["intensity"] = int(original_intensity + (effected - original_intensity) * depth)
             elif merge_mode == MergeMode.ADD:
-                result["intensity"] = min(255, int(original_intensity + mod_output[0]))
+                effected = min(255, int(original_intensity + mod_output[0]))
+                result["intensity"] = int(original_intensity + (effected - original_intensity) * depth)
+            elif merge_mode == MergeMode.DEPTH_BLEND:
+                # For depth_blend, mod_output is the target value
+                effected = int(mod_output[0])
+                result["intensity"] = int(original_intensity + (effected - original_intensity) * depth)
             result["intensity"] = max(0, min(255, result["intensity"]))
 
         # Apply color channels
@@ -335,13 +362,19 @@ class ModifierRenderer:
             for i in range(len(new_color)):
                 ch = i + 1
                 if ch in mod_output:
+                    orig_val = new_color[i]
                     if merge_mode == MergeMode.MULTIPLY:
-                        new_color[i] = int(new_color[i] * mod_output[ch])
+                        effected = int(orig_val * mod_output[ch])
                     elif merge_mode == MergeMode.REPLACE:
-                        new_color[i] = int(mod_output[ch])
+                        effected = int(mod_output[ch])
                     elif merge_mode == MergeMode.ADD:
-                        new_color[i] = min(255, int(new_color[i] + mod_output[ch]))
-                    new_color[i] = max(0, min(255, new_color[i]))
+                        effected = min(255, int(orig_val + mod_output[ch]))
+                    elif merge_mode == MergeMode.DEPTH_BLEND:
+                        effected = int(mod_output[ch])
+                    else:
+                        effected = orig_val
+                    # Apply depth blend
+                    new_color[i] = max(0, min(255, int(orig_val + (effected - orig_val) * depth)))
             result["color"] = new_color
 
         return result
@@ -788,6 +821,446 @@ class ModifierRenderer:
 
         return {ch: current_bright for ch in base_channels}
 
+    # ─────────────────────────────────────────────────────────
+    # HUE SHIFT - Rotates hue of the active color
+    # ─────────────────────────────────────────────────────────
+    def _render_hue_shift(
+        self,
+        params: Dict[str, Any],
+        base_channels: Dict[int, int],
+        time_ctx: TimeContext,
+        state: ModifierState,
+        fixture_index: int,
+        total_fixtures: int,
+    ) -> Dict[int, float]:
+        """Rotate the hue of the base color. Returns RGB values (0-255)."""
+        speed = params.get("speed", 0.2)
+        hue_range = params.get("range", 360)
+        hue_offset = params.get("offset", 0)
+        phase_offset = params.get("phase_offset", 0.0)
+
+        # Extract base RGB (first 3 channels)
+        sorted_chs = sorted(base_channels.keys())
+        if len(sorted_chs) < 3:
+            return {ch: base_channels[ch] for ch in base_channels}
+
+        r = base_channels[sorted_chs[0]] / 255.0
+        g = base_channels[sorted_chs[1]] / 255.0
+        b = base_channels[sorted_chs[2]] / 255.0
+
+        # Convert to HSV
+        h, s, v = self._rgb_to_hsv(r, g, b)
+
+        # Rotate hue
+        shift = ((time_ctx.elapsed_time * speed + phase_offset) % 1.0) * (hue_range / 360.0)
+        h = (h + shift + hue_offset / 360.0) % 1.0
+
+        # Convert back to RGB
+        nr, ng, nb = self._hsv_to_rgb(h, s, v)
+
+        result = {}
+        for i, ch in enumerate(sorted_chs):
+            if i == 0:
+                result[ch] = nr * 255
+            elif i == 1:
+                result[ch] = ng * 255
+            elif i == 2:
+                result[ch] = nb * 255
+            else:
+                result[ch] = base_channels[ch]
+        return result
+
+    # ─────────────────────────────────────────────────────────
+    # COLOR TEMP - Warm/cool tint shift
+    # ─────────────────────────────────────────────────────────
+    def _render_color_temp(
+        self,
+        params: Dict[str, Any],
+        base_channels: Dict[int, int],
+        time_ctx: TimeContext,
+        state: ModifierState,
+        fixture_index: int,
+        total_fixtures: int,
+    ) -> Dict[int, float]:
+        """Shift color temperature warm (amber) or cool (blue). Returns RGB 0-255."""
+        temperature = params.get("temperature", 0)  # -100 to +100
+        speed = params.get("speed", 0.0)
+        phase_offset = params.get("phase_offset", 0.0)
+
+        # Animate temperature if speed > 0
+        if speed > 0:
+            phase = (time_ctx.elapsed_time * speed + phase_offset) % 1.0
+            temperature = temperature * math.sin(phase * 2 * math.pi)
+
+        temp_factor = temperature / 100.0  # -1 to +1
+
+        sorted_chs = sorted(base_channels.keys())
+        if len(sorted_chs) < 3:
+            return {ch: base_channels[ch] for ch in base_channels}
+
+        r = base_channels[sorted_chs[0]] / 255.0
+        g = base_channels[sorted_chs[1]] / 255.0
+        b = base_channels[sorted_chs[2]] / 255.0
+
+        if temp_factor > 0:
+            # Warm: boost red/green, reduce blue
+            r = min(1.0, r + 0.3 * temp_factor)
+            g = min(1.0, g + 0.1 * temp_factor)
+            b = max(0.0, b - 0.3 * temp_factor)
+        else:
+            # Cool: boost blue, reduce red
+            r = max(0.0, r + 0.3 * temp_factor)
+            g = min(1.0, g + 0.05 * abs(temp_factor))
+            b = min(1.0, b + 0.3 * abs(temp_factor))
+
+        result = {}
+        for i, ch in enumerate(sorted_chs):
+            if i == 0:
+                result[ch] = r * 255
+            elif i == 1:
+                result[ch] = g * 255
+            elif i == 2:
+                result[ch] = b * 255
+            else:
+                result[ch] = base_channels[ch]
+        return result
+
+    # ─────────────────────────────────────────────────────────
+    # SATURATION PULSE - Breathes between color and white
+    # ─────────────────────────────────────────────────────────
+    def _render_saturation_pulse(
+        self,
+        params: Dict[str, Any],
+        base_channels: Dict[int, int],
+        time_ctx: TimeContext,
+        state: ModifierState,
+        fixture_index: int,
+        total_fixtures: int,
+    ) -> Dict[int, float]:
+        """Oscillate saturation of the base color. Returns RGB 0-255."""
+        speed = params.get("speed", 0.5)
+        min_sat = params.get("min_saturation", 0) / 100.0
+        max_sat = params.get("max_saturation", 100) / 100.0
+        phase_offset = params.get("phase_offset", 0.0)
+
+        sorted_chs = sorted(base_channels.keys())
+        if len(sorted_chs) < 3:
+            return {ch: base_channels[ch] for ch in base_channels}
+
+        r = base_channels[sorted_chs[0]] / 255.0
+        g = base_channels[sorted_chs[1]] / 255.0
+        b = base_channels[sorted_chs[2]] / 255.0
+
+        h, s, v = self._rgb_to_hsv(r, g, b)
+
+        # Oscillate saturation
+        phase = (time_ctx.elapsed_time * speed + phase_offset) % 1.0
+        sat_value = (math.sin(phase * 2 * math.pi) + 1) / 2
+        new_s = min_sat + sat_value * (max_sat - min_sat)
+
+        nr, ng, nb = self._hsv_to_rgb(h, new_s, v)
+
+        result = {}
+        for i, ch in enumerate(sorted_chs):
+            if i == 0:
+                result[ch] = nr * 255
+            elif i == 1:
+                result[ch] = ng * 255
+            elif i == 2:
+                result[ch] = nb * 255
+            else:
+                result[ch] = base_channels[ch]
+        return result
+
+    # ─────────────────────────────────────────────────────────
+    # COLOR FADE - Cycle through a color palette
+    # ─────────────────────────────────────────────────────────
+    def _render_color_fade(
+        self,
+        params: Dict[str, Any],
+        base_channels: Dict[int, int],
+        time_ctx: TimeContext,
+        state: ModifierState,
+        fixture_index: int,
+        total_fixtures: int,
+    ) -> Dict[int, float]:
+        """Smoothly cycle through a list of colors. Returns RGB 0-255."""
+        speed = params.get("speed", 0.2)
+        colors = params.get("colors", [[255, 0, 0], [0, 255, 0], [0, 0, 255]])
+        phase_offset = params.get("phase_offset", 0.0)
+
+        if not colors or len(colors) < 2:
+            return {ch: base_channels[ch] for ch in base_channels}
+
+        num_colors = len(colors)
+        phase = (time_ctx.elapsed_time * speed + phase_offset) % 1.0
+        scaled = phase * num_colors
+        idx = int(scaled) % num_colors
+        next_idx = (idx + 1) % num_colors
+        blend = scaled - int(scaled)
+
+        c1 = colors[idx]
+        c2 = colors[next_idx]
+        r = c1[0] + (c2[0] - c1[0]) * blend
+        g = c1[1] + (c2[1] - c1[1]) * blend
+        b = c1[2] + (c2[2] - c1[2]) * blend
+
+        sorted_chs = sorted(base_channels.keys())
+        result = {}
+        for i, ch in enumerate(sorted_chs):
+            if i == 0:
+                result[ch] = r
+            elif i == 1:
+                result[ch] = g
+            elif i == 2:
+                result[ch] = b
+            else:
+                result[ch] = base_channels[ch]
+        return result
+
+    # ─────────────────────────────────────────────────────────
+    # GRADIENT - Position-based color from palette
+    # ─────────────────────────────────────────────────────────
+    def _render_gradient(
+        self,
+        params: Dict[str, Any],
+        base_channels: Dict[int, int],
+        time_ctx: TimeContext,
+        state: ModifierState,
+        fixture_index: int,
+        total_fixtures: int,
+    ) -> Dict[int, float]:
+        """Position-based color gradient across fixtures. Returns RGB 0-255."""
+        speed = params.get("speed", 0.2)
+        colors = params.get("colors", [[255, 0, 0], [0, 255, 0], [0, 0, 255]])
+        spread = params.get("spread", 100) / 100.0
+        phase_offset = params.get("phase_offset", 0.0)
+
+        if not colors or len(colors) < 2:
+            return {ch: base_channels[ch] for ch in base_channels}
+
+        num_colors = len(colors)
+        # Base phase advances with time
+        base_phase = (time_ctx.elapsed_time * speed + phase_offset) % 1.0
+        # Fixture position adds spatial offset
+        if total_fixtures > 1 and spread > 0:
+            fixture_phase = (fixture_index / total_fixtures) * spread
+        else:
+            fixture_phase = 0
+
+        phase = (base_phase + fixture_phase) % 1.0
+        scaled = phase * num_colors
+        idx = int(scaled) % num_colors
+        next_idx = (idx + 1) % num_colors
+        blend = scaled - int(scaled)
+
+        c1 = colors[idx]
+        c2 = colors[next_idx]
+        r = c1[0] + (c2[0] - c1[0]) * blend
+        g = c1[1] + (c2[1] - c1[1]) * blend
+        b = c1[2] + (c2[2] - c1[2]) * blend
+
+        sorted_chs = sorted(base_channels.keys())
+        result = {}
+        for i, ch in enumerate(sorted_chs):
+            if i == 0:
+                result[ch] = r
+            elif i == 1:
+                result[ch] = g
+            elif i == 2:
+                result[ch] = b
+            else:
+                result[ch] = base_channels[ch]
+        return result
+
+    # ─────────────────────────────────────────────────────────
+    # SCANNER - Knight Rider style beam
+    # ─────────────────────────────────────────────────────────
+    def _render_scanner(
+        self,
+        params: Dict[str, Any],
+        base_channels: Dict[int, int],
+        time_ctx: TimeContext,
+        state: ModifierState,
+        fixture_index: int,
+        total_fixtures: int,
+    ) -> Dict[int, float]:
+        """Focused beam scanning across fixtures. Returns multiplier."""
+        speed = params.get("speed", 1.5)
+        width = params.get("width", 2)
+        direction = params.get("direction", "bounce")
+
+        if total_fixtures <= 1:
+            return {ch: 1.0 for ch in base_channels}
+
+        # Calculate beam position
+        if direction == "bounce":
+            cycle = (time_ctx.elapsed_time * speed) % 2.0
+            if cycle < 1.0:
+                beam_pos = cycle * (total_fixtures - 1)
+            else:
+                beam_pos = (2.0 - cycle) * (total_fixtures - 1)
+        elif direction == "forward":
+            beam_pos = (time_ctx.elapsed_time * speed * total_fixtures) % total_fixtures
+        else:  # backward
+            beam_pos = total_fixtures - (time_ctx.elapsed_time * speed * total_fixtures) % total_fixtures
+
+        distance = abs(fixture_index - beam_pos)
+        if distance >= width:
+            multiplier = 0.0
+        else:
+            multiplier = (math.cos((distance / width) * math.pi) + 1) / 2
+
+        return {ch: multiplier for ch in base_channels}
+
+    # ─────────────────────────────────────────────────────────
+    # SPARKLE - Random white flashes
+    # ─────────────────────────────────────────────────────────
+    def _render_sparkle(
+        self,
+        params: Dict[str, Any],
+        base_channels: Dict[int, int],
+        time_ctx: TimeContext,
+        state: ModifierState,
+        fixture_index: int,
+        total_fixtures: int,
+    ) -> Dict[int, float]:
+        """Random fixtures flash to white/color briefly. Returns RGB 0-255."""
+        density = params.get("density", 30) / 100.0
+        flash_duration = params.get("flash_duration", 200) / 1000.0
+        sparkle_color = params.get("color", [255, 255, 255])
+        phase_offset = params.get("phase_offset", 0.0)
+
+        rng = state.random_state
+
+        # Initialize state
+        if "sparkle_active" not in state.custom_data:
+            state.custom_data["sparkle_active"] = False
+            state.custom_data["sparkle_start"] = 0.0
+            state.custom_data["next_check"] = 0.0
+
+        # Check if we should start a new sparkle
+        if not state.custom_data["sparkle_active"]:
+            if time_ctx.elapsed_time >= state.custom_data["next_check"]:
+                time_slot = int(time_ctx.elapsed_time * 20)
+                rng.seed(time_ctx.seed + fixture_index * 1000 + time_slot)
+                if rng.random() < density * time_ctx.delta_time * 3:
+                    state.custom_data["sparkle_active"] = True
+                    state.custom_data["sparkle_start"] = time_ctx.elapsed_time
+                state.custom_data["next_check"] = time_ctx.elapsed_time + 0.05
+
+        # If sparkling, return sparkle color with fade
+        if state.custom_data["sparkle_active"]:
+            elapsed_in_flash = time_ctx.elapsed_time - state.custom_data["sparkle_start"]
+            if elapsed_in_flash >= flash_duration:
+                state.custom_data["sparkle_active"] = False
+                return {ch: base_channels[ch] for ch in base_channels}
+
+            # Fade out over flash duration
+            brightness = 1.0 - (elapsed_in_flash / flash_duration)
+            sorted_chs = sorted(base_channels.keys())
+            result = {}
+            for i, ch in enumerate(sorted_chs):
+                if i < 3 and i < len(sparkle_color):
+                    # Blend toward sparkle color
+                    base_val = base_channels[ch]
+                    target = sparkle_color[i]
+                    result[ch] = base_val + (target - base_val) * brightness
+                else:
+                    result[ch] = base_channels[ch]
+            return result
+
+        return {ch: base_channels[ch] for ch in base_channels}
+
+    # ─────────────────────────────────────────────────────────
+    # LIGHTNING - Sudden random bright flashes
+    # ─────────────────────────────────────────────────────────
+    def _render_lightning(
+        self,
+        params: Dict[str, Any],
+        base_channels: Dict[int, int],
+        time_ctx: TimeContext,
+        state: ModifierState,
+        fixture_index: int,
+        total_fixtures: int,
+    ) -> Dict[int, float]:
+        """Random bright flashes with decay. Returns RGB 0-255."""
+        frequency = params.get("frequency", 0.5)
+        intensity = params.get("intensity", 100) / 100.0
+        decay = params.get("decay", 200) / 1000.0
+        phase_offset = params.get("phase_offset", 0.0)
+
+        rng = state.random_state
+
+        if "flash_active" not in state.custom_data:
+            state.custom_data["flash_active"] = False
+            state.custom_data["flash_start"] = 0.0
+            state.custom_data["next_check"] = 0.0
+
+        # Random flash trigger
+        if not state.custom_data["flash_active"]:
+            if time_ctx.elapsed_time >= state.custom_data["next_check"]:
+                time_slot = int(time_ctx.elapsed_time * 10)
+                rng.seed(time_ctx.seed + time_slot)
+                if rng.random() < frequency * time_ctx.delta_time:
+                    state.custom_data["flash_active"] = True
+                    state.custom_data["flash_start"] = time_ctx.elapsed_time
+                state.custom_data["next_check"] = time_ctx.elapsed_time + 0.1
+
+        if state.custom_data["flash_active"]:
+            elapsed_in_flash = time_ctx.elapsed_time - state.custom_data["flash_start"]
+            if elapsed_in_flash >= decay:
+                state.custom_data["flash_active"] = False
+                return {ch: base_channels[ch] for ch in base_channels}
+
+            # Exponential decay flash
+            flash_brightness = intensity * math.exp(-3 * elapsed_in_flash / decay)
+            sorted_chs = sorted(base_channels.keys())
+            result = {}
+            for i, ch in enumerate(sorted_chs):
+                if i < 3:
+                    # Flash to white
+                    base_val = base_channels[ch]
+                    result[ch] = base_val + (255 - base_val) * flash_brightness
+                else:
+                    result[ch] = base_channels[ch]
+            return result
+
+        return {ch: base_channels[ch] for ch in base_channels}
+
+    # ─────────────────────────────────────────────────────────
+    # Color space helpers
+    # ─────────────────────────────────────────────────────────
+    def _rgb_to_hsv(self, r: float, g: float, b: float) -> Tuple[float, float, float]:
+        """Convert RGB (0-1) to HSV (0-1)"""
+        max_c = max(r, g, b)
+        min_c = min(r, g, b)
+        delta = max_c - min_c
+
+        # Value
+        v = max_c
+
+        # Saturation
+        if max_c == 0:
+            s = 0.0
+        else:
+            s = delta / max_c
+
+        # Hue
+        if delta == 0:
+            h = 0.0
+        elif max_c == r:
+            h = ((g - b) / delta) % 6 / 6.0
+        elif max_c == g:
+            h = ((b - r) / delta + 2) / 6.0
+        else:
+            h = ((r - g) / delta + 4) / 6.0
+
+        if h < 0:
+            h += 1.0
+
+        return h, s, v
+
 
 # ============================================================
 # Render Engine - Main scheduler loop
@@ -1103,9 +1576,14 @@ class RenderEngine:
 
             elif merge_mode == MergeMode.BLEND:
                 # Blend: lerp between base and mod based on mod intensity
-                # For blend, assume mod_val is 0-255 target
-                blend_factor = 0.5  # Could be parameterized
+                blend_factor = 0.5
                 result[ch] = base_val + (mod_val - base_val) * blend_factor
+
+            elif merge_mode == MergeMode.DEPTH_BLEND:
+                # Depth blend: mod_val is target 0-255, blend by depth param
+                # depth is applied in _apply_modifier_to_attrs for fixture rendering
+                # For channel-based rendering, treat like replace
+                result[ch] = mod_val
 
             else:
                 result[ch] = base_val

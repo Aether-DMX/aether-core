@@ -33,6 +33,14 @@ class ModifierType(Enum):
     WAVE = "wave"
     RAINBOW = "rainbow"
     TWINKLE = "twinkle"
+    HUE_SHIFT = "hue_shift"
+    COLOR_TEMP = "color_temp"
+    SATURATION_PULSE = "saturation_pulse"
+    COLOR_FADE = "color_fade"
+    GRADIENT = "gradient"
+    SCANNER = "scanner"
+    SPARKLE = "sparkle"
+    LIGHTNING = "lightning"
 
 
 # ============================================================
@@ -577,6 +585,315 @@ class ModifierRegistry:
                     "description": "Slow organic glow",
                     "params": {"density": 15, "fade_time": 1500, "min_brightness": 5, "max_brightness": 80, "hold_time": 300}
                 },
+            }
+        ))
+
+        # ─────────────────────────────────────────────────────────
+        # HUE SHIFT - Rotates hue of active color
+        # ─────────────────────────────────────────────────────────
+        self.register(ModifierSchema(
+            type="hue_shift",
+            name="Hue Shift",
+            description="Rotates the hue of the active color over time",
+            icon="palette",
+            category="color",
+            params={
+                "speed": ParamSchema(
+                    name="speed", type="float", default=0.2,
+                    label="Speed", description="Hue rotation speed",
+                    min=0.02, max=2.0, step=0.02, unit="Hz"
+                ),
+                "range": ParamSchema(
+                    name="range", type="int", default=360,
+                    label="Range", description="Degrees of hue to rotate through",
+                    min=30, max=360, step=15, unit="°"
+                ),
+                "offset": ParamSchema(
+                    name="offset", type="int", default=0,
+                    label="Offset", description="Starting hue offset",
+                    min=0, max=360, step=15, unit="°"
+                ),
+                "depth": ParamSchema(
+                    name="depth", type="int", default=100,
+                    label="Depth", description="Effect intensity (blend with base)",
+                    min=0, max=100, step=5, unit="%"
+                ),
+            },
+            presets={
+                "subtle": {"name": "Subtle Drift", "description": "Gentle hue shifting",
+                           "params": {"speed": 0.05, "range": 60, "depth": 50}},
+                "full_cycle": {"name": "Full Cycle", "description": "Complete spectrum rotation",
+                               "params": {"speed": 0.15, "range": 360, "depth": 100}},
+                "warm_shift": {"name": "Warm Shift", "description": "Shifts through warm tones",
+                               "params": {"speed": 0.1, "range": 90, "offset": 0, "depth": 80}},
+                "cool_shift": {"name": "Cool Shift", "description": "Shifts through cool tones",
+                               "params": {"speed": 0.1, "range": 120, "offset": 180, "depth": 80}},
+            }
+        ))
+
+        # ─────────────────────────────────────────────────────────
+        # COLOR TEMP - Warm/cool temperature shift
+        # ─────────────────────────────────────────────────────────
+        self.register(ModifierSchema(
+            type="color_temp",
+            name="Color Temp",
+            description="Shift color temperature warm (amber) or cool (blue)",
+            icon="thermometer",
+            category="color",
+            params={
+                "temperature": ParamSchema(
+                    name="temperature", type="int", default=0,
+                    label="Temperature", description="Cool (-100) to warm (+100)",
+                    min=-100, max=100, step=5, unit=""
+                ),
+                "speed": ParamSchema(
+                    name="speed", type="float", default=0.0,
+                    label="Speed", description="Animation speed (0 = static)",
+                    min=0.0, max=2.0, step=0.05, unit="Hz"
+                ),
+                "depth": ParamSchema(
+                    name="depth", type="int", default=100,
+                    label="Depth", description="Effect intensity",
+                    min=0, max=100, step=5, unit="%"
+                ),
+            },
+            presets={
+                "candlelight": {"name": "Candlelight", "description": "Warm amber glow",
+                                "params": {"temperature": 80, "speed": 0.0, "depth": 100}},
+                "daylight": {"name": "Daylight", "description": "Neutral white",
+                             "params": {"temperature": 0, "speed": 0.0, "depth": 100}},
+                "moonlight": {"name": "Moonlight", "description": "Cool blue tint",
+                              "params": {"temperature": -60, "speed": 0.0, "depth": 100}},
+                "sunset_shift": {"name": "Sunset Shift", "description": "Animated warm/cool cycle",
+                                 "params": {"temperature": 50, "speed": 0.3, "depth": 80}},
+            }
+        ))
+
+        # ─────────────────────────────────────────────────────────
+        # SATURATION PULSE - Breathes between color and white
+        # ─────────────────────────────────────────────────────────
+        self.register(ModifierSchema(
+            type="saturation_pulse",
+            name="Saturation Pulse",
+            description="Breathes between full color and desaturated white",
+            icon="droplets",
+            category="color",
+            params={
+                "speed": ParamSchema(
+                    name="speed", type="float", default=0.5,
+                    label="Speed", description="Pulse speed",
+                    min=0.1, max=3.0, step=0.1, unit="Hz"
+                ),
+                "min_saturation": ParamSchema(
+                    name="min_saturation", type="int", default=0,
+                    label="Min Saturation", description="Lowest saturation level",
+                    min=0, max=100, step=5, unit="%"
+                ),
+                "max_saturation": ParamSchema(
+                    name="max_saturation", type="int", default=100,
+                    label="Max Saturation", description="Highest saturation level",
+                    min=0, max=100, step=5, unit="%"
+                ),
+                "depth": ParamSchema(
+                    name="depth", type="int", default=100,
+                    label="Depth", description="Effect intensity",
+                    min=0, max=100, step=5, unit="%"
+                ),
+            },
+            presets={
+                "gentle_wash": {"name": "Gentle Wash", "description": "Subtle color breathing",
+                                "params": {"speed": 0.3, "min_saturation": 50, "max_saturation": 100, "depth": 80}},
+                "dramatic_fade": {"name": "Dramatic Fade", "description": "Full color to white",
+                                  "params": {"speed": 0.2, "min_saturation": 0, "max_saturation": 100, "depth": 100}},
+                "quick_shimmer": {"name": "Quick Shimmer", "description": "Fast saturation flicker",
+                                  "params": {"speed": 2.0, "min_saturation": 60, "max_saturation": 100, "depth": 70}},
+            }
+        ))
+
+        # ─────────────────────────────────────────────────────────
+        # COLOR FADE - Cycle through palette
+        # ─────────────────────────────────────────────────────────
+        self.register(ModifierSchema(
+            type="color_fade",
+            name="Color Fade",
+            description="Smoothly cycle through a color palette",
+            icon="paintbrush",
+            category="color",
+            params={
+                "speed": ParamSchema(
+                    name="speed", type="float", default=0.2,
+                    label="Speed", description="Cycle speed",
+                    min=0.05, max=2.0, step=0.05, unit="Hz"
+                ),
+                "depth": ParamSchema(
+                    name="depth", type="int", default=100,
+                    label="Depth", description="Effect intensity",
+                    min=0, max=100, step=5, unit="%"
+                ),
+            },
+            presets={
+                "sunset": {"name": "Sunset", "description": "Warm sunset colors",
+                           "params": {"speed": 0.1, "colors": [[255,69,0], [255,140,0], [255,200,0], [255,100,50]], "depth": 100}},
+                "ocean": {"name": "Ocean", "description": "Cool ocean blues",
+                          "params": {"speed": 0.15, "colors": [[0,50,255], [0,150,200], [0,200,180], [0,100,255]], "depth": 100}},
+                "forest": {"name": "Forest", "description": "Natural greens",
+                           "params": {"speed": 0.08, "colors": [[0,100,0], [50,150,0], [0,200,50], [80,180,0]], "depth": 100}},
+                "neon": {"name": "Neon", "description": "Vibrant neon colors",
+                         "params": {"speed": 0.3, "colors": [[255,0,100], [0,255,200], [255,0,255], [0,200,255]], "depth": 100}},
+            }
+        ))
+
+        # ─────────────────────────────────────────────────────────
+        # GRADIENT - Position-based color across fixtures
+        # ─────────────────────────────────────────────────────────
+        self.register(ModifierSchema(
+            type="gradient",
+            name="Gradient",
+            description="Color gradient distributed across fixtures",
+            icon="blend",
+            category="color",
+            params={
+                "speed": ParamSchema(
+                    name="speed", type="float", default=0.2,
+                    label="Speed", description="Animation speed",
+                    min=0.05, max=2.0, step=0.05, unit="Hz"
+                ),
+                "spread": ParamSchema(
+                    name="spread", type="int", default=100,
+                    label="Spread", description="Color spread across fixtures",
+                    min=10, max=100, step=10, unit="%"
+                ),
+                "depth": ParamSchema(
+                    name="depth", type="int", default=100,
+                    label="Depth", description="Effect intensity",
+                    min=0, max=100, step=5, unit="%"
+                ),
+            },
+            presets={
+                "fire_gradient": {"name": "Fire", "description": "Red to orange to yellow",
+                                  "params": {"speed": 0.15, "colors": [[255,0,0], [255,100,0], [255,200,0]], "spread": 80, "depth": 100}},
+                "ocean_gradient": {"name": "Ocean", "description": "Deep blue to cyan",
+                                   "params": {"speed": 0.1, "colors": [[0,0,150], [0,100,200], [0,200,255]], "spread": 100, "depth": 100}},
+                "aurora": {"name": "Aurora", "description": "Northern lights gradient",
+                           "params": {"speed": 0.08, "colors": [[0,255,100], [0,150,255], [150,0,255], [0,255,200]], "spread": 100, "depth": 100}},
+            }
+        ))
+
+        # ─────────────────────────────────────────────────────────
+        # SCANNER - Knight Rider beam
+        # ─────────────────────────────────────────────────────────
+        self.register(ModifierSchema(
+            type="scanner",
+            name="Scanner",
+            description="Knight Rider style beam scanning across fixtures",
+            icon="scan-line",
+            category="motion",
+            params={
+                "speed": ParamSchema(
+                    name="speed", type="float", default=1.5,
+                    label="Speed", description="Scan speed",
+                    min=0.5, max=5.0, step=0.1, unit="Hz"
+                ),
+                "width": ParamSchema(
+                    name="width", type="int", default=2,
+                    label="Width", description="Beam width in fixtures",
+                    min=1, max=5, step=1, unit="fixtures"
+                ),
+                "direction": ParamSchema(
+                    name="direction", type="enum", default="bounce",
+                    label="Direction", description="Scan direction",
+                    options=["bounce", "forward", "backward"]
+                ),
+                "depth": ParamSchema(
+                    name="depth", type="int", default=100,
+                    label="Depth", description="Effect intensity",
+                    min=0, max=100, step=5, unit="%"
+                ),
+            },
+            presets={
+                "knight_rider": {"name": "Knight Rider", "description": "Classic bouncing scanner",
+                                 "params": {"speed": 1.5, "width": 2, "direction": "bounce", "depth": 100}},
+                "slow_scan": {"name": "Slow Scan", "description": "Wide slow sweep",
+                              "params": {"speed": 0.5, "width": 3, "direction": "bounce", "depth": 100}},
+                "fast_chase": {"name": "Fast Chase", "description": "Quick forward scan",
+                               "params": {"speed": 3.0, "width": 1, "direction": "forward", "depth": 100}},
+            }
+        ))
+
+        # ─────────────────────────────────────────────────────────
+        # SPARKLE - Random white flashes
+        # ─────────────────────────────────────────────────────────
+        self.register(ModifierSchema(
+            type="sparkle",
+            name="Sparkle",
+            description="Random fixtures flash to white briefly",
+            icon="sparkles",
+            category="random",
+            params={
+                "density": ParamSchema(
+                    name="density", type="int", default=30,
+                    label="Density", description="How many fixtures sparkle at once",
+                    min=5, max=80, step=5, unit="%"
+                ),
+                "flash_duration": ParamSchema(
+                    name="flash_duration", type="int", default=200,
+                    label="Flash Duration", description="How long each sparkle lasts",
+                    min=50, max=500, step=25, unit="ms"
+                ),
+                "depth": ParamSchema(
+                    name="depth", type="int", default=100,
+                    label="Depth", description="Effect intensity",
+                    min=0, max=100, step=5, unit="%"
+                ),
+            },
+            presets={
+                "gentle_sparkle": {"name": "Gentle Sparkle", "description": "Subtle occasional sparkles",
+                                   "params": {"density": 15, "flash_duration": 300, "depth": 70}},
+                "disco": {"name": "Disco", "description": "Dense rapid sparkles",
+                          "params": {"density": 60, "flash_duration": 100, "depth": 100}},
+                "stars": {"name": "Stars", "description": "Slow twinkling stars",
+                          "params": {"density": 20, "flash_duration": 400, "depth": 80}},
+            }
+        ))
+
+        # ─────────────────────────────────────────────────────────
+        # LIGHTNING - Sudden random bright flashes
+        # ─────────────────────────────────────────────────────────
+        self.register(ModifierSchema(
+            type="lightning",
+            name="Lightning",
+            description="Sudden bright flashes with random timing",
+            icon="cloud-lightning",
+            category="random",
+            params={
+                "frequency": ParamSchema(
+                    name="frequency", type="float", default=0.5,
+                    label="Frequency", description="Average flashes per second",
+                    min=0.1, max=2.0, step=0.1, unit="Hz"
+                ),
+                "intensity": ParamSchema(
+                    name="intensity", type="int", default=100,
+                    label="Intensity", description="Flash brightness",
+                    min=50, max=100, step=5, unit="%"
+                ),
+                "decay": ParamSchema(
+                    name="decay", type="int", default=200,
+                    label="Decay", description="Flash fade-out time",
+                    min=50, max=500, step=25, unit="ms"
+                ),
+                "depth": ParamSchema(
+                    name="depth", type="int", default=100,
+                    label="Depth", description="Effect intensity",
+                    min=0, max=100, step=5, unit="%"
+                ),
+            },
+            presets={
+                "storm": {"name": "Storm", "description": "Frequent intense flashes",
+                          "params": {"frequency": 1.5, "intensity": 100, "decay": 150, "depth": 100}},
+                "distant": {"name": "Distant Thunder", "description": "Rare subtle flashes",
+                            "params": {"frequency": 0.2, "intensity": 70, "decay": 400, "depth": 80}},
+                "electric": {"name": "Electric", "description": "Sharp quick flashes",
+                             "params": {"frequency": 0.8, "intensity": 100, "decay": 100, "depth": 100}},
             }
         ))
 

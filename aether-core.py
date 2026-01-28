@@ -7795,12 +7795,15 @@ def play_fixture_effect_endpoint():
     stack = data.get('stack', False)  # If true, add as modifier layer instead of replacing
 
     # Validate mode
-    if mode not in ['chase', 'sync']:
-        return jsonify({'success': False, 'error': f"Invalid mode: {mode}. Must be 'chase' or 'sync'"}), 400
+    if mode not in ['chase', 'sync', 'wave']:
+        return jsonify({'success': False, 'error': f"Invalid mode: {mode}. Must be 'chase', 'sync', or 'wave'"}), 400
 
     # Color effects (base layer) vs Motion effects (can be modifiers)
-    color_effects = ['fixture_rainbow', 'fixture_gradient', 'fixture_pulse', 'fixture_chase']
-    motion_effects = ['strobe', 'wave', 'sweep_lr', 'sweep_rl', 'random']
+    color_effects = ['fixture_rainbow', 'fixture_gradient', 'fixture_pulse', 'fixture_chase',
+                     'fixture_hue_shift', 'fixture_color_temp', 'fixture_saturation_pulse',
+                     'fixture_color_fade']
+    motion_effects = ['strobe', 'wave', 'sweep_lr', 'sweep_rl', 'random',
+                      'fixture_scanner', 'fixture_sparkle', 'fixture_lightning']
     valid_effects = color_effects + motion_effects
 
     if effect_type not in valid_effects:
@@ -7878,6 +7881,39 @@ def stop_fixture_effect_endpoint():
 
         return jsonify({'success': True})
     except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/effects/fixture/params', methods=['PATCH'])
+def update_fixture_effect_params():
+    """
+    Update parameters of a running fixture effect without restarting it.
+
+    Request body:
+    {
+        "session_id": "fixture_effect_...",
+        "params": { "speed": 0.5, "depth": 75 }
+    }
+    """
+    data = request.get_json() or {}
+    session_id = data.get('session_id')
+    params = data.get('params', {})
+
+    if not session_id:
+        return jsonify({'success': False, 'error': 'session_id is required'}), 400
+
+    try:
+        from unified_playback import unified_engine
+
+        session = unified_engine.get_session(session_id)
+        if not session:
+            return jsonify({'success': False, 'error': f'Session not found: {session_id}'}), 404
+
+        # Update the effect params in the session's effect_params dict
+        session.effect_params.update(params)
+
+        return jsonify({'success': True, 'session_id': session_id, 'updated_params': params})
+    except Exception as e:
+        print(f"❌ Fixture effect param update error: {e}", flush=True)
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/effects/fixture/types', methods=['GET'])
@@ -7983,11 +8019,108 @@ def get_fixture_effect_types():
                     'tail_length': {'type': 'int', 'default': 2, 'min': 0, 'max': 10, 'description': 'Trailing fixtures'},
                     'bg_color': {'type': 'rgb', 'default': [0, 0, 0], 'description': 'Background color'}
                 }
+            },
+            # ── New Color Modifier Effects ──
+            {
+                'id': 'fixture_hue_shift',
+                'name': 'Hue Shift',
+                'description': 'Rotates the hue of the active color',
+                'category': 'color',
+                'params': {
+                    'speed': {'type': 'float', 'default': 0.2, 'min': 0.02, 'max': 2.0, 'description': 'Rotation speed (Hz)'},
+                    'range': {'type': 'float', 'default': 360, 'min': 30, 'max': 360, 'description': 'Hue range (degrees)'},
+                    'offset': {'type': 'float', 'default': 0, 'min': 0, 'max': 360, 'description': 'Starting hue offset'},
+                    'depth': {'type': 'float', 'default': 100, 'min': 0, 'max': 100, 'description': 'Effect depth (%)'}
+                }
+            },
+            {
+                'id': 'fixture_color_temp',
+                'name': 'Color Temp',
+                'description': 'Shifts warm (amber) or cool (blue)',
+                'category': 'color',
+                'params': {
+                    'temperature': {'type': 'float', 'default': 0, 'min': -100, 'max': 100, 'description': 'Cool (-100) to warm (+100)'},
+                    'speed': {'type': 'float', 'default': 0, 'min': 0, 'max': 2.0, 'description': 'Animation speed (0 = static)'},
+                    'depth': {'type': 'float', 'default': 100, 'min': 0, 'max': 100, 'description': 'Effect depth (%)'}
+                }
+            },
+            {
+                'id': 'fixture_saturation_pulse',
+                'name': 'Saturation Pulse',
+                'description': 'Breathes between color and white',
+                'category': 'color',
+                'params': {
+                    'speed': {'type': 'float', 'default': 0.5, 'min': 0.1, 'max': 3.0, 'description': 'Pulse speed (Hz)'},
+                    'min_saturation': {'type': 'float', 'default': 20, 'min': 0, 'max': 100, 'description': 'Minimum saturation (%)'},
+                    'max_saturation': {'type': 'float', 'default': 100, 'min': 50, 'max': 100, 'description': 'Maximum saturation (%)'},
+                    'depth': {'type': 'float', 'default': 100, 'min': 0, 'max': 100, 'description': 'Effect depth (%)'}
+                }
+            },
+            {
+                'id': 'fixture_color_fade',
+                'name': 'Color Fade',
+                'description': 'Cycles through a color palette',
+                'category': 'color',
+                'params': {
+                    'speed': {'type': 'float', 'default': 0.2, 'min': 0.05, 'max': 2.0, 'description': 'Cycle speed (Hz)'},
+                    'colors': {'type': 'color_array', 'default': [[255,0,0],[255,165,0],[255,255,0],[0,255,0],[0,0,255],[128,0,255]], 'description': 'Color palette'},
+                    'depth': {'type': 'float', 'default': 100, 'min': 0, 'max': 100, 'description': 'Effect depth (%)'}
+                }
+            },
+            {
+                'id': 'fixture_gradient',
+                'name': 'Gradient',
+                'description': 'Color gradient across fixtures',
+                'category': 'color',
+                'params': {
+                    'speed': {'type': 'float', 'default': 0.2, 'min': 0.05, 'max': 2.0, 'description': 'Movement speed (Hz)'},
+                    'colors': {'type': 'color_array', 'default': [[255,0,0],[0,0,255]], 'description': 'Gradient colors'},
+                    'spread': {'type': 'float', 'default': 100, 'min': 10, 'max': 100, 'description': 'Spread across fixtures (%)'},
+                    'depth': {'type': 'float', 'default': 100, 'min': 0, 'max': 100, 'description': 'Effect depth (%)'}
+                }
+            },
+            # ── New Motion/Random Effects ──
+            {
+                'id': 'fixture_scanner',
+                'name': 'Scanner',
+                'description': 'Knight Rider style beam scanner',
+                'category': 'motion',
+                'params': {
+                    'speed': {'type': 'float', 'default': 1.0, 'min': 0.5, 'max': 5.0, 'description': 'Scan speed (Hz)'},
+                    'width': {'type': 'int', 'default': 2, 'min': 1, 'max': 5, 'description': 'Beam width (fixtures)'},
+                    'direction': {'type': 'select', 'default': 'bounce', 'options': ['bounce', 'forward', 'backward'], 'description': 'Scan direction'},
+                    'depth': {'type': 'float', 'default': 100, 'min': 0, 'max': 100, 'description': 'Effect depth (%)'}
+                }
+            },
+            {
+                'id': 'fixture_sparkle',
+                'name': 'Sparkle',
+                'description': 'Random fixtures flash to white',
+                'category': 'random',
+                'params': {
+                    'density': {'type': 'float', 'default': 30, 'min': 5, 'max': 80, 'description': 'Sparkle density (%)'},
+                    'flash_duration': {'type': 'float', 'default': 150, 'min': 50, 'max': 500, 'description': 'Flash duration (ms)'},
+                    'color': {'type': 'rgb', 'default': [255, 255, 255], 'description': 'Sparkle color (null = white)'},
+                    'depth': {'type': 'float', 'default': 100, 'min': 0, 'max': 100, 'description': 'Effect depth (%)'}
+                }
+            },
+            {
+                'id': 'fixture_lightning',
+                'name': 'Lightning',
+                'description': 'Random bright flashes with decay',
+                'category': 'random',
+                'params': {
+                    'frequency': {'type': 'float', 'default': 0.5, 'min': 0.1, 'max': 2.0, 'description': 'Flashes per second'},
+                    'intensity': {'type': 'float', 'default': 100, 'min': 50, 'max': 100, 'description': 'Flash intensity (%)'},
+                    'decay': {'type': 'float', 'default': 200, 'min': 50, 'max': 500, 'description': 'Fade-out time (ms)'},
+                    'depth': {'type': 'float', 'default': 100, 'min': 0, 'max': 100, 'description': 'Effect depth (%)'}
+                }
             }
         ],
         'modes': [
             {'id': 'chase', 'name': 'Chase', 'description': 'Each fixture gets a phase offset - effect travels across fixtures'},
-            {'id': 'sync', 'name': 'Sync', 'description': 'All fixtures show the same value simultaneously'}
+            {'id': 'sync', 'name': 'Sync', 'description': 'All fixtures show the same value simultaneously'},
+            {'id': 'wave', 'name': 'Wave', 'description': 'Smooth sine wave offset across fixtures'}
         ]
     })
 
