@@ -3068,23 +3068,15 @@ class ContentManager:
         All nodes receive complete universe data for their slice.
         Missing channels default to their SSOT value (or 0 if never set).
         """
-        print(f"🎛️ set_channels: U{universe}, {len(channels)} ch update, fade={fade_ms}ms", flush=True)
-
         # Update SSOT with the channel changes
         dmx_state.set_channels(universe, channels, fade_ms=fade_ms)
 
         # Build full 512-channel frame from SSOT
         full_frame = dmx_state.get_output_values(universe)
 
-        # Count non-zero for logging
-        non_zero_count = sum(1 for v in full_frame if v > 0)
-        print(f"📤 SSOT U{universe}: 512 ch frame ({non_zero_count} non-zero)", flush=True)
-
         nodes = node_manager.get_nodes_in_universe(universe)
-        print(f"📍 Found {len(nodes)} nodes in universe {universe}", flush=True)
 
         if not nodes:
-            print(f"⚠️ No online nodes in universe {universe}", flush=True)
             return {'success': True, 'results': []}
 
         # Send full frame to each node via UDPJSON
@@ -3112,7 +3104,6 @@ class ContentManager:
                 node_channels[str(ch)] = value
 
             node_non_zero = sum(1 for v in node_channels.values() if v > 0)
-            print(f"  📡 {node['name']} ({node_ip}): ch {slice_start}-{slice_end} ({node_non_zero} non-zero, {len(node_channels)} sent)", flush=True)
 
             if fade_ms > 0:
                 success = node_manager.send_udpjson_fade(node_ip, universe, node_channels, fade_ms)
@@ -9346,69 +9337,69 @@ if __name__ == '__main__':
     # node_manager.start_dmx_refresh()  # Disabled - UDPJSON is on-demand
 
     # Initialize Unified Playback Engine
+    # Cache for fixture expansion (refreshed every 5 seconds)
+    _fixture_cache = {}
+    _fixture_cache_time = 0
+
     def unified_output_callback(universe: int, channels: dict, fade_ms: int = 0):
-        """Route unified playback output through SSOT with fixture-aware expansion.
+        """Route unified playback output directly to dmx_state (SSOT).
 
-        If the channels represent a single-fixture pattern (e.g., channels 1-4),
-        automatically expand to all fixtures in the universe using their actual
-        start channels from the database.
+        The 40Hz refresh loop handles actual UDP output to nodes.
+        This avoids double-sending and blocking I/O in the render path.
 
+        Handles fixture-aware expansion: if channels represent a single-fixture
+        pattern (e.g., channels 1-4), expands to all fixtures in the universe.
         Handles both simple channel keys (1, 2, 3) and universe:channel format (4:1, 4:2).
         """
+        nonlocal _fixture_cache, _fixture_cache_time
+
         if not channels:
-            content_manager.set_channels(universe, channels, fade_ms=fade_ms)
             return
 
-        # Helper to parse channel key - handles both "1" and "4:1" formats
-        def parse_channel_key(key, target_universe):
-            key_str = str(key)
-            if ':' in key_str:
-                # Format: "universe:channel" - only include if universe matches
-                parts = key_str.split(':')
-                if int(parts[0]) == target_universe:
-                    return int(parts[1])
-                return None  # Wrong universe
-            else:
-                # Simple channel number
-                try:
-                    return int(key_str)
-                except ValueError:
-                    return None
-
-        # Parse channels, filtering by universe
+        # Parse channel keys — handle both "1" and "4:1" formats
         parsed_channels = {}
         for key, value in channels.items():
-            ch = parse_channel_key(key, universe)
-            if ch is not None:
-                parsed_channels[ch] = value
+            key_str = str(key)
+            if ':' in key_str:
+                parts = key_str.split(':')
+                if int(parts[0]) == universe:
+                    parsed_channels[int(parts[1])] = value
+            else:
+                try:
+                    parsed_channels[int(key_str)] = value
+                except ValueError:
+                    pass
 
         if not parsed_channels:
-            content_manager.set_channels(universe, channels, fade_ms=fade_ms)
             return
 
-        # Get fixtures for this universe to expand pattern intelligently
-        fixtures = content_manager.get_fixtures(universe)
+        # Refresh fixture cache every 5 seconds (not per frame)
+        now = time.monotonic()
+        if now - _fixture_cache_time > 5.0:
+            try:
+                _fixture_cache = {}
+                for f in content_manager.get_fixtures():
+                    u = f.get('universe', 1)
+                    if u not in _fixture_cache:
+                        _fixture_cache[u] = []
+                    _fixture_cache[u].append(f)
+                _fixture_cache_time = now
+            except Exception:
+                pass
 
+        # Expand single-fixture patterns to all fixtures
+        fixtures = _fixture_cache.get(universe, [])
         if fixtures and len(fixtures) > 1:
-            # Detect if this is a single-fixture pattern that should be expanded
             ch_nums = sorted(parsed_channels.keys())
             if ch_nums:
-                min_ch = min(ch_nums)
-                max_ch = max(ch_nums)
-                pattern_size = max_ch - min_ch + 1
-
-                # Only expand if pattern is fixture-sized (1-8 channels typical)
+                pattern_size = max(ch_nums) - min(ch_nums) + 1
                 if pattern_size <= 8:
-                    # Build base pattern normalized to offset 0
                     base_pattern = {}
                     for ch, value in parsed_channels.items():
-                        offset = (ch - 1) % pattern_size
-                        base_pattern[offset] = value
+                        base_pattern[(ch - 1) % pattern_size] = value
 
-                    # Expand to all fixtures
                     expanded = {}
-                    fixtures = sorted(fixtures, key=lambda f: f.get('start_channel', 1))
-                    for fix in fixtures:
+                    for fix in sorted(fixtures, key=lambda f: f.get('start_channel', 1)):
                         start = fix.get('start_channel', 1)
                         count = fix.get('channel_count', pattern_size)
                         for offset, value in base_pattern.items():
@@ -9418,7 +9409,8 @@ if __name__ == '__main__':
                     if expanded:
                         parsed_channels = expanded
 
-        content_manager.set_channels(universe, parsed_channels, fade_ms=fade_ms)
+        # Write directly to dmx_state — the refresh loop handles UDP output
+        dmx_state.set_channels(universe, parsed_channels, fade_ms=fade_ms)
 
     def unified_look_resolver(look_id: str):
         """Resolve Look ID to Look data"""
