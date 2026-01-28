@@ -9326,6 +9326,123 @@ def ai_audit():
 @app.route('/api/ai/ops', methods=['GET'])
 def ai_ops():
     return jsonify({'ops': ai_ops_registry.list_ops()})
+
+@app.route('/api/ai/optimize-playback', methods=['POST'])
+def ai_optimize_playback():
+    """
+    AI-powered playback optimization suggestions.
+    Takes current playback state and an intent/vibe, returns effect suggestions.
+    """
+    data = request.get_json() or {}
+    current_state = data.get('current_state', {})
+    intent = data.get('intent', '')
+
+    # Map vibes to effect suggestions
+    VIBE_EFFECTS = {
+        'chill': {
+            'explanation': 'Adding gentle color fades and subtle pulse for a relaxed atmosphere.',
+            'changes': [
+                {'type': 'add_effect', 'effect_id': 'fixture_color_fade', 'params': {'speed': 0.1, 'depth': 60}},
+                {'type': 'add_effect', 'effect_id': 'fixture_pulse', 'params': {'speed': 0.3, 'depth': 30}},
+            ]
+        },
+        'party': {
+            'explanation': 'Cranking up the energy with rainbow chase and strobe accents!',
+            'changes': [
+                {'type': 'add_effect', 'effect_id': 'fixture_rainbow', 'params': {'speed': 0.5, 'depth': 100}},
+                {'type': 'add_effect', 'effect_id': 'fixture_chase', 'params': {'speed': 4, 'depth': 100}},
+            ]
+        },
+        'romantic': {
+            'explanation': 'Warm, gentle pulses with color temperature shift for intimacy.',
+            'changes': [
+                {'type': 'add_effect', 'effect_id': 'fixture_color_temp', 'params': {'temperature': 80, 'depth': 70}},
+                {'type': 'add_effect', 'effect_id': 'fixture_pulse', 'params': {'speed': 0.2, 'depth': 40}},
+            ]
+        },
+        'dramatic': {
+            'explanation': 'Bold contrasts with lightning effects and scanner sweeps.',
+            'changes': [
+                {'type': 'add_effect', 'effect_id': 'fixture_lightning', 'params': {'frequency': 0.8, 'depth': 100}},
+                {'type': 'add_effect', 'effect_id': 'fixture_scanner', 'params': {'speed': 2, 'depth': 80}},
+            ]
+        },
+        'concert': {
+            'explanation': 'High-energy strobes and chase patterns like a live show.',
+            'changes': [
+                {'type': 'add_effect', 'effect_id': 'strobe', 'params': {'speed': 0.2, 'depth': 80}},
+                {'type': 'add_effect', 'effect_id': 'fixture_chase', 'params': {'speed': 6, 'depth': 100}},
+            ]
+        },
+        'sunset': {
+            'explanation': 'Warm color temperature fading through golden hour hues.',
+            'changes': [
+                {'type': 'add_effect', 'effect_id': 'fixture_color_temp', 'params': {'temperature': 100, 'depth': 80}},
+                {'type': 'add_effect', 'effect_id': 'fixture_hue_shift', 'params': {'speed': 0.05, 'depth': 50}},
+            ]
+        },
+        'focus': {
+            'explanation': 'Clean, steady lighting with minimal distraction.',
+            'changes': [
+                {'type': 'add_effect', 'effect_id': 'fixture_color_temp', 'params': {'temperature': -30, 'depth': 40}},
+            ]
+        },
+        'spooky': {
+            'explanation': 'Eerie flickers and cold color shifts for Halloween vibes.',
+            'changes': [
+                {'type': 'add_effect', 'effect_id': 'fixture_lightning', 'params': {'frequency': 0.3, 'depth': 100}},
+                {'type': 'add_effect', 'effect_id': 'fixture_color_temp', 'params': {'temperature': -80, 'depth': 60}},
+            ]
+        },
+    }
+
+    # Check if it's a preset vibe
+    if intent.lower() in VIBE_EFFECTS:
+        return jsonify(VIBE_EFFECTS[intent.lower()])
+
+    # For custom text intents, do simple keyword matching
+    intent_lower = intent.lower()
+
+    if any(w in intent_lower for w in ['relax', 'calm', 'chill', 'soft', 'gentle']):
+        return jsonify(VIBE_EFFECTS['chill'])
+    elif any(w in intent_lower for w in ['party', 'dance', 'energy', 'exciting', 'fun']):
+        return jsonify(VIBE_EFFECTS['party'])
+    elif any(w in intent_lower for w in ['romantic', 'intimate', 'love', 'date', 'cozy']):
+        return jsonify(VIBE_EFFECTS['romantic'])
+    elif any(w in intent_lower for w in ['dramatic', 'intense', 'powerful', 'bold']):
+        return jsonify(VIBE_EFFECTS['dramatic'])
+    elif any(w in intent_lower for w in ['concert', 'show', 'performance', 'live']):
+        return jsonify(VIBE_EFFECTS['concert'])
+    elif any(w in intent_lower for w in ['sunset', 'warm', 'golden', 'evening']):
+        return jsonify(VIBE_EFFECTS['sunset'])
+    elif any(w in intent_lower for w in ['focus', 'work', 'study', 'clean', 'bright']):
+        return jsonify(VIBE_EFFECTS['focus'])
+    elif any(w in intent_lower for w in ['spooky', 'halloween', 'scary', 'creepy', 'horror']):
+        return jsonify(VIBE_EFFECTS['spooky'])
+    elif any(w in intent_lower for w in ['rainbow', 'colorful', 'color']):
+        return jsonify({
+            'explanation': 'Adding vibrant rainbow colors that cycle through the spectrum.',
+            'changes': [
+                {'type': 'add_effect', 'effect_id': 'fixture_rainbow', 'params': {'speed': 0.3, 'depth': 100}},
+            ]
+        })
+    elif any(w in intent_lower for w in ['pulse', 'beat', 'rhythm']):
+        return jsonify({
+            'explanation': 'Adding rhythmic pulses to match the beat.',
+            'changes': [
+                {'type': 'add_effect', 'effect_id': 'fixture_pulse', 'params': {'speed': 1.0, 'depth': 80}},
+            ]
+        })
+    else:
+        # Default suggestion
+        return jsonify({
+            'explanation': f'Based on "{intent}", adding some dynamic color and movement.',
+            'changes': [
+                {'type': 'add_effect', 'effect_id': 'fixture_color_fade', 'params': {'speed': 0.2, 'depth': 70}},
+                {'type': 'add_effect', 'effect_id': 'wave', 'params': {'speed': 0.5, 'depth': 50}},
+            ]
+        })
+
 # ============================================================
 # WebSocket Events
 # ============================================================
