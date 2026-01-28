@@ -1698,6 +1698,18 @@ def init_database():
         FOREIGN KEY (device_uid) REFERENCES rdm_devices(uid)
     )''')
 
+    # Node Groups - logical groupings of physical nodes acting as one universe
+    c.execute('''CREATE TABLE IF NOT EXISTS node_groups (
+        group_id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        channel_mode TEXT DEFAULT 'auto',
+        manual_channel_count INTEGER DEFAULT 512,
+        node_order TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )''')
+
     conn.commit()
 
     # Add synced_to_nodes column if missing (migration)
@@ -1747,6 +1759,30 @@ def init_database():
         c.execute('ALTER TABLE nodes ADD COLUMN slice_mode TEXT DEFAULT \'zero_outside\'')
         conn.commit()
         print("✓ Added slice_mode column to nodes table")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
+    # Add group_id to nodes table (for Node Groups feature)
+    try:
+        c.execute('ALTER TABLE nodes ADD COLUMN group_id TEXT REFERENCES node_groups(group_id)')
+        conn.commit()
+        print("✓ Added group_id column to nodes table")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
+    # Add channel_offset to nodes table (position within node group)
+    try:
+        c.execute('ALTER TABLE nodes ADD COLUMN channel_offset INTEGER DEFAULT 0')
+        conn.commit()
+        print("✓ Added channel_offset column to nodes table")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
+    # Add channel_ceiling to nodes table (calculated max channel needed)
+    try:
+        c.execute('ALTER TABLE nodes ADD COLUMN channel_ceiling INTEGER DEFAULT 512')
+        conn.commit()
+        print("✓ Added channel_ceiling column to nodes table")
     except sqlite3.OperationalError:
         pass  # Column already exists
 
@@ -2051,27 +2087,49 @@ class NodeManager:
         print("⏹️ DMX Refresh: Stopped")
 
     def _refresh_node_cache(self):
-        """Background refresh of node-to-universe mapping (runs off render thread)."""
+        """Background refresh of node-to-universe mapping (runs off render thread).
+
+        Now also calculates and caches channel_ceiling for each node based on fixtures.
+        This enables smart channel optimization - only send channels that are actually used.
+        """
         while self._refresh_running:
             try:
                 conn = get_db()
                 c = conn.cursor()
+
+                # First, calculate and update channel ceilings for all nodes based on fixtures
                 c.execute("""
-                    SELECT universe, ip, channel_start, channel_end, via_seance, seance_ip
+                    SELECT n.node_id, n.universe, MAX(f.start_channel + f.channel_count - 1) as max_ch
+                    FROM nodes n
+                    LEFT JOIN fixtures f ON f.universe = n.universe
+                    WHERE n.is_paired = 1 AND n.ip IS NOT NULL
+                    GROUP BY n.node_id
+                """)
+                for row in c.fetchall():
+                    node_id, universe, max_ch = row
+                    # Add 16 channel buffer, minimum 1, max 512
+                    ceiling = min(512, max(1, (max_ch or 0) + 16))
+                    c.execute('UPDATE nodes SET channel_ceiling = ? WHERE node_id = ?', (ceiling, node_id))
+                conn.commit()
+
+                # Now fetch node cache with channel_ceiling
+                c.execute("""
+                    SELECT universe, ip, channel_start, channel_end, via_seance, seance_ip, channel_ceiling
                     FROM nodes
                     WHERE is_paired = 1 AND ip IS NOT NULL AND type = 'wifi'
                 """)
                 new_cache = {}
                 for row in c.fetchall():
-                    u, ip, ch_start, ch_end, via_seance, seance_ip = row
+                    u, ip, ch_start, ch_end, via_seance, seance_ip, ceiling = row
                     if u == 1:
                         continue
                     if u not in new_cache:
                         new_cache[u] = []
                     target_ip = seance_ip if via_seance and seance_ip else ip
                     s = ch_start or 1
-                    e = ch_end or 512
-                    new_cache[u].append((target_ip, s, e, ip, via_seance))
+                    # Use channel_ceiling if set and in auto mode, otherwise use channel_end
+                    e = min(ch_end or 512, ceiling or 512)
+                    new_cache[u].append((target_ip, s, e, ip, via_seance, ceiling or 512))
                 conn.close()
                 self._node_cache = new_cache
             except Exception as ex:
@@ -2121,13 +2179,25 @@ class NodeManager:
 
                     # Send to each node in this universe via UDPJSON
                     nodes = universe_to_nodes.get(universe, [])
-                    for target_ip, slice_start, slice_end, original_ip, via_seance in nodes:
+                    for node_data in nodes:
+                        # Unpack node data (now includes ceiling)
+                        if len(node_data) == 6:
+                            target_ip, slice_start, slice_end, original_ip, via_seance, ceiling = node_data
+                        else:
+                            # Backwards compatibility
+                            target_ip, slice_start, slice_end, original_ip, via_seance = node_data
+                            ceiling = slice_end
+
                         node_key = f"{universe}:{target_ip}"
                         prev_sent = self._last_sent.get(node_key, {})
 
+                        # Smart channel optimization: only send up to ceiling
+                        # This reduces network traffic significantly when only a few fixtures are used
+                        effective_end = min(slice_end, ceiling)
+
                         # Build channels dict: include non-zero AND channels that changed to zero
                         node_channels = {}
-                        for ch in range(slice_start, slice_end + 1):
+                        for ch in range(slice_start, effective_end + 1):
                             val = dmx_values[ch - 1]
                             ch_str = str(ch)
                             if val > 0:
@@ -4745,6 +4815,225 @@ def sync_all_nodes():
     """Force sync content to all nodes"""
     threading.Thread(target=node_manager.sync_all_content, daemon=True).start()
     return jsonify({'success': True, 'message': 'Full sync started'})
+
+# ─────────────────────────────────────────────────────────
+# Node Groups - Logical groupings of physical nodes
+# ─────────────────────────────────────────────────────────
+@app.route('/api/node-groups', methods=['GET'])
+def get_node_groups():
+    """List all node groups with their nodes and computed stats"""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('SELECT * FROM node_groups ORDER BY name')
+    groups = [dict(row) for row in c.fetchall()]
+
+    # Enrich with nodes and stats
+    for group in groups:
+        c.execute('SELECT * FROM nodes WHERE group_id = ? ORDER BY channel_offset', (group['group_id'],))
+        group['nodes'] = [dict(row) for row in c.fetchall()]
+        group['node_count'] = len(group['nodes'])
+        group['total_capacity'] = len(group['nodes']) * 512
+
+        # Calculate channel ceiling (highest used channel across fixtures in this group)
+        c.execute('''SELECT MAX(start_channel + channel_count - 1) as max_ch
+                     FROM fixtures WHERE universe IN (
+                         SELECT universe FROM nodes WHERE group_id = ?
+                     )''', (group['group_id'],))
+        result = c.fetchone()
+        group['channel_ceiling'] = result['max_ch'] if result and result['max_ch'] else 0
+
+        # Count fixtures in this group
+        c.execute('''SELECT COUNT(*) as cnt FROM fixtures WHERE universe IN (
+                         SELECT universe FROM nodes WHERE group_id = ?
+                     )''', (group['group_id'],))
+        result = c.fetchone()
+        group['fixture_count'] = result['cnt'] if result else 0
+
+    conn.close()
+    return jsonify(groups)
+
+@app.route('/api/node-groups', methods=['POST'])
+def create_node_group():
+    """Create a new node group"""
+    data = request.get_json() or {}
+    group_id = str(uuid.uuid4())
+    now = datetime.now().isoformat()
+
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('''INSERT INTO node_groups (group_id, name, description, channel_mode, manual_channel_count, created_at, updated_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)''',
+              (group_id, data.get('name', 'New Group'), data.get('description', ''),
+               data.get('channel_mode', 'auto'), data.get('manual_channel_count', 512), now, now))
+    conn.commit()
+    conn.close()
+
+    return jsonify({'success': True, 'group_id': group_id})
+
+@app.route('/api/node-groups/<group_id>', methods=['GET'])
+def get_node_group(group_id):
+    """Get a single node group with full details"""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('SELECT * FROM node_groups WHERE group_id = ?', (group_id,))
+    group = c.fetchone()
+    if not group:
+        conn.close()
+        return jsonify({'error': 'Node group not found'}), 404
+
+    group = dict(group)
+
+    # Get nodes in this group
+    c.execute('SELECT * FROM nodes WHERE group_id = ? ORDER BY channel_offset', (group_id,))
+    group['nodes'] = [dict(row) for row in c.fetchall()]
+
+    # Get fixtures in this group (via node universes)
+    c.execute('''SELECT f.*, n.name as node_name FROM fixtures f
+                 JOIN nodes n ON f.universe = n.universe
+                 WHERE n.group_id = ?
+                 ORDER BY f.start_channel''', (group_id,))
+    group['fixtures'] = [dict(row) for row in c.fetchall()]
+
+    conn.close()
+    return jsonify(group)
+
+@app.route('/api/node-groups/<group_id>', methods=['PUT'])
+def update_node_group(group_id):
+    """Update a node group"""
+    data = request.get_json() or {}
+    now = datetime.now().isoformat()
+
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('''UPDATE node_groups SET
+                 name = COALESCE(?, name),
+                 description = COALESCE(?, description),
+                 channel_mode = COALESCE(?, channel_mode),
+                 manual_channel_count = COALESCE(?, manual_channel_count),
+                 node_order = COALESCE(?, node_order),
+                 updated_at = ?
+                 WHERE group_id = ?''',
+              (data.get('name'), data.get('description'), data.get('channel_mode'),
+               data.get('manual_channel_count'), data.get('node_order'), now, group_id))
+    conn.commit()
+    conn.close()
+
+    return jsonify({'success': True})
+
+@app.route('/api/node-groups/<group_id>', methods=['DELETE'])
+def delete_node_group(group_id):
+    """Delete a node group (removes nodes from group first)"""
+    conn = get_db()
+    c = conn.cursor()
+
+    # Remove nodes from this group
+    c.execute('UPDATE nodes SET group_id = NULL, channel_offset = 0 WHERE group_id = ?', (group_id,))
+
+    # Delete the group
+    c.execute('DELETE FROM node_groups WHERE group_id = ?', (group_id,))
+    conn.commit()
+    conn.close()
+
+    return jsonify({'success': True})
+
+@app.route('/api/node-groups/<group_id>/nodes', methods=['POST'])
+def add_node_to_group(group_id):
+    """Add a node to a group"""
+    data = request.get_json() or {}
+    node_id = data.get('node_id')
+    if not node_id:
+        return jsonify({'error': 'node_id is required'}), 400
+
+    conn = get_db()
+    c = conn.cursor()
+
+    # Get current max channel_offset in this group
+    c.execute('SELECT MAX(channel_offset) as max_offset FROM nodes WHERE group_id = ?', (group_id,))
+    result = c.fetchone()
+    next_offset = (result['max_offset'] or 0) + 512 if result['max_offset'] is not None else 0
+
+    # Add node to group
+    c.execute('UPDATE nodes SET group_id = ?, channel_offset = ? WHERE node_id = ?',
+              (group_id, next_offset, node_id))
+    conn.commit()
+    conn.close()
+
+    return jsonify({'success': True, 'channel_offset': next_offset})
+
+@app.route('/api/node-groups/<group_id>/nodes/<node_id>', methods=['DELETE'])
+def remove_node_from_group(group_id, node_id):
+    """Remove a node from a group"""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('UPDATE nodes SET group_id = NULL, channel_offset = 0 WHERE node_id = ? AND group_id = ?',
+              (node_id, group_id))
+    conn.commit()
+    conn.close()
+
+    return jsonify({'success': True})
+
+@app.route('/api/node-groups/<group_id>/reorder', methods=['POST'])
+def reorder_nodes_in_group(group_id):
+    """Reorder nodes in a group (updates channel offsets)"""
+    data = request.get_json() or {}
+    node_ids = data.get('node_ids', [])
+
+    conn = get_db()
+    c = conn.cursor()
+
+    # Update channel_offset for each node based on order
+    for i, node_id in enumerate(node_ids):
+        offset = i * 512
+        c.execute('UPDATE nodes SET channel_offset = ? WHERE node_id = ? AND group_id = ?',
+                  (offset, node_id, group_id))
+
+    # Update node_order in group
+    c.execute('UPDATE node_groups SET node_order = ?, updated_at = ? WHERE group_id = ?',
+              (json.dumps(node_ids), datetime.now().isoformat(), group_id))
+
+    conn.commit()
+    conn.close()
+
+    return jsonify({'success': True})
+
+@app.route('/api/node-groups/<group_id>/channel-map', methods=['GET'])
+def get_group_channel_map(group_id):
+    """Get channel usage visualization for a node group"""
+    conn = get_db()
+    c = conn.cursor()
+
+    # Get nodes in group
+    c.execute('SELECT * FROM nodes WHERE group_id = ? ORDER BY channel_offset', (group_id,))
+    nodes = [dict(row) for row in c.fetchall()]
+
+    channel_map = []
+    for node in nodes:
+        # Get fixtures on this node's universe
+        c.execute('''SELECT fixture_id, name, start_channel, channel_count
+                     FROM fixtures WHERE universe = ? ORDER BY start_channel''', (node['universe'],))
+        fixtures = [dict(row) for row in c.fetchall()]
+
+        # Calculate channel ceiling for this node
+        ceiling = 0
+        for f in fixtures:
+            end_ch = f['start_channel'] + f['channel_count'] - 1
+            if end_ch > ceiling:
+                ceiling = end_ch
+
+        channel_map.append({
+            'node_id': node['node_id'],
+            'node_name': node['name'] or node['node_id'],
+            'ip': node['ip'],
+            'universe': node['universe'],
+            'channel_offset': node['channel_offset'],
+            'channel_ceiling': ceiling,
+            'fixtures': fixtures,
+            'used_channels': ceiling,
+            'total_channels': 512
+        })
+
+    conn.close()
+    return jsonify(channel_map)
 
 # ─────────────────────────────────────────────────────────
 # RDM Routes - Remote Device Management
