@@ -1262,7 +1262,11 @@ class UnifiedPlaybackEngine:
             channels_per_fixture = params.get('channels_per_fixture', 4)  # RGBW
             start_channel = params.get('start_channel', 1)
             saturation = params.get('saturation', 1.0)
+            if saturation > 1.0:
+                saturation /= 100.0
             value = params.get('value', 1.0)
+            if value > 1.0:
+                value /= 100.0
 
             # Base hue advances with time
             base_hue = (elapsed * speed) % 1.0
@@ -1345,7 +1349,11 @@ class UnifiedPlaybackEngine:
             mode = session.distribution_mode or params.get('mode', 'chase')
             speed = params.get('speed', 0.2)
             saturation = params.get('saturation', 1.0)
+            if saturation > 1.0:
+                saturation /= 100.0
             value = params.get('value', 1.0)
+            if value > 1.0:
+                value /= 100.0
 
             # Resolve fixtures from database
             fixtures = self._resolve_fixtures(fixture_ids)
@@ -2001,6 +2009,12 @@ class UnifiedPlaybackEngine:
         start_ch = fixture.get('start_channel', 1)
         ch_count = fixture.get('channel_count', 4)
         channel_map = fixture.get('channel_map', [])
+
+        # Clamp RGB to 0.0-1.0 range as safety net
+        r = max(0.0, min(1.0, r))
+        g = max(0.0, min(1.0, g))
+        b = max(0.0, min(1.0, b))
+        brightness = max(0.0, min(1.0, brightness))
 
         if channel_map and len(channel_map) >= 3:
             # Use channel map to find R, G, B, W, Dimmer positions
