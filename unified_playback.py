@@ -2113,10 +2113,22 @@ class SessionFactory:
         """
         steps = []
         for step_data in sequence_data.get('steps', []):
+            # Parse channels - handle both "universe:channel" and simple channel formats
+            raw_channels = step_data.get('channels', {})
+            parsed_channels = {}
+            for k, v in raw_channels.items():
+                if isinstance(k, str) and ':' in k:
+                    # Format is "universe:channel" - extract just the channel number
+                    # The universe info is stored separately in session.universes
+                    _, ch = k.split(':')
+                    parsed_channels[int(ch)] = v
+                else:
+                    parsed_channels[int(k)] = v
+
             step = Step(
                 step_id=step_data.get('step_id', str(len(steps))),
                 name=step_data.get('name', ''),
-                channels={int(k): v for k, v in step_data.get('channels', {}).items()},
+                channels=parsed_channels,
                 look_id=step_data.get('look_id'),
                 modifiers=[Modifier(**m) for m in step_data.get('modifiers', [])],
                 fade_ms=step_data.get('fade_ms', 0),

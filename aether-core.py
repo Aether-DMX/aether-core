@@ -1482,11 +1482,17 @@ class ShowEngine:
         if self.stop_flag.is_set():
             return
 
-        event_type = event.get('type', 'scene')
+        # Support both old format (type) and new format (action_type)
+        event_type = event.get('action_type') or event.get('type', 'scene')
+
+        # Get universes from event if specified, otherwise use default
+        event_universes = event.get('universes', [universe])
+        if isinstance(event_universes, int):
+            event_universes = [event_universes]
 
         try:
             if event_type == 'scene':
-                scene_id = event.get('scene_id')
+                scene_id = event.get('scene_id') or event.get('action_id')
                 fade_ms = event.get('fade_ms', 500)
 
                 if distributed and all_scenes:
@@ -1511,9 +1517,53 @@ class ShowEngine:
             elif event_type == 'chase':
                 if self.stop_flag.is_set():
                     return
-                chase_id = event.get('chase_id')
+                chase_id = event.get('chase_id') or event.get('action_id')
                 content_manager.play_chase(chase_id, universe=universe)
                 print(f"  ▶️ Chase '{chase_id}' at {event.get('time_ms')}ms")
+
+            elif event_type == 'sequence':
+                if self.stop_flag.is_set():
+                    return
+                sequence_id = event.get('action_id') or event.get('sequence_id')
+                fade_ms = event.get('fade_ms', 0)
+
+                # Load the sequence from database
+                try:
+                    sequence = looks_sequences_manager.get_sequence(sequence_id)
+                    if not sequence or not sequence.steps:
+                        print(f"  ❌ Sequence '{sequence_id}' not found or empty")
+                    else:
+                        # Build sequence_data dict for unified playback
+                        steps = []
+                        for step in sequence.steps:
+                            step_data = {
+                                'step_id': step.step_id,
+                                'name': step.name,
+                                'channels': step.channels or {},
+                                'modifiers': step.modifiers or [],
+                                'fade_ms': step.fade_ms,
+                                'hold_ms': step.hold_ms,
+                            }
+                            if step.look_id:
+                                step_data['look_id'] = step.look_id
+                            steps.append(step_data)
+
+                        sequence_data = {
+                            'name': sequence.name,
+                            'steps': steps,
+                            'loop_mode': 'one_shot',  # Shows control timing, not sequence
+                            'bpm': sequence.bpm,
+                        }
+
+                        # Play on specified universes
+                        unified_play_sequence(
+                            sequence_id,
+                            sequence_data,
+                            universes=event_universes
+                        )
+                        print(f"  ▶️ Sequence '{sequence.name}' at {event.get('time_ms')}ms on universes {event_universes}")
+                except Exception as seq_err:
+                    print(f"  ❌ Sequence play error: {seq_err}")
 
             elif event_type == 'blackout':
                 if self.stop_flag.is_set():
