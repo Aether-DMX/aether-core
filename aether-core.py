@@ -3679,7 +3679,7 @@ class ContentManager:
         return None
 
     def play_chase(self, chase_id, target_channels=None, universe=None, universes=None, fade_ms=None):
-        """Start chase playback - streams steps via UDPJSON to specified or all online nodes
+        """Start chase playback via unified engine - supports modifier stacking
 
         Args:
             chase_id: ID of the chase to play
@@ -3708,30 +3708,40 @@ class ContentManager:
         print(f"🎬 Playing chase '{chase['name']}' on universes: {sorted(universes_with_nodes)}, fade={effective_fade_ms}ms", flush=True)
 
         # SSOT: Acquire lock and stop only conflicting playback on target universes
-        # (Allow multiple chases to run simultaneously on different universes)
         with self.ssot_lock:
             print(f"🔒 SSOT Lock - stopping playback on target universes: {universes_with_nodes}", flush=True)
             try:
                 show_engine.stop()
             except Exception as e:
                 print(f"⚠️ Show stop: {e}", flush=True)
-            # Stop ALL running chases before starting new one
-            chase_engine.stop_all()  # Stop all running chases
-            effects_engine.stop_effect()  # Also stop effects
+            # Stop old chase engine (legacy)
+            chase_engine.stop_all()
+            # Stop existing chase sessions in unified engine for these universes
+            unified_engine.stop_type(PlaybackType.CHASE)
+            effects_engine.stop_effect()
             for univ in universes_with_nodes:
                 playback_manager.stop(univ)
             self.current_playback = {'type': 'chase', 'id': chase_id, 'universe': universe}
             print(f"✓ SSOT: Now playing chase '{chase_id}'", flush=True)
 
-
         # Set playback state for all universes
         for univ in universes_with_nodes:
             playback_manager.set_playing(univ, 'chase', chase_id)
 
-        # Start chase engine with apply-time fade override
-        chase_engine.start_chase(chase, universes_with_nodes, fade_ms_override=effective_fade_ms)
+        # Create unified engine session from chase data
+        from unified_playback import SessionFactory
+        session = SessionFactory.from_chase(chase_id, chase, universes_with_nodes)
 
-        return {'success': True, 'universes': universes_with_nodes, 'fade_ms': effective_fade_ms}
+        # Apply fade override if specified
+        if effective_fade_ms > 0:
+            for step in session.steps:
+                step.fade_ms = effective_fade_ms
+
+        # Start via unified engine - this allows modifier stacking!
+        unified_engine.play(session)
+        print(f"▶️ Chase '{chase['name']}' started via unified engine: {session.session_id}", flush=True)
+
+        return {'success': True, 'universes': universes_with_nodes, 'fade_ms': effective_fade_ms, 'session_id': session.session_id}
 
     def stop_playback(self, universe=None):
         """Stop all playback"""
@@ -6242,8 +6252,17 @@ def play_chase(chase_id):
 
 @app.route('/api/chases/<chase_id>/stop', methods=['POST'])
 def stop_chase(chase_id):
-    """Stop a specific chase"""
-    chase_engine.stop_all()  # Stop all running chases
+    """Stop a specific chase - stops both old chase engine and unified engine sessions"""
+    chase_engine.stop_all()  # Stop old chase engine (legacy)
+
+    # Stop unified engine sessions that match this chase
+    for session_id in list(unified_engine._sessions.keys()):
+        if chase_id in session_id:
+            unified_engine.stop_session(session_id)
+
+    # Also stop all CHASE type sessions in unified engine
+    unified_engine.stop_type(PlaybackType.CHASE)
+
     return jsonify({'success': True, 'chase_id': chase_id})
 
 @app.route('/api/chases/health', methods=['GET'])

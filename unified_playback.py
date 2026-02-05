@@ -774,6 +774,9 @@ class UnifiedPlaybackEngine:
         if not fixtures:
             return brightness_map
 
+        # Update session universes based on fixtures (like regular render does)
+        session.universes = list(set(f.get('universe', 1) for f in fixtures))
+
         num_fixtures = len(fixtures)
 
         if effect_type == "wave":
@@ -2281,9 +2284,8 @@ class SessionFactory:
         mode_name = 'Chase' if mode == 'chase' else 'Sync'
         effect_name = effect_type.replace('fixture_', '').replace('_', ' ').title()
 
-        # Motion effects can be brightness modifiers when stacking
-        motion_effects = ['strobe', 'wave', 'sweep_lr', 'sweep_rl', 'random']
-        is_brightness_mod = is_modifier and effect_type in motion_effects
+        # Honor is_modifier flag for all effects - this allows any effect to be used as a brightness modifier
+        is_brightness_mod = is_modifier
 
         return PlaybackSession(
             session_id=f"fixture_effect_{effect_type}_{mode}_{int(time.time()*1000)}",
