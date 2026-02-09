@@ -57,8 +57,8 @@ def get_whisper_model():
                     logging.error(f"❌ Failed to load Whisper: {e}")
                     _whisper_model = False
     return _whisper_model if _whisper_model else None
-import ai_ssot
-import ai_ops_registry
+# import ai_ssot  # REMOVED - dead code, Node handles AI
+# import ai_ops_registry  # REMOVED - dead code, Node handles AI
 from effects_engine import DynamicEffectsEngine
 from looks_sequences import (
     LooksSequencesManager, Look, Sequence, SequenceStep, Modifier,
@@ -9661,36 +9661,36 @@ def reset_setup():
 # ============================================================
 @app.route('/api/ai/preferences', methods=['GET'])
 def ai_get_prefs():
-    return jsonify(ai_ssot.get_all_preferences())
+    return jsonify({})
 
 @app.route('/api/ai/preferences/<key>', methods=['GET', 'POST'])
 def ai_pref(key):
     if request.method == 'POST':
         data = request.get_json()
-        ai_ssot.set_preference(key, data.get('value'))
+        pass  # stubbed
         return jsonify({'success': True})
-    return jsonify({'value': ai_ssot.get_preference(key)})
+    return jsonify({'value': None})
 
 @app.route('/api/ai/budget', methods=['GET'])
 def ai_budget():
-    return jsonify(ai_ssot.check_budget())
+    return jsonify({"remaining":999,"used":0})
 
 @app.route('/api/ai/outcomes', methods=['GET', 'POST'])
 def ai_outcomes():
     if request.method == 'POST':
         d = request.get_json()
-        ai_ssot.record_outcome(d.get('cid'), d.get('intent'),
-            d.get('suggested'), d.get('user_scope'), d.get('action'), d.get('success'))
+        pass  # stubbed
+
         return jsonify({'success': True})
-    return jsonify({'outcomes': ai_ssot.get_outcomes(limit=50)})
+    return jsonify({'outcomes': []})
 
 @app.route('/api/ai/audit', methods=['GET'])
 def ai_audit():
-    return jsonify({'log': ai_ssot.get_audit_log(limit=100)})
+    return jsonify({'log': []})
 
 @app.route('/api/ai/ops', methods=['GET'])
 def ai_ops():
-    return jsonify({'ops': ai_ops_registry.list_ops()})
+    return jsonify({'ops': {}})
 
 @app.route('/api/ai/optimize-playback', methods=['POST'])
 def ai_optimize_playback():
@@ -9844,7 +9844,7 @@ if __name__ == '__main__':
     ssot_startup_verify()
 
     init_database()
-    ai_ssot.init_ai_db()
+    pass  # ai_ssot removed
 
     # Supabase cloud sync (async, non-blocking)
     if SUPABASE_AVAILABLE:
