@@ -199,7 +199,7 @@ These are **explicitly not goals** for AETHER:
 
 ### Not Planned
 
-- sACN/Art-Net support
+- sACN/Art-Net/OLA (UDP JSON is the only transport)
 - MIDI/OSC input
 - Cloud features
 - Plugin system

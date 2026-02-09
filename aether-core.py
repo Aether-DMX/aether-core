@@ -4427,7 +4427,7 @@ def system_info():
         'capabilities': {
             'maxUniverses': 16,
             'rdmSupported': True,
-            'sacnSupported': True,
+            'transport': 'UDP JSON',
         }
     })
 
