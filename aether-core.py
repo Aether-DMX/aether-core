@@ -3220,6 +3220,9 @@ rdm_manager = RDMManager()
 # ============================================================
 # Content Manager
 # ============================================================
+CHUNK_SIZE = 50
+CHUNK_DELAY = 0.05
+
 class ContentManager:
     def __init__(self):
         """Initialize ContentManager with SSOT lock for thread-safe playback transitions"""
@@ -3348,7 +3351,7 @@ class ContentManager:
         conn = get_db()
         c = conn.cursor()
         c.execute('''INSERT OR REPLACE INTO scenes (scene_id, name, description, universe, channels,
-            fade_ms, curve, color, icon, synced_to_nodes, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+            fade_ms, curve, color, icon, synced_to_nodes, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
             (scene_id, data.get('name', 'Untitled'), data.get('description', ''),
              universe, json.dumps(channels), data.get('fade_ms', 500), data.get('curve', 'linear'),
              data.get('color', '#3b82f6'), data.get('icon', 'lightbulb'), False, datetime.now().isoformat()))
