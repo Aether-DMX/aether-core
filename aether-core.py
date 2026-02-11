@@ -9042,6 +9042,19 @@ def create_group():
          json.dumps(data.get('channels', [])), data.get('color', '#8b5cf6')))
     conn.commit()
     conn.close()
+
+    # Async sync to Supabase (non-blocking)
+    if SUPABASE_AVAILABLE:
+        try:
+            supabase = get_supabase_service()
+            if supabase and supabase.is_enabled():
+                group_data = {'group_id': group_id, 'name': data.get('name', 'New Group'),
+                              'universe': data.get('universe', 1), 'channels': data.get('channels', []),
+                              'color': data.get('color', '#8b5cf6')}
+                threading.Thread(target=lambda: supabase.sync_group(group_data), daemon=True).start()
+        except Exception as e:
+            print(f"Supabase group sync error: {e}", flush=True)
+
     return jsonify({'success': True, 'group_id': group_id})
 
 @app.route('/api/groups/<group_id>', methods=['GET'])
@@ -9071,6 +9084,19 @@ def update_group(group_id):
          json.dumps(data.get('channels', [])), data.get('color', '#8b5cf6'), group_id))
     conn.commit()
     conn.close()
+
+    # Async sync to Supabase (non-blocking)
+    if SUPABASE_AVAILABLE:
+        try:
+            supabase = get_supabase_service()
+            if supabase and supabase.is_enabled():
+                group_data = {'group_id': group_id, 'name': data.get('name'),
+                              'universe': data.get('universe', 1), 'channels': data.get('channels', []),
+                              'color': data.get('color', '#8b5cf6')}
+                threading.Thread(target=lambda: supabase.sync_group(group_data), daemon=True).start()
+        except Exception as e:
+            print(f"Supabase group sync error: {e}", flush=True)
+
     return jsonify({'success': True})
 
 @app.route('/api/groups/<group_id>', methods=['DELETE'])
@@ -9081,6 +9107,16 @@ def delete_group(group_id):
     c.execute('DELETE FROM groups WHERE group_id = ?', (group_id,))
     conn.commit()
     conn.close()
+
+    # Async delete from Supabase (non-blocking)
+    if SUPABASE_AVAILABLE:
+        try:
+            supabase = get_supabase_service()
+            if supabase and supabase.is_enabled():
+                threading.Thread(target=lambda: supabase.delete_group(group_id), daemon=True).start()
+        except Exception as e:
+            print(f"Supabase group delete error: {e}", flush=True)
+
     return jsonify({'success': True})
 
 # ─────────────────────────────────────────────────────────
@@ -9122,6 +9158,19 @@ def create_show():
          json.dumps(timeline), duration_ms, datetime.now().isoformat()))
     conn.commit()
     conn.close()
+
+    # Async sync to Supabase (non-blocking)
+    if SUPABASE_AVAILABLE:
+        try:
+            supabase = get_supabase_service()
+            if supabase and supabase.is_enabled():
+                show_data = {'show_id': show_id, 'name': data.get('name', 'New Show'),
+                             'description': data.get('description', ''), 'timeline': timeline,
+                             'duration_ms': duration_ms}
+                threading.Thread(target=lambda: supabase.sync_show(show_data), daemon=True).start()
+        except Exception as e:
+            print(f"Supabase show sync error: {e}", flush=True)
+
     return jsonify({'success': True, 'show_id': show_id})
 
 @app.route('/api/shows/<show_id>', methods=['GET'])
@@ -9148,12 +9197,25 @@ def update_show(show_id):
     duration_ms = max([e.get('time_ms', 0) for e in timeline]) if timeline else 0
     conn = get_db()
     c = conn.cursor()
-    c.execute('''UPDATE shows SET name=?, description=?, timeline=?, duration_ms=?, updated_at=? 
+    c.execute('''UPDATE shows SET name=?, description=?, timeline=?, duration_ms=?, updated_at=?
         WHERE show_id=?''',
         (data.get('name'), data.get('description', ''), json.dumps(timeline),
          duration_ms, datetime.now().isoformat(), show_id))
     conn.commit()
     conn.close()
+
+    # Async sync to Supabase (non-blocking)
+    if SUPABASE_AVAILABLE:
+        try:
+            supabase = get_supabase_service()
+            if supabase and supabase.is_enabled():
+                show_data = {'show_id': show_id, 'name': data.get('name'),
+                             'description': data.get('description', ''), 'timeline': timeline,
+                             'duration_ms': duration_ms}
+                threading.Thread(target=lambda: supabase.sync_show(show_data), daemon=True).start()
+        except Exception as e:
+            print(f"Supabase show sync error: {e}", flush=True)
+
     return jsonify({'success': True})
 
 @app.route('/api/shows/<show_id>', methods=['DELETE'])
@@ -9164,6 +9226,16 @@ def delete_show(show_id):
     c.execute('DELETE FROM shows WHERE show_id = ?', (show_id,))
     conn.commit()
     conn.close()
+
+    # Async delete from Supabase (non-blocking)
+    if SUPABASE_AVAILABLE:
+        try:
+            supabase = get_supabase_service()
+            if supabase and supabase.is_enabled():
+                threading.Thread(target=lambda: supabase.delete_show(show_id), daemon=True).start()
+        except Exception as e:
+            print(f"Supabase show delete error: {e}", flush=True)
+
     return jsonify({'success': True})
 
 @app.route('/api/shows/<show_id>/play', methods=['POST'])
@@ -9234,6 +9306,19 @@ def create_schedule():
     conn.commit()
     conn.close()
     schedule_runner.update_schedules()
+
+    # Async sync to Supabase (non-blocking)
+    if SUPABASE_AVAILABLE:
+        try:
+            supabase = get_supabase_service()
+            if supabase and supabase.is_enabled():
+                sched_data = {'schedule_id': schedule_id, 'name': data.get('name', 'New Schedule'),
+                              'cron': data.get('cron', '0 8 * * *'), 'action_type': data.get('action_type', 'scene'),
+                              'action_id': data.get('action_id'), 'enabled': data.get('enabled', True)}
+                threading.Thread(target=lambda: supabase.sync_schedule(sched_data), daemon=True).start()
+        except Exception as e:
+            print(f"Supabase schedule sync error: {e}", flush=True)
+
     return jsonify({'success': True, 'schedule_id': schedule_id})
 
 @app.route('/api/schedules/<schedule_id>', methods=['GET'])
@@ -9258,13 +9343,26 @@ def update_schedule(schedule_id):
     data = request.get_json()
     conn = get_db()
     c = conn.cursor()
-    c.execute('''UPDATE schedules SET name=?, cron=?, action_type=?, action_id=?, enabled=? 
+    c.execute('''UPDATE schedules SET name=?, cron=?, action_type=?, action_id=?, enabled=?
         WHERE schedule_id=?''',
         (data.get('name'), data.get('cron'), data.get('action_type'),
          data.get('action_id'), data.get('enabled', True), schedule_id))
     conn.commit()
     conn.close()
     schedule_runner.update_schedules()
+
+    # Async sync to Supabase (non-blocking)
+    if SUPABASE_AVAILABLE:
+        try:
+            supabase = get_supabase_service()
+            if supabase and supabase.is_enabled():
+                sched_data = {'schedule_id': schedule_id, 'name': data.get('name'),
+                              'cron': data.get('cron'), 'action_type': data.get('action_type'),
+                              'action_id': data.get('action_id'), 'enabled': data.get('enabled', True)}
+                threading.Thread(target=lambda: supabase.sync_schedule(sched_data), daemon=True).start()
+        except Exception as e:
+            print(f"Supabase schedule sync error: {e}", flush=True)
+
     return jsonify({'success': True})
 
 @app.route('/api/schedules/<schedule_id>', methods=['DELETE'])
@@ -9276,6 +9374,16 @@ def delete_schedule(schedule_id):
     conn.commit()
     conn.close()
     schedule_runner.update_schedules()
+
+    # Async delete from Supabase (non-blocking)
+    if SUPABASE_AVAILABLE:
+        try:
+            supabase = get_supabase_service()
+            if supabase and supabase.is_enabled():
+                threading.Thread(target=lambda: supabase.delete_schedule(schedule_id), daemon=True).start()
+        except Exception as e:
+            print(f"Supabase schedule delete error: {e}", flush=True)
+
     return jsonify({'success': True})
 
 @app.route('/api/schedules/<schedule_id>/trigger', methods=['POST'])
@@ -9559,6 +9667,15 @@ def trigger_cloud_sync():
     c.execute('SELECT * FROM fixtures')
     fixtures = [dict(row) for row in c.fetchall()]
 
+    c.execute('SELECT * FROM shows')
+    shows = [dict(row) for row in c.fetchall()]
+
+    c.execute('SELECT * FROM schedules')
+    schedules = [dict(row) for row in c.fetchall()]
+
+    c.execute('SELECT * FROM groups')
+    groups = [dict(row) for row in c.fetchall()]
+
     conn.close()
 
     # Get looks and sequences
@@ -9577,7 +9694,10 @@ def trigger_cloud_sync():
         sequences=sequences_list,
         scenes=scenes,
         chases=chases,
-        fixtures=fixtures
+        fixtures=fixtures,
+        shows=shows,
+        schedules=schedules,
+        groups=groups
     )
 
     return jsonify({'success': True, 'result': result})
@@ -9973,6 +10093,18 @@ if __name__ == '__main__':
                     c.execute('SELECT * FROM fixtures')
                     fixtures = [dict(row) for row in c.fetchall()]
 
+                    # Get shows
+                    c.execute('SELECT * FROM shows')
+                    shows = [dict(row) for row in c.fetchall()]
+
+                    # Get schedules
+                    c.execute('SELECT * FROM schedules')
+                    schedules = [dict(row) for row in c.fetchall()]
+
+                    # Get groups
+                    c.execute('SELECT * FROM groups')
+                    groups = [dict(row) for row in c.fetchall()]
+
                     conn.close()
 
                     # Get looks and sequences from LooksSequencesManager
@@ -9991,7 +10123,10 @@ if __name__ == '__main__':
                         sequences=sequences_list,
                         scenes=scenes,
                         chases=chases,
-                        fixtures=fixtures
+                        fixtures=fixtures,
+                        shows=shows,
+                        schedules=schedules,
+                        groups=groups
                     )
                     print(f"☁️ Startup sync result: {result}")
                 except Exception as e:

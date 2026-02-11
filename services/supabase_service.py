@@ -72,6 +72,8 @@ TABLE_PK_MAP = {
     "conversations": "conversation_id",
     "messages": "message_id",
     "usage_events": "event_id",
+    "schedules": "schedule_id",
+    "groups": "group_id",
 }
 
 
@@ -678,6 +680,129 @@ class SupabaseService:
 
         return self._sync_execute(upsert, "scene_templates", template_record, chase_data.get("chase_id"))
 
+    # ---- Show Sync ----
+
+    def sync_show(self, show_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Sync a show to Supabase.
+
+        Uses scene_templates table with mood='show'
+        """
+        if not self._enabled or not self._client:
+            return None
+
+        timeline = show_data.get("timeline")
+        if isinstance(timeline, str):
+            timeline = json.loads(timeline)
+
+        template_record = {
+            "template_id": self._to_cloud_uuid(show_data.get("show_id")),
+            "name": show_data.get("name"),
+            "description": show_data.get("description", ""),
+            "mood": "show",
+            "template_data": json.dumps({
+                "type": "show",
+                "timeline": timeline,
+                "duration_ms": show_data.get("duration_ms", 0),
+                "installation_id": self._installation_id
+            }),
+            "is_official": False
+        }
+
+        def upsert():
+            return self._client.table("scene_templates").upsert(
+                template_record,
+                on_conflict="template_id"
+            ).execute()
+
+        return self._sync_execute(upsert, "scene_templates", template_record, show_data.get("show_id"))
+
+    # ---- Schedule Sync ----
+
+    def sync_schedule(self, schedule_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Sync a schedule to Supabase schedules table.
+        """
+        if not self._enabled or not self._client:
+            return None
+
+        schedule_record = {
+            "schedule_id": self._to_cloud_uuid(schedule_data.get("schedule_id")),
+            "installation_id": self._installation_id,
+            "name": schedule_data.get("name"),
+            "cron": schedule_data.get("cron"),
+            "action_type": schedule_data.get("action_type"),
+            "action_id": schedule_data.get("action_id"),
+            "action_params": json.dumps(schedule_data.get("action_params", {})),
+            "enabled": schedule_data.get("enabled", True),
+            "last_run": schedule_data.get("last_run"),
+            "next_run": schedule_data.get("next_run"),
+        }
+
+        def upsert():
+            return self._client.table("schedules").upsert(
+                schedule_record,
+                on_conflict="schedule_id"
+            ).execute()
+
+        return self._sync_execute(upsert, "schedules", schedule_record, schedule_data.get("schedule_id"))
+
+    # ---- Group Sync ----
+
+    def sync_group(self, group_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Sync a group to Supabase groups table.
+        """
+        if not self._enabled or not self._client:
+            return None
+
+        channels = group_data.get("channels", [])
+        if isinstance(channels, str):
+            channels = json.loads(channels)
+
+        group_record = {
+            "group_id": self._to_cloud_uuid(group_data.get("group_id")),
+            "installation_id": self._installation_id,
+            "name": group_data.get("name"),
+            "universe": group_data.get("universe", 1),
+            "channels": json.dumps(channels),
+            "color": group_data.get("color", "#8b5cf6"),
+        }
+
+        def upsert():
+            return self._client.table("groups").upsert(
+                group_record,
+                on_conflict="group_id"
+            ).execute()
+
+        return self._sync_execute(upsert, "groups", group_record, group_data.get("group_id"))
+
+    # ---- Cloud Delete Helpers ----
+
+    def delete_from_cloud(self, table: str, pk_column: str, local_id: str) -> Optional[Dict[str, Any]]:
+        """Delete a record from Supabase by its local ID."""
+        if not self._enabled or not self._client:
+            return None
+
+        cloud_uuid = self._to_cloud_uuid(local_id)
+
+        def delete_op():
+            return self._client.table(table).delete().eq(pk_column, cloud_uuid).execute()
+
+        return self._sync_execute(delete_op, table, record_id=local_id, op_type="delete")
+
+    def delete_show(self, show_id: str) -> Optional[Dict[str, Any]]:
+        """Delete a show from Supabase."""
+        return self.delete_from_cloud("scene_templates", "template_id", show_id)
+
+    def delete_schedule(self, schedule_id: str) -> Optional[Dict[str, Any]]:
+        """Delete a schedule from Supabase."""
+        return self.delete_from_cloud("schedules", "schedule_id", schedule_id)
+
+    def delete_group(self, group_id: str) -> Optional[Dict[str, Any]]:
+        """Delete a group from Supabase."""
+        return self.delete_from_cloud("groups", "group_id", group_id)
+
     # ---- Fixture Sync ----
 
     def sync_fixture(self, fixture_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -935,7 +1060,10 @@ class SupabaseService:
         sequences: List[Dict] = None,
         scenes: List[Dict] = None,
         chases: List[Dict] = None,
-        fixtures: List[Dict] = None
+        fixtures: List[Dict] = None,
+        shows: List[Dict] = None,
+        schedules: List[Dict] = None,
+        groups: List[Dict] = None
     ) -> Dict[str, int]:
         """
         Perform initial one-way sync from SQLite to Supabase.
@@ -957,6 +1085,9 @@ class SupabaseService:
             "scenes": 0,
             "chases": 0,
             "fixtures": 0,
+            "shows": 0,
+            "schedules": 0,
+            "groups": 0,
             "errors": 0
         }
 
@@ -1008,6 +1139,30 @@ class SupabaseService:
                 for fixture in fixtures:
                     if self.sync_fixture(fixture):
                         results["fixtures"] += 1
+                    else:
+                        results["errors"] += 1
+
+            # Sync shows
+            if shows:
+                for show in shows:
+                    if self.sync_show(show):
+                        results["shows"] += 1
+                    else:
+                        results["errors"] += 1
+
+            # Sync schedules
+            if schedules:
+                for schedule in schedules:
+                    if self.sync_schedule(schedule):
+                        results["schedules"] += 1
+                    else:
+                        results["errors"] += 1
+
+            # Sync groups
+            if groups:
+                for group in groups:
+                    if self.sync_group(group):
+                        results["groups"] += 1
                     else:
                         results["errors"] += 1
 
@@ -1206,6 +1361,12 @@ def sync_to_cloud(entity_type: str):
                             service.sync_node(result)
                         elif entity_type == "fixture":
                             service.sync_fixture(result)
+                        elif entity_type == "show":
+                            service.sync_show(result)
+                        elif entity_type == "schedule":
+                            service.sync_schedule(result)
+                        elif entity_type == "group":
+                            service.sync_group(result)
                     except Exception as e:
                         print(f"⚠️ Cloud sync failed for {entity_type}: {e}")
 
