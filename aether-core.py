@@ -3708,6 +3708,31 @@ class ContentManager:
         from unified_playback import SessionFactory
         session = SessionFactory.from_chase(chase_id, chase, universes_with_nodes)
 
+        # Replicate chase step channels across all fixtures in the universe
+        # Without this, chase steps only affect one fixture (scenes do this in play_scene)
+        if universes_with_nodes:
+            fixtures_in_universe = self.get_fixtures(universes_with_nodes[0])
+            if fixtures_in_universe and len(fixtures_in_universe) > 1:
+                sorted_fx = sorted(fixtures_in_universe, key=lambda f: f.get('start_channel', 1))
+                fixture_ch_count = sorted_fx[0].get('channel_count', 4)
+                for step in session.steps:
+                    # Extract base pattern using modulo (ch 1→offset 0, ch 6→offset 1, etc.)
+                    base_pattern = {}
+                    for ch, val in step.channels.items():
+                        offset = (ch - 1) % fixture_ch_count
+                        if val > 0 or offset not in base_pattern:
+                            base_pattern[offset] = val
+                    # Expand to all fixtures
+                    expanded = {}
+                    for fix in sorted_fx:
+                        start = fix.get('start_channel', 1)
+                        count = fix.get('channel_count', fixture_ch_count)
+                        for offset, value in base_pattern.items():
+                            if offset < count:
+                                expanded[start + offset] = value
+                    step.channels = expanded
+                print(f"🔄 Replicated chase steps across {len(sorted_fx)} fixtures (ch_count={fixture_ch_count})", flush=True)
+
         # Apply fade override if specified
         if effective_fade_ms > 0:
             for step in session.steps:
@@ -10192,29 +10217,31 @@ if __name__ == '__main__':
             except Exception:
                 pass
 
-        # Expand single-fixture patterns to all fixtures
-        # Chases/scenes may only define channels for the first fixture (e.g., ch 1-4).
-        # This replicates the pattern to all fixtures in the universe.
+        # Expand single-fixture patterns to all fixtures (safety net)
+        # Chase steps are pre-replicated in play_chase(), but this catches
+        # any other sources that output single-fixture data.
         fixtures = _fx_cache['fixtures'].get(universe, [])
         if fixtures and len(fixtures) > 1:
             sorted_fixtures = sorted(fixtures, key=lambda f: f.get('start_channel', 1))
-            first_fixture = sorted_fixtures[0]
-            first_start = first_fixture.get('start_channel', 1)
-            fixture_ch_count = first_fixture.get('channel_count', 4)
-            last_fixture = sorted_fixtures[-1]
-            last_end = last_fixture.get('start_channel', 1) + last_fixture.get('channel_count', 4) - 1
+            first_start = sorted_fixtures[0].get('start_channel', 1)
+            fixture_ch_count = sorted_fixtures[0].get('channel_count', 4)
 
-            # Only expand if non-zero channels fit within the first fixture's range
-            # This prevents expanding data that's already been replicated
+            # Check how many distinct fixtures have non-zero channels
             nonzero_chs = [ch for ch, v in parsed_channels.items() if v > 0]
             if nonzero_chs:
-                max_nonzero = max(nonzero_chs)
-                # If non-zero channels are only in the first fixture, replicate
-                if max_nonzero < first_start + fixture_ch_count:
-                    # Build base pattern from first fixture (0-indexed offsets)
+                fixtures_hit = set()
+                for ch in nonzero_chs:
+                    fixture_idx = (ch - first_start) // fixture_ch_count
+                    fixtures_hit.add(fixture_idx)
+
+                # Only expand if all non-zero data is in ONE fixture (not already expanded)
+                if len(fixtures_hit) == 1:
+                    # Use modulo to extract base pattern from whichever fixture has data
                     base_pattern = {}
-                    for ch in range(first_start, first_start + fixture_ch_count):
-                        base_pattern[ch - first_start] = parsed_channels.get(ch, 0)
+                    for ch, val in parsed_channels.items():
+                        offset = (ch - first_start) % fixture_ch_count
+                        if val > 0 or offset not in base_pattern:
+                            base_pattern[offset] = val
 
                     expanded = {}
                     for fix in sorted_fixtures:
