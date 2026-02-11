@@ -10193,20 +10193,33 @@ if __name__ == '__main__':
                 pass
 
         # Expand single-fixture patterns to all fixtures
+        # Chases/scenes may only define channels for the first fixture (e.g., ch 1-4).
+        # This replicates the pattern to all fixtures in the universe.
         fixtures = _fx_cache['fixtures'].get(universe, [])
         if fixtures and len(fixtures) > 1:
-            ch_nums = sorted(parsed_channels.keys())
-            if ch_nums:
-                pattern_size = max(ch_nums) - min(ch_nums) + 1
-                if pattern_size <= 8:
+            sorted_fixtures = sorted(fixtures, key=lambda f: f.get('start_channel', 1))
+            first_fixture = sorted_fixtures[0]
+            first_start = first_fixture.get('start_channel', 1)
+            fixture_ch_count = first_fixture.get('channel_count', 4)
+            last_fixture = sorted_fixtures[-1]
+            last_end = last_fixture.get('start_channel', 1) + last_fixture.get('channel_count', 4) - 1
+
+            # Only expand if non-zero channels fit within the first fixture's range
+            # This prevents expanding data that's already been replicated
+            nonzero_chs = [ch for ch, v in parsed_channels.items() if v > 0]
+            if nonzero_chs:
+                max_nonzero = max(nonzero_chs)
+                # If non-zero channels are only in the first fixture, replicate
+                if max_nonzero < first_start + fixture_ch_count:
+                    # Build base pattern from first fixture (0-indexed offsets)
                     base_pattern = {}
-                    for ch, value in parsed_channels.items():
-                        base_pattern[(ch - 1) % pattern_size] = value
+                    for ch in range(first_start, first_start + fixture_ch_count):
+                        base_pattern[ch - first_start] = parsed_channels.get(ch, 0)
 
                     expanded = {}
-                    for fix in sorted(fixtures, key=lambda f: f.get('start_channel', 1)):
+                    for fix in sorted_fixtures:
                         start = fix.get('start_channel', 1)
-                        count = fix.get('channel_count', pattern_size)
+                        count = fix.get('channel_count', fixture_ch_count)
                         for offset, value in base_pattern.items():
                             if offset < count:
                                 expanded[start + offset] = value
