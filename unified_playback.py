@@ -1950,9 +1950,25 @@ class UnifiedPlaybackEngine:
         start_ch = fixture.get('start_channel', 1)
         channel_map = fixture.get('channel_map', {})
 
-        r_ch = channel_map.get('red', 0) + start_ch if channel_map.get('red') is not None else start_ch
-        g_ch = channel_map.get('green', 1) + start_ch if channel_map.get('green') is not None else start_ch + 1
-        b_ch = channel_map.get('blue', 2) + start_ch if channel_map.get('blue') is not None else start_ch + 2
+        # Handle list-style channel maps: ['Red', 'Green', 'Blue', 'White', ...]
+        if isinstance(channel_map, list):
+            r_offset, g_offset, b_offset = 0, 1, 2  # defaults
+            for i, name in enumerate(channel_map):
+                name_lower = (name or '').lower()
+                if 'red' in name_lower or name_lower == 'r':
+                    r_offset = i
+                elif 'green' in name_lower or name_lower == 'g':
+                    g_offset = i
+                elif 'blue' in name_lower or name_lower == 'b':
+                    b_offset = i
+            r_ch = start_ch + r_offset
+            g_ch = start_ch + g_offset
+            b_ch = start_ch + b_offset
+        else:
+            # Dict-style channel maps: {'red': 0, 'green': 1, 'blue': 2}
+            r_ch = channel_map.get('red', 0) + start_ch if channel_map.get('red') is not None else start_ch
+            g_ch = channel_map.get('green', 1) + start_ch if channel_map.get('green') is not None else start_ch + 1
+            b_ch = channel_map.get('blue', 2) + start_ch if channel_map.get('blue') is not None else start_ch + 2
 
         r = channels.get(r_ch, 0) / 255.0
         g = channels.get(g_ch, 0) / 255.0
