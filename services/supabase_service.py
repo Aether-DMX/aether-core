@@ -279,6 +279,9 @@ class SupabaseService:
             self._connected = True
             print(f"☁️ Supabase connected - Installation: {self._installation_id[:8]}...")
 
+            # Register this installation (needed for FK constraints on schedules, groups)
+            self.ensure_installation()
+
             # Load local->cloud UUID mapping and clear stale pending ops
             self._load_id_map()
             self._clear_stale_pending()
@@ -315,6 +318,38 @@ class SupabaseService:
             "last_sync_at": self._last_sync_at.isoformat() if self._last_sync_at else None,
             "sync_in_progress": self._sync_in_progress
         }
+
+    # ---- Installation Registration ----
+
+    def ensure_installation(self) -> bool:
+        """
+        Ensure this installation is registered in the Supabase installations table.
+        Required for FK constraints on schedules, groups, etc.
+        Returns True if successful, False otherwise.
+        """
+        if not self._enabled or not self._client or not self._installation_id:
+            return False
+
+        try:
+            import platform
+            import socket
+            record = {
+                "installation_id": self._installation_id,
+                "name": f"AETHER on {socket.gethostname()}",
+                "hostname": socket.gethostname(),
+                "platform": platform.system().lower(),
+                "version": "beta-1",
+                "is_online": True,
+                "last_seen_at": datetime.now(timezone.utc).isoformat(),
+            }
+            self._client.table("installations").upsert(
+                record, on_conflict="installation_id"
+            ).execute()
+            print(f"☁️ Installation registered: {self._installation_id[:8]}...")
+            return True
+        except Exception as e:
+            print(f"⚠️ Failed to register installation: {e}")
+            return False
 
     # ---- ID Mapping (local string IDs -> Supabase UUIDs) ----
 
