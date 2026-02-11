@@ -59,6 +59,21 @@ SYNC_RETRY_DELAY = 5  # seconds between retry attempts
 MAX_SYNC_RETRIES = 3
 SYNC_BATCH_SIZE = 50  # max records per batch sync
 
+# Deterministic UUID namespace for local->cloud ID mapping
+# All AETHER installations produce the same UUID for the same local ID
+AETHER_UUID_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, 'https://aetherdmx.com/ids')
+ID_MAP_FILE = os.path.join(HOME_DIR, "aether-id-map.json")
+
+# Table name -> primary key column mapping (for ON CONFLICT and UUID conversion)
+TABLE_PK_MAP = {
+    "devices": "device_id",
+    "scene_templates": "template_id",
+    "fixture_library": "fixture_id",
+    "conversations": "conversation_id",
+    "messages": "message_id",
+    "usage_events": "event_id",
+}
+
 
 # ============================================================
 # Installation ID Management
@@ -234,6 +249,9 @@ class SupabaseService:
         self._last_sync_at: Optional[datetime] = None
         self._sync_in_progress = False
         self._callbacks: Dict[str, List[Callable]] = {}
+        self._id_map: Dict[str, str] = {}
+        self._id_map_lock = threading.RLock()
+        self._id_map_dirty = False
 
         # Initialize if enabled
         self._initialize()
@@ -258,6 +276,10 @@ class SupabaseService:
             self._enabled = True
             self._connected = True
             print(f"☁️ Supabase connected - Installation: {self._installation_id[:8]}...")
+
+            # Load local->cloud UUID mapping and clear stale pending ops
+            self._load_id_map()
+            self._clear_stale_pending()
         except Exception as e:
             print(f"⚠️ Supabase connection failed: {e}")
             self._enabled = True  # Still enabled, just not connected
@@ -291,6 +313,127 @@ class SupabaseService:
             "last_sync_at": self._last_sync_at.isoformat() if self._last_sync_at else None,
             "sync_in_progress": self._sync_in_progress
         }
+
+    # ---- ID Mapping (local string IDs -> Supabase UUIDs) ----
+
+    def _load_id_map(self) -> None:
+        """Load persisted local-ID-to-cloud-UUID map from disk."""
+        with self._id_map_lock:
+            if os.path.exists(ID_MAP_FILE):
+                try:
+                    with open(ID_MAP_FILE, 'r') as f:
+                        self._id_map = json.load(f)
+                    print(f"🆔 Loaded {len(self._id_map)} ID mappings from cache")
+                except Exception as e:
+                    print(f"⚠️ Failed to load ID map: {e}")
+                    self._id_map = {}
+
+            # Seed from cloud if cache is empty or on first run
+            if not self._id_map and self._connected:
+                self._populate_id_map_from_cloud()
+
+    def _save_id_map(self) -> None:
+        """Persist ID map to disk."""
+        with self._id_map_lock:
+            try:
+                with open(ID_MAP_FILE, 'w') as f:
+                    json.dump(self._id_map, f, indent=2)
+                self._id_map_dirty = False
+            except Exception as e:
+                print(f"⚠️ Failed to save ID map: {e}")
+
+    def _populate_id_map_from_cloud(self) -> None:
+        """
+        Fetch existing records from Supabase to build the reverse map.
+
+        Handles the "lost UUID derivation" problem: the original UUID generation
+        method is unrecoverable, so we query Supabase for all existing records
+        and map their known local IDs back to their cloud UUIDs.
+        """
+        if not self._client:
+            return
+
+        count = 0
+        try:
+            # Fetch devices — map by hostname (matches node_id pattern e.g. "pulse-4690")
+            result = self._client.table("devices").select("device_id, name, hostname").execute()
+            for row in (result.data or []):
+                cloud_uuid = row.get("device_id")
+                # hostname is the best match for local node_id
+                local_id = row.get("hostname")
+                if local_id and cloud_uuid:
+                    self._id_map[local_id] = cloud_uuid
+                    count += 1
+
+            # Fetch scene_templates — map by name (best available reverse key)
+            result = self._client.table("scene_templates").select("template_id, name, mood").execute()
+            for row in (result.data or []):
+                cloud_uuid = row.get("template_id")
+                name = row.get("name")
+                if name and cloud_uuid:
+                    self._id_map[name] = cloud_uuid
+                    count += 1
+
+            # Fetch fixture_library — map by model name
+            result = self._client.table("fixture_library").select("fixture_id, model").execute()
+            for row in (result.data or []):
+                cloud_uuid = row.get("fixture_id")
+                model = row.get("model")
+                if model and cloud_uuid:
+                    self._id_map[model] = cloud_uuid
+                    count += 1
+
+            if count > 0:
+                print(f"🆔 Populated {count} ID mappings from Supabase")
+                self._save_id_map()
+
+        except Exception as e:
+            print(f"⚠️ Failed to populate ID map from cloud: {e}")
+
+    def _to_cloud_uuid(self, local_id: str) -> str:
+        """
+        Convert a local string ID to a valid UUID for Supabase.
+
+        Strategy:
+        1. If already a valid UUID, return as-is
+        2. Check in-memory cache (populated from disk + cloud on startup)
+        3. Generate deterministic UUID v5 from AETHER namespace
+        4. Cache the new mapping
+        """
+        if not local_id:
+            return str(uuid.uuid4())
+
+        # Already a valid UUID? Return as-is
+        try:
+            uuid.UUID(local_id)
+            return local_id
+        except (ValueError, AttributeError):
+            pass
+
+        # Check cache
+        if local_id in self._id_map:
+            return self._id_map[local_id]
+
+        # Generate deterministic UUID v5
+        cloud_uuid = str(uuid.uuid5(AETHER_UUID_NAMESPACE, local_id))
+        self._id_map[local_id] = cloud_uuid
+        self._id_map_dirty = True
+
+        return cloud_uuid
+
+    def _clear_stale_pending(self) -> int:
+        """
+        Remove pending operations that have exceeded max retries or contain
+        stale data (raw string IDs that predate the UUID fix).
+        Called once at startup.
+        """
+        count = self._pending_queue.count()
+        if count > 0:
+            # Clear all existing pending ops — they contain raw string IDs
+            # in their data payloads and cannot be retried successfully
+            self._pending_queue.clear()
+            print(f"🧹 Cleared {count} stale pending sync operations")
+        return count
 
     # ---- Core Sync Methods ----
 
@@ -340,6 +483,8 @@ class SupabaseService:
         try:
             result = operation()
             self._connected = True
+            if self._id_map_dirty:
+                self._save_id_map()
             return result
         except Exception as e:
             print(f"⚠️ Supabase {op_type} failed for {table}: {e}")
@@ -362,7 +507,7 @@ class SupabaseService:
             return None
 
         device_record = {
-            "device_id": node_data.get("node_id"),
+            "device_id": self._to_cloud_uuid(node_data.get("node_id")),
             "name": node_data.get("name", "Unknown Node"),
             "hostname": node_data.get("hostname"),
             "mac_address": node_data.get("mac"),
@@ -400,7 +545,7 @@ class SupabaseService:
             return None
 
         template_record = {
-            "template_id": look_data.get("look_id"),
+            "template_id": self._to_cloud_uuid(look_data.get("look_id")),
             "name": look_data.get("name"),
             "description": look_data.get("description", ""),
             "mood": "look",  # Use mood field to identify type
@@ -436,7 +581,7 @@ class SupabaseService:
             return None
 
         template_record = {
-            "template_id": sequence_data.get("sequence_id"),
+            "template_id": self._to_cloud_uuid(sequence_data.get("sequence_id")),
             "name": sequence_data.get("name"),
             "description": sequence_data.get("description", ""),
             "mood": "sequence",  # Use mood field to identify type
@@ -471,7 +616,7 @@ class SupabaseService:
             return None
 
         template_record = {
-            "template_id": scene_data.get("scene_id"),
+            "template_id": self._to_cloud_uuid(scene_data.get("scene_id")),
             "name": scene_data.get("name"),
             "description": scene_data.get("description", ""),
             "mood": "scene",
@@ -508,7 +653,7 @@ class SupabaseService:
             return None
 
         template_record = {
-            "template_id": chase_data.get("chase_id"),
+            "template_id": self._to_cloud_uuid(chase_data.get("chase_id")),
             "name": chase_data.get("name"),
             "description": chase_data.get("description", ""),
             "mood": "chase",
@@ -543,7 +688,7 @@ class SupabaseService:
             return None
 
         fixture_record = {
-            "fixture_id": fixture_data.get("fixture_id"),
+            "fixture_id": self._to_cloud_uuid(fixture_data.get("fixture_id")),
             "manufacturer": fixture_data.get("manufacturer", "Unknown"),
             "model": fixture_data.get("model") or fixture_data.get("name", "Unknown"),
             "category": fixture_data.get("type", "generic"),
@@ -595,6 +740,191 @@ class SupabaseService:
         except Exception as e:
             print(f"⚠️ Audit log failed: {e}")
             return None
+
+    # ---- AI Conversation Logging ----
+
+    def log_conversation(self, session_id: str, messages: List[Dict], metadata: Dict = None) -> Optional[Dict]:
+        """
+        Upsert a conversation and its messages to Supabase.
+
+        Args:
+            session_id: AI session ID from Node.js
+            messages: Array of {role, content, tokens_used?, tool_calls?}
+            metadata: Optional {model, title}
+        """
+        if not self._enabled or not self._client:
+            return None
+
+        meta = metadata or {}
+        conversation_id = self._to_cloud_uuid(f"conv-{session_id}")
+
+        # Use first user message as title if none provided
+        title = meta.get("title")
+        if not title:
+            for msg in messages:
+                if msg.get("role") == "user" and msg.get("content"):
+                    content = msg["content"]
+                    title = (content[:80] + "...") if len(content) > 80 else content
+                    break
+        title = title or f"Session {session_id}"
+
+        conversation_record = {
+            "conversation_id": conversation_id,
+            "device_id": self._installation_id,
+            "title": title,
+            "context": json.dumps({
+                "model": meta.get("model", "unknown"),
+                "session_id": session_id,
+                "installation_id": self._installation_id,
+            }),
+            "message_count": len(messages),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        def upsert():
+            return self._client.table("conversations").upsert(
+                conversation_record,
+                on_conflict="conversation_id"
+            ).execute()
+
+        result = self._sync_execute(upsert, "conversations", conversation_record, conversation_id)
+
+        # Insert individual messages (non-critical, don't queue on failure)
+        if result and messages:
+            for msg in messages:
+                self.log_message(
+                    conversation_id=conversation_id,
+                    role=msg.get("role", "user"),
+                    content=msg.get("content", ""),
+                    tokens_used=msg.get("tokens_used"),
+                    tool_calls=msg.get("tool_calls"),
+                )
+
+        return result
+
+    def log_message(
+        self,
+        conversation_id: str,
+        role: str,
+        content: str,
+        tokens_used: int = None,
+        tool_calls: Any = None,
+    ) -> Optional[Dict]:
+        """
+        Insert a single message into Supabase.
+
+        Non-critical: failures are silently dropped (not queued).
+        """
+        if not self._enabled or not self._client:
+            return None
+
+        # Handle complex content objects (Claude API returns arrays)
+        if isinstance(content, (list, dict)):
+            content = json.dumps(content)
+
+        message_record = {
+            "message_id": str(uuid.uuid4()),
+            "conversation_id": conversation_id,
+            "role": role,
+            "content": content[:10000] if content else "",
+            "tokens_used": tokens_used,
+            "tool_calls": json.dumps(tool_calls) if tool_calls else None,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        def insert():
+            return self._client.table("messages").insert(message_record).execute()
+
+        try:
+            return insert()
+        except Exception as e:
+            print(f"⚠️ Message log failed: {e}")
+            return None
+
+    # ---- AI Learning Pipeline ----
+
+    def log_learning(self, learning_data: Dict[str, Any]) -> Optional[Dict]:
+        """
+        Log an AI learning event to Supabase ai_learnings table.
+
+        Args:
+            learning_data: {
+                category: str,        # Tool category (e.g., "scene", "chase")
+                pattern_key: str,     # Action pattern (e.g., "scene.create")
+                pattern_data: dict,   # Full context: user_input, tool_input, result
+                success_rate: float,  # 1.0 or 0.0
+            }
+        """
+        if not self._enabled or not self._client:
+            return None
+
+        record = {
+            "learning_id": str(uuid.uuid4()),
+            "category": learning_data.get("category", "unknown"),
+            "pattern_key": learning_data.get("pattern_key", "unknown"),
+            "pattern_data": json.dumps(learning_data.get("pattern_data", {})),
+            "success_rate": learning_data.get("success_rate"),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        def insert():
+            return self._client.table("ai_learnings").insert(record).execute()
+
+        try:
+            return insert()
+        except Exception as e:
+            print(f"⚠️ Learning log failed: {e}")
+            return None
+
+    def log_feedback(self, feedback_data: Dict[str, Any]) -> Optional[Dict]:
+        """
+        Log user feedback (thumbs up/down) on an AI response.
+
+        Args:
+            feedback_data: {
+                message_id: str,     # UUID of the message being rated
+                rating: int,         # 1 (thumbs up) or -1 (thumbs down)
+                feedback_text: str,  # Optional comment
+            }
+        """
+        if not self._enabled or not self._client:
+            return None
+
+        record = {
+            "feedback_id": str(uuid.uuid4()),
+            "message_id": feedback_data.get("message_id"),
+            "rating": feedback_data.get("rating"),
+            "feedback_text": feedback_data.get("feedback_text", ""),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        def insert():
+            return self._client.table("ai_feedback").insert(record).execute()
+
+        try:
+            return insert()
+        except Exception as e:
+            print(f"⚠️ Feedback log failed: {e}")
+            return None
+
+    def get_learned_patterns(self, category: str = None, limit: int = 20) -> List[Dict]:
+        """Fetch recent AI learnings, optionally filtered by category."""
+        if not self._enabled or not self._client:
+            return []
+
+        try:
+            query = self._client.table("ai_learnings").select("*").order(
+                "created_at", desc=True
+            ).limit(limit)
+
+            if category:
+                query = query.eq("category", category)
+
+            result = query.execute()
+            return result.data or []
+        except Exception as e:
+            print(f"⚠️ Failed to fetch learnings: {e}")
+            return []
 
     # ---- Bulk Sync ----
 
@@ -722,16 +1052,27 @@ class SupabaseService:
         try:
             for op in pending:
                 try:
+                    table = op["table"]
+                    conflict_col = TABLE_PK_MAP.get(table, "id")
+
                     if op["operation"] == "upsert":
-                        result = self._client.table(op["table"]).upsert(
-                            op["data"],
-                            on_conflict=op.get("record_id", "id")
+                        data = op["data"]
+                        # Convert PK field to UUID if it's a raw string ID
+                        if conflict_col in data and data[conflict_col]:
+                            data[conflict_col] = self._to_cloud_uuid(data[conflict_col])
+
+                        result = self._client.table(table).upsert(
+                            data,
+                            on_conflict=conflict_col
                         ).execute()
                         if result:
                             completed.append(op["id"])
                     elif op["operation"] == "delete":
-                        result = self._client.table(op["table"]).delete().eq(
-                            "id", op["record_id"]
+                        record_id = op.get("record_id", "")
+                        if record_id:
+                            record_id = self._to_cloud_uuid(record_id)
+                        result = self._client.table(table).delete().eq(
+                            conflict_col, record_id
                         ).execute()
                         if result:
                             completed.append(op["id"])
