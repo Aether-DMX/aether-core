@@ -1565,6 +1565,27 @@ class ShowEngine:
                 except Exception as seq_err:
                     print(f"  ❌ Sequence play error: {seq_err}")
 
+            elif event_type == 'look':
+                if self.stop_flag.is_set():
+                    return
+                look_id = event.get('look_id') or event.get('action_id')
+                fade_ms = event.get('fade_ms', 500)
+                try:
+                    look = looks_sequences_manager.get_look(look_id)
+                    if not look:
+                        print(f"  ❌ Look '{look_id}' not found")
+                    else:
+                        look_data = look.to_dict()
+                        unified_play_look(
+                            look_id,
+                            look_data,
+                            universes=event_universes,
+                            fade_ms=fade_ms
+                        )
+                        print(f"  ▶️ Look '{look.name}' at {event.get('time_ms')}ms on universes {event_universes}")
+                except Exception as look_err:
+                    print(f"  ❌ Look play error: {look_err}")
+
             elif event_type == 'blackout':
                 if self.stop_flag.is_set():
                     return
