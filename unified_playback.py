@@ -743,10 +743,17 @@ class UnifiedPlaybackEngine:
                         brightness_map = self._render_brightness_modifier(session)
                         # Apply brightness multipliers to all universe outputs
                         for universe in session.universes:
-                            if universe in universe_outputs:
-                                for ch, val in universe_outputs[universe].items():
-                                    if ch in brightness_map:
-                                        universe_outputs[universe][ch] = int(val * brightness_map[ch])
+                            if universe not in universe_outputs:
+                                universe_outputs[universe] = {}
+                            uo = universe_outputs[universe]
+                            # Get snapshot base for channels not yet in universe_outputs
+                            snap = self._modifier_base_snapshot.get(universe, {})
+                            for ch, mult in brightness_map.items():
+                                base_val = uo.get(ch, snap.get(ch, 0))
+                                if base_val > 0:
+                                    uo[ch] = int(base_val * mult)
+                                else:
+                                    uo[ch] = 0
                     except Exception as e:
                         print(f"❌ Modifier render error for {session.name}: {e}")
 
@@ -1093,6 +1100,168 @@ class UnifiedPlaybackEngine:
                 phase_off = (i / num_fixtures) if mode == 'chase' else 0
                 phase = (elapsed * speed + phase_off) % 1.0
                 brightness = min_b + (max_b - min_b) * (0.5 + 0.5 * math.sin(phase * 2 * math.pi))
+
+                start_ch = fixture.get('start_channel', 1)
+                ch_count = fixture.get('channel_count', 4)
+                for ch_offset in range(ch_count):
+                    brightness_map[start_ch + ch_offset] = brightness
+
+        elif effect_type == "fixture_heartbeat":
+            # Cardiac double-pulse (lub-dub) with diastolic rest
+            speed = params.get('speed', 0.6)
+            depth = params.get('depth', 80) / 100.0
+
+            beat_period = 1.0 / max(0.05, speed)
+
+            for i, fixture in enumerate(fixtures):
+                # Subtle spatial stagger (15%) for multi-fixture pulse propagation
+                phase_offset = (i / max(num_fixtures, 1)) * 0.15
+                t = ((elapsed + phase_offset * beat_period) % beat_period) / beat_period
+
+                # Cardiac waveform: systolic peak → diastolic bump → rest
+                if t < 0.08:
+                    # Systolic rise (sharp attack)
+                    b = (t / 0.08) ** 0.6
+                elif t < 0.15:
+                    # Systolic fall
+                    b = 1.0 - ((t - 0.08) / 0.07) * 0.55
+                elif t < 0.22:
+                    # Diastolic rise (softer second bump)
+                    b = 0.45 + ((t - 0.15) / 0.07) * 0.25
+                elif t < 0.35:
+                    # Diastolic fall
+                    b = 0.70 - ((t - 0.22) / 0.13) * 0.70
+                else:
+                    # Resting phase with tiny living ripple
+                    rest_pos = (t - 0.35) / 0.65
+                    b = 0.02 + 0.03 * math.sin(rest_pos * math.pi)
+
+                # Apply depth: lerp between 1.0 (no effect) and raw waveform
+                brightness = 1.0 - depth * (1.0 - b)
+                brightness = max(0.0, min(1.5, brightness))
+
+                start_ch = fixture.get('start_channel', 1)
+                ch_count = fixture.get('channel_count', 4)
+                for ch_offset in range(ch_count):
+                    brightness_map[start_ch + ch_offset] = brightness
+
+        elif effect_type == "fixture_tidal":
+            # Never-repeating ocean waves via 3 golden-ratio oscillators
+            speed = params.get('speed', 0.3)
+            depth = params.get('depth', 60) / 100.0
+
+            # Three frequencies at irrational ratios — pattern never repeats
+            freq1 = speed
+            freq2 = speed * 1.6180339887  # golden ratio
+            freq3 = speed * 2.4142135624  # 1 + sqrt(2)
+
+            for i, fixture in enumerate(fixtures):
+                pos = i / max(num_fixtures, 1)
+
+                # Three waves with per-fixture spatial phase at prime scalings
+                wave1 = math.sin(elapsed * freq1 * 2 * math.pi + pos * 3.0)
+                wave2 = math.sin(elapsed * freq2 * 2 * math.pi + pos * 5.0 + 1.3)
+                wave3 = math.sin(elapsed * freq3 * 2 * math.pi + pos * 7.0 + 2.7)
+
+                # Mix: primary dominant, secondaries scaled by depth
+                raw = wave1 * 0.5 + wave2 * (0.15 + 0.25 * depth) + wave3 * (0.05 + 0.25 * depth)
+
+                # Normalize to roughly 0-1
+                normalized = (raw + 1.2) / 2.4
+
+                # Ocean-like asymmetry: sharp peaks, broad troughs
+                if normalized > 0.5:
+                    b = 0.5 + 0.5 * ((normalized - 0.5) / 0.5) ** 0.7
+                else:
+                    b = 0.5 * (normalized / 0.5) ** 1.4
+
+                brightness = max(0.05, min(1.0, b))
+
+                start_ch = fixture.get('start_channel', 1)
+                ch_count = fixture.get('channel_count', 4)
+                for ch_offset in range(ch_count):
+                    brightness_map[start_ch + ch_offset] = brightness
+
+        elif effect_type == "fixture_ember":
+            # Organic fire flicker via 5-layer pseudo-Perlin noise
+            speed = params.get('speed', 2.0)
+            depth = params.get('depth', 70) / 100.0
+
+            import random as py_random
+
+            state_key = session.session_id
+            if state_key not in self._modifier_states:
+                self._modifier_states[state_key] = {}
+            states = self._modifier_states[state_key]
+            if 'offsets' not in states:
+                rng = py_random.Random(session.seed)
+                states['offsets'] = [rng.random() * 100.0 for _ in range(200)]
+            offsets = states['offsets']
+
+            for i, fixture in enumerate(fixtures):
+                offset = offsets[i % len(offsets)]
+                t = elapsed * speed
+
+                # 5 sine layers at different frequencies for organic noise
+                n1 = math.sin(t * 1.0 + offset * 6.28)         # slow drift
+                n2 = math.sin(t * 2.3 + offset * 4.17 + 1.7)   # medium variation
+                n3 = math.sin(t * 5.7 + offset * 2.91 + 3.1)   # fast flicker
+                n4 = math.sin(t * 13.1 + offset * 1.53 + 0.8)  # micro-flicker
+                n5 = math.sin(t * 0.4 + offset * 8.32 + 5.2)   # macro-drift
+
+                flicker = n1 * 0.30 + n2 * 0.25 + n3 * 0.20 + n4 * 0.10 + n5 * 0.15
+                flicker_normalized = (flicker + 1.0) / 2.0
+
+                # Fire-like curve: mostly bright, occasional dips
+                fire_curve = flicker_normalized ** 0.5
+
+                # Heat floor: higher depth = more dramatic dips (lower floor)
+                min_brightness = (1.0 - depth) * 0.7 + 0.1
+                b = min_brightness + (1.0 - min_brightness) * fire_curve
+
+                # Occasional deep flicker via deterministic phase check
+                deep_check = math.sin(t * 7.7 + offset * 3.33)
+                if deep_check > 0.97:
+                    b *= 0.4
+
+                brightness = max(0.02, min(1.0, b))
+
+                start_ch = fixture.get('start_channel', 1)
+                ch_count = fixture.get('channel_count', 4)
+                for ch_offset in range(ch_count):
+                    brightness_map[start_ch + ch_offset] = brightness
+
+        elif effect_type == "fixture_swell":
+            # Dramatic tension build → blazing climax → crash
+            speed = params.get('speed', 0.15)
+            depth = params.get('depth', 90) / 100.0
+
+            cycle_period = 1.0 / max(0.01, speed)
+            # depth controls attack ratio: 90% depth = 90% of cycle is build
+            attack_pct = 0.3 + depth * 0.65  # range: 0.3 to 0.95
+
+            for i, fixture in enumerate(fixtures):
+                # Spatial stagger: fixtures build in cascade
+                phase_offset = (i / max(num_fixtures, 1)) * 0.2
+                t = ((elapsed + phase_offset * cycle_period) % cycle_period) / cycle_period
+
+                if t < attack_pct:
+                    # BUILD: exponential acceleration (cubic curve)
+                    attack_pos = t / attack_pct
+                    b = attack_pos ** 3
+
+                    # Anticipation shimmer during build
+                    shimmer = 0.03 * math.sin(attack_pos * 12 * math.pi) * attack_pos
+                    b += shimmer
+                    b = max(0.02, b)
+                else:
+                    # RELEASE: sharp exponential decay
+                    release_pos = (t - attack_pct) / (1.0 - attack_pct)
+                    b = math.exp(-4.0 * release_pos)
+                    # Afterglow: doesn't quite reach zero
+                    b = b * 0.95 + 0.05 * (1.0 - release_pos)
+
+                brightness = max(0.0, min(1.5, b))
 
                 start_ch = fixture.get('start_channel', 1)
                 ch_count = fixture.get('channel_count', 4)

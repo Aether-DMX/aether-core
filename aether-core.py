@@ -8320,7 +8320,8 @@ def play_fixture_effect_endpoint():
                      'fixture_hue_shift', 'fixture_color_temp', 'fixture_saturation_pulse',
                      'fixture_color_fade']
     motion_effects = ['strobe', 'wave', 'sweep_lr', 'sweep_rl', 'random',
-                      'fixture_scanner', 'fixture_sparkle', 'fixture_lightning']
+                      'fixture_scanner', 'fixture_sparkle', 'fixture_lightning',
+                      'fixture_heartbeat', 'fixture_tidal', 'fixture_ember', 'fixture_swell']
     valid_effects = color_effects + motion_effects
 
     if effect_type not in valid_effects:
