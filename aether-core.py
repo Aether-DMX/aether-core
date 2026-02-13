@@ -27,6 +27,7 @@ import uuid
 import platform
 import logging
 import tempfile
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Dict, Optional
 from flask import Flask, request, jsonify
@@ -133,13 +134,7 @@ from operator_trust import (
     start_trust_monitoring, stop_trust_monitoring, clear_failure_halt,
 )
 
-# RDM Service (Phase 4 Lane 4)
-from rdm_service import (
-    rdm_service, discover_rdm_devices, get_rdm_devices,
-    get_rdm_device_address, set_rdm_device_address, identify_rdm_device,
-    get_rdm_address_suggestions, auto_fix_rdm_addresses,
-    verify_cue_rdm_readiness, get_rdm_status,
-)
+# RDM Service — consolidated into RDMManager (rdm_service.py deleted)
 
 # Supabase cloud sync (optional)
 try:
@@ -2674,10 +2669,19 @@ class NodeManager:
         conn = get_db()
         c = conn.cursor()
         cutoff = (datetime.now() - timedelta(seconds=STALE_TIMEOUT)).isoformat()
+        # Find which nodes are going offline BEFORE updating
+        c.execute('SELECT node_id FROM nodes WHERE last_seen < ? AND status = "online" AND is_builtin = 0', (cutoff,))
+        stale_node_ids = [row['node_id'] for row in c.fetchall()]
         c.execute('UPDATE nodes SET status = "offline" WHERE last_seen < ? AND status = "online" AND is_builtin = 0', (cutoff,))
         if c.rowcount > 0:
             conn.commit()
             self.broadcast_status()
+            # Mark all RDM devices on stale nodes as offline in live_inventory
+            for node_id in stale_node_ids:
+                try:
+                    rdm_manager.mark_node_devices_offline(node_id)
+                except Exception as e:
+                    print(f"⚠️ RDM inventory update failed for stale node {node_id}: {e}", flush=True)
         conn.close()
 
     def broadcast_status(self):
@@ -3039,20 +3043,203 @@ node_manager = NodeManager()
 # ============================================================
 # RDM Manager - Remote Device Management
 # ============================================================
+@dataclass
+class RDMDevice:
+    """Represents an RDM-capable device discovered on the bus."""
+    uid: str                           # Unique ID: "XXXX:XXXXXXXX" (manufacturer:device)
+    manufacturer_id: int = 0
+    device_model_id: int = 0
+    dmx_address: int = 0
+    dmx_footprint: int = 0
+    personality_id: int = 1
+    personality_count: int = 1
+    software_version: int = 0
+    sensor_count: int = 0
+    label: str = ""                    # User-assigned label
+    discovered_via: str = ""           # Node ID that discovered this device
+    discovered_at: str = ""            # ISO timestamp
+    last_seen: str = ""               # ISO timestamp
+    manufacturer_name: str = ""        # Resolved from manufacturer ID
+    model_name: str = ""              # Resolved from device info
+
+    def to_dict(self):
+        return {
+            'uid': self.uid, 'manufacturer_id': self.manufacturer_id,
+            'device_model_id': self.device_model_id, 'dmx_address': self.dmx_address,
+            'dmx_footprint': self.dmx_footprint, 'personality_id': self.personality_id,
+            'personality_count': self.personality_count, 'software_version': self.software_version,
+            'sensor_count': self.sensor_count, 'label': self.label,
+            'discovered_via': self.discovered_via, 'discovered_at': self.discovered_at,
+            'last_seen': self.last_seen, 'manufacturer_name': self.manufacturer_name,
+            'model_name': self.model_name,
+        }
+
+
+KNOWN_MANUFACTURERS = {
+    0x0000: "PLASA (Development)", 0x0001: "ESTA (Standards)",
+    0x414C: "Avolites", 0x4144: "ADJ", 0x4348: "Chauvet",
+    0x434D: "City Theatrical", 0x454C: "ETC", 0x4D41: "Martin",
+    0x5052: "PR Lighting", 0x524F: "Robe", 0x534C: "Signify (Philips)",
+    0x5354: "Strong Entertainment", 0x5641: "Varilite",
+}
+
+
 class RDMManager:
-    """RDM (Remote Device Management) for fixture discovery and configuration.
+    """Consolidated RDM (Remote Device Management) — Single Source of Truth.
 
     Sends RDM commands to ESP32 nodes via UDPJSON and processes responses.
-    Commands go to nodes, which forward to fixtures via RS485/DMX.
+    Maintains authoritative live_inventory of all known RDM devices.
+    Emits rdm_update via SocketIO when device status changes.
     """
+
+    RDM_TIMEOUT_MS = 5000
+    DISCOVERY_TIMEOUT_MS = 30000
+    UDP_PORT = 6455
 
     def __init__(self):
         self.discovery_tasks = {}  # node_id -> discovery status
         self.response_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.response_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.response_socket.settimeout(10.0)  # 10 second timeout for RDM responses
+        self.response_socket.settimeout(10.0)
         self.pending_requests = {}  # request_id -> callback
-        print("✓ RDMManager initialized")
+
+        # Authoritative live inventory
+        # { "uid": { "status": "online"/"offline"/"stale", "temp": 0.0, "is_patched": bool } }
+        self.live_inventory = {}
+
+        # In-memory device cache
+        self._devices: Dict[str, RDMDevice] = {}
+        self._lock = threading.RLock()
+        self._last_discovery = None
+        self._discovery_in_progress = False
+        self._last_emit_time = 0.0
+
+        # External references (set after init)
+        self._node_manager = None
+        self._socketio = None
+        self._playback_engine = None
+
+        # Hydrate in-memory cache from database (devices from previous sessions)
+        self._hydrate_from_db()
+
+        print("✓ RDMManager initialized (consolidated)")
+
+    def _hydrate_from_db(self):
+        """Load existing RDM devices from database into in-memory cache on startup."""
+        try:
+            conn = get_db()
+            c = conn.cursor()
+            c.execute('SELECT * FROM rdm_devices ORDER BY node_id, dmx_address')
+            columns = [d[0] for d in c.description]
+            rows = c.fetchall()
+            with self._lock:
+                for row in rows:
+                    row_dict = dict(zip(columns, row))
+                    uid = row_dict['uid']
+                    self._devices[uid] = RDMDevice(
+                        uid=uid,
+                        manufacturer_id=row_dict.get('manufacturer_id', 0) or 0,
+                        device_model_id=row_dict.get('device_model_id', 0) or 0,
+                        dmx_address=row_dict.get('dmx_address', 0) or 0,
+                        dmx_footprint=row_dict.get('dmx_footprint', 0) or 0,
+                        personality_id=row_dict.get('personality_id', 1) or 1,
+                        personality_count=row_dict.get('personality_count', 1) or 1,
+                        software_version=int(row_dict.get('software_version', 0) or 0),
+                        sensor_count=row_dict.get('sensor_count', 0) or 0,
+                        label=row_dict.get('device_label', '') or '',
+                        discovered_via=row_dict.get('node_id', '') or '',
+                        discovered_at=str(row_dict.get('created_at', '')) or '',
+                        last_seen=str(row_dict.get('last_seen', '')) or '',
+                        manufacturer_name=KNOWN_MANUFACTURERS.get(row_dict.get('manufacturer_id', 0), 'Unknown'),
+                        model_name=''
+                    )
+                    # Also populate live_inventory with "offline" status (will be updated by heartbeats)
+                    if uid not in self.live_inventory:
+                        self.live_inventory[uid] = {
+                            'status': 'offline',
+                            'temp': 0.0,
+                            'is_patched': False
+                        }
+            if rows:
+                print(f"  ↳ Hydrated {len(rows)} RDM devices from database")
+        except Exception as e:
+            print(f"  ↳ Warning: Could not hydrate RDM cache from DB: {e}")
+
+    # ─────────────────────────────────────────────────────────
+    # External Wiring
+    # ─────────────────────────────────────────────────────────
+
+    def set_node_manager(self, nm):
+        """Set reference to NodeManager."""
+        self._node_manager = nm
+
+    def set_socketio(self, sio):
+        """Set reference to Flask-SocketIO for real-time updates."""
+        self._socketio = sio
+
+    def set_playback_engine(self, engine):
+        """Set reference to UnifiedPlaybackEngine for offset auto-cleanup."""
+        self._playback_engine = engine
+
+    # ─────────────────────────────────────────────────────────
+    # Live Inventory & SocketIO
+    # ─────────────────────────────────────────────────────────
+
+    def _emit_rdm_update(self):
+        """Emit live_inventory to all connected clients via SocketIO (throttled)."""
+        if not self._socketio:
+            return
+        now = time.monotonic()
+        if now - self._last_emit_time < 0.5:  # Max 2 emits/sec
+            return
+        self._last_emit_time = now
+        self._socketio.emit('rdm_update', {
+            'inventory': self.live_inventory,
+            'device_count': len(self._devices),
+            'timestamp': datetime.now().isoformat()
+        })
+
+    def update_inventory(self, uid, status, temp=0.0, is_patched=None):
+        """Update a device's live inventory entry. Emits on status change."""
+        old_entry = self.live_inventory.get(uid, {})
+        old_status = old_entry.get('status', 'unknown')
+
+        # Check is_patched from fixtures table if not provided
+        if is_patched is None:
+            is_patched = old_entry.get('is_patched', False)
+
+        self.live_inventory[uid] = {
+            'status': status,
+            'temp': temp,
+            'is_patched': is_patched,
+        }
+
+        # Auto-cleanup AI offsets when device returns to healthy
+        if old_status != 'online' and status == 'online' and self._playback_engine:
+            fixture_id = self._resolve_fixture_for_rdm_uid(uid)
+            if fixture_id:
+                self._playback_engine.clear_offsets_for_fixture(fixture_id)
+
+        if old_status != status:
+            self._emit_rdm_update()
+
+    def mark_node_devices_offline(self, node_id):
+        """Mark all devices discovered via a node as offline."""
+        with self._lock:
+            for uid, dev in self._devices.items():
+                if dev.discovered_via == node_id:
+                    self.update_inventory(uid, 'offline')
+
+    def _resolve_fixture_for_rdm_uid(self, uid):
+        """Look up fixture_id in the fixtures table for an RDM UID."""
+        try:
+            conn = get_db()
+            c = conn.cursor()
+            c.execute('SELECT fixture_id FROM fixtures WHERE rdm_uid = ?', (uid,))
+            row = c.fetchone()
+            return row[0] if row else None
+        except Exception:
+            return None
 
     def _send_rdm_command(self, node_ip, action, params=None):
         """Send RDM command to a node and wait for response.
@@ -3120,17 +3307,50 @@ class RDMManager:
             universe = node.get('universe', 1)
             self._save_devices(node_id, universe, result['devices'])
 
-            # Fetch detailed info for each device
+            # Fetch detailed info for each device and populate cache + inventory
             for device in result['devices']:
                 uid = device if isinstance(device, str) else device.get('uid')
                 if uid:
+                    now_iso = datetime.now().isoformat()
+                    # Populate in-memory cache
+                    with self._lock:
+                        if uid not in self._devices:
+                            self._devices[uid] = RDMDevice(
+                                uid=uid, discovered_via=node_id,
+                                discovered_at=now_iso, last_seen=now_iso
+                            )
+                        else:
+                            self._devices[uid].last_seen = now_iso
+
                     try:
                         info = self._send_rdm_command(node['ip'], 'get_info', {"uid": uid})
                         if info.get('success'):
                             self._update_device_info(uid, info)
-                            print(f"  📋 Got info for {uid}: Ch{info.get('dmx_address', '?')}, {info.get('footprint', '?')}ch")
+                            # Update cache with device info
+                            with self._lock:
+                                if uid in self._devices:
+                                    dev = self._devices[uid]
+                                    dev.manufacturer_id = info.get('manufacturer_id', 0)
+                                    dev.device_model_id = info.get('device_model_id', 0)
+                                    dev.dmx_address = info.get('dmx_address', 0)
+                                    dev.dmx_footprint = info.get('dmx_footprint', info.get('footprint', 0))
+                                    dev.personality_id = info.get('personality_id', 1)
+                                    dev.personality_count = info.get('personality_count', 1)
+                                    dev.software_version = info.get('software_version', 0)
+                                    dev.sensor_count = info.get('sensor_count', 0)
+                                    mid = dev.manufacturer_id
+                                    if mid in KNOWN_MANUFACTURERS:
+                                        dev.manufacturer_name = KNOWN_MANUFACTURERS[mid]
+                            print(f"  📋 Got info for {uid}: Ch{info.get('dmx_address', '?')}, {info.get('dmx_footprint', info.get('footprint', '?'))}ch")
                     except Exception as e:
                         print(f"  ⚠️ Failed to get info for {uid}: {e}")
+
+                    # Check if fixture is patched
+                    is_patched = self._resolve_fixture_for_rdm_uid(uid) is not None
+                    self.update_inventory(uid, 'online', is_patched=is_patched)
+
+            self._last_discovery = datetime.now()
+            self._emit_rdm_update()
 
         return result
 
@@ -3240,13 +3460,310 @@ class RDMManager:
         return [dict(zip(columns, row)) for row in c.fetchall()]
 
     def delete_device(self, uid):
-        """Remove a device from the database."""
+        """Remove a device from the database and cache."""
         conn = get_db()
         c = conn.cursor()
         c.execute('DELETE FROM rdm_devices WHERE uid = ?', (uid,))
         c.execute('DELETE FROM rdm_personalities WHERE device_uid = ?', (uid,))
         conn.commit()
+        with self._lock:
+            self._devices.pop(uid, None)
+        self.live_inventory.pop(uid, None)
+        self._emit_rdm_update()
         return {"success": True}
+
+    # ─────────────────────────────────────────────────────────
+    # Cross-Node Discovery (absorbed from rdm_service.py)
+    # ─────────────────────────────────────────────────────────
+
+    def discover_all(self):
+        """Run RDM discovery on ALL online nodes."""
+        if self._discovery_in_progress:
+            return {'success': False, 'error': 'Discovery already in progress', 'devices': []}
+
+        self._discovery_in_progress = True
+        print("🔍 RDM: Starting discovery on all nodes...", flush=True)
+
+        try:
+            nodes = self._get_rdm_capable_nodes()
+            if not nodes:
+                return {'success': False, 'error': 'No RDM-capable nodes online', 'devices': []}
+
+            all_device_uids = []
+            for node in nodes:
+                node_id = node.get('node_id')
+                if not node_id:
+                    continue
+                print(f"🔍 RDM: Discovering on {node_id}...", flush=True)
+                result = self.discover_devices(node_id)
+                if result.get('success'):
+                    devices = result.get('devices', [])
+                    for dev in devices:
+                        uid = dev if isinstance(dev, str) else dev.get('uid')
+                        if uid:
+                            all_device_uids.append(uid)
+
+            self._last_discovery = datetime.now()
+            with self._lock:
+                device_list = [self._devices[uid].to_dict() for uid in all_device_uids if uid in self._devices]
+
+            return {
+                'success': True,
+                'devices': device_list,
+                'count': len(all_device_uids),
+                'timestamp': self._last_discovery.isoformat()
+            }
+        finally:
+            self._discovery_in_progress = False
+
+    def get_cached_devices(self):
+        """Get list of all known RDM devices (from database)."""
+        return self.get_all_devices()
+
+    # ─────────────────────────────────────────────────────────
+    # UID-Based Operations (resolve uid → node_id internally)
+    # ─────────────────────────────────────────────────────────
+
+    def _get_node_for_device(self, uid):
+        """Get the node that can communicate with a device."""
+        dev = self._devices.get(uid)
+        if dev and dev.discovered_via and self._node_manager:
+            return self._node_manager.get_node(dev.discovered_via)
+        # Fallback: try any RDM-capable node
+        nodes = self._get_rdm_capable_nodes()
+        return nodes[0] if nodes else None
+
+    def identify_by_uid(self, uid, state=True):
+        """Identify a device by UID (resolves node automatically)."""
+        node = self._get_node_for_device(uid)
+        if not node:
+            return {'success': False, 'error': 'No node available for device'}
+        return self._send_rdm_command(node.get('ip'), 'identify', {"uid": uid, "state": state})
+
+    def get_address_by_uid(self, uid):
+        """Get DMX address for a device by UID."""
+        node = self._get_node_for_device(uid)
+        if not node:
+            return {'success': False, 'error': 'No node available for device'}
+        result = self._send_rdm_command(node.get('ip'), 'get_address', {"uid": uid})
+        if result and result.get('success'):
+            address = result.get('address', 0)
+            with self._lock:
+                if uid in self._devices:
+                    self._devices[uid].dmx_address = address
+            return {'success': True, 'uid': uid, 'address': address}
+        return {'success': False, 'error': result.get('error', 'Unknown') if result else 'No response'}
+
+    def set_address_by_uid(self, uid, address):
+        """Set DMX address for a device by UID (with conflict check)."""
+        if address < 1 or address > 512:
+            return {'success': False, 'error': 'Invalid address (must be 1-512)'}
+        dev = self._devices.get(uid)
+        if not dev:
+            return {'success': False, 'error': 'Device not found in cache'}
+        # Check for conflicts
+        conflicts = self._check_address_conflict(uid, address, dev.dmx_footprint)
+        if conflicts:
+            return {'success': False, 'error': 'Address conflict', 'conflicts': conflicts}
+        node = self._get_node_for_device(uid)
+        if not node:
+            return {'success': False, 'error': 'No node available for device'}
+        result = self._send_rdm_command(node.get('ip'), 'set_address', {"uid": uid, "address": address})
+        if result and result.get('success'):
+            with self._lock:
+                if uid in self._devices:
+                    self._devices[uid].dmx_address = address
+            # Also update DB
+            try:
+                conn = get_db()
+                c = conn.cursor()
+                c.execute('UPDATE rdm_devices SET dmx_address = ?, last_seen = ? WHERE uid = ?',
+                         (address, datetime.now().isoformat(), uid))
+                conn.commit()
+            except Exception:
+                pass
+            return {'success': True, 'uid': uid, 'address': address}
+        return {'success': False, 'error': result.get('error', 'Unknown') if result else 'No response'}
+
+    def get_cached_device_info(self, uid):
+        """Get info for a specific device (from database)."""
+        # Try in-memory cache first
+        dev = self._devices.get(uid)
+        if dev:
+            return {'success': True, 'device': dev.to_dict()}
+        # Fallback to database
+        conn = get_db()
+        c = conn.cursor()
+        c.execute('SELECT * FROM rdm_devices WHERE uid = ?', (uid,))
+        row = c.fetchone()
+        if not row:
+            return {'success': False, 'error': 'Device not found'}
+        columns = [d[0] for d in c.description]
+        return {'success': True, 'device': dict(zip(columns, row))}
+
+    # ─────────────────────────────────────────────────────────
+    # Address Conflict Detection (absorbed from rdm_service.py)
+    # ─────────────────────────────────────────────────────────
+
+    def _check_address_conflict(self, uid, new_address, footprint):
+        """Check if setting an address would cause a conflict."""
+        conflicts = []
+        new_end = new_address + max(footprint, 1) - 1
+        with self._lock:
+            for other_uid, other in self._devices.items():
+                if other_uid == uid or other.dmx_address == 0:
+                    continue
+                other_end = other.dmx_address + max(other.dmx_footprint, 1) - 1
+                if not (new_end < other.dmx_address or new_address > other_end):
+                    conflicts.append({'uid': other_uid, 'address': other.dmx_address, 'footprint': other.dmx_footprint})
+        return conflicts
+
+    def _find_all_conflicts(self):
+        """Find all address conflicts among cached devices."""
+        conflicts = []
+        devices = list(self._devices.values())
+        for i, dev1 in enumerate(devices):
+            if dev1.dmx_address == 0:
+                continue
+            end1 = dev1.dmx_address + max(dev1.dmx_footprint, 1) - 1
+            for dev2 in devices[i+1:]:
+                if dev2.dmx_address == 0:
+                    continue
+                end2 = dev2.dmx_address + max(dev2.dmx_footprint, 1) - 1
+                if not (end1 < dev2.dmx_address or dev1.dmx_address > end2):
+                    conflicts.append({'device1': dev1.uid, 'device2': dev2.uid, 'overlap': True})
+        return conflicts
+
+    def suggest_addresses(self):
+        """Analyze current addressing and suggest optimal assignments."""
+        with self._lock:
+            devices = list(self._devices.values())
+        if not devices:
+            return {'success': True, 'suggestions': [], 'conflicts': []}
+
+        devices.sort(key=lambda d: d.dmx_address)
+        conflicts = []
+        used_ranges = []
+
+        for dev in devices:
+            if dev.dmx_address == 0:
+                continue
+            start = dev.dmx_address
+            end = start + max(dev.dmx_footprint, 1) - 1
+            for other_start, other_end, other_uid in used_ranges:
+                if not (end < other_start or start > other_end):
+                    conflicts.append({'device1': dev.uid, 'device2': other_uid,
+                                     'range1': [start, end], 'range2': [other_start, other_end]})
+            used_ranges.append((start, end, dev.uid))
+
+        suggestions = []
+        next_available = 1
+        for dev in devices:
+            footprint = max(dev.dmx_footprint, 1)
+            has_conflict = any(c['device1'] == dev.uid or c['device2'] == dev.uid for c in conflicts)
+            if has_conflict or dev.dmx_address == 0:
+                while True:
+                    end = next_available + footprint - 1
+                    if end > 512:
+                        suggestions.append({'uid': dev.uid, 'current_address': dev.dmx_address,
+                                           'suggested_address': 0, 'footprint': footprint, 'reason': 'no_space'})
+                        break
+                    slot_free = all(
+                        end < o.dmx_address or next_available > o.dmx_address + max(o.dmx_footprint, 1) - 1
+                        for o in devices if o.uid != dev.uid and o.dmx_address > 0
+                    )
+                    if slot_free:
+                        suggestions.append({'uid': dev.uid, 'current_address': dev.dmx_address,
+                                           'suggested_address': next_available, 'footprint': footprint,
+                                           'reason': 'conflict' if has_conflict else 'unaddressed'})
+                        next_available = end + 1
+                        break
+                    next_available += 1
+            else:
+                next_available = max(next_available, dev.dmx_address + footprint)
+
+        return {
+            'success': True, 'suggestions': suggestions, 'conflicts': conflicts,
+            'total_devices': len(devices),
+            'conflicting_devices': len(set(c['device1'] for c in conflicts).union(c['device2'] for c in conflicts))
+        }
+
+    def auto_fix_addresses(self):
+        """Automatically fix all address conflicts."""
+        analysis = self.suggest_addresses()
+        if not analysis.get('success'):
+            return analysis
+        results = []
+        for suggestion in analysis.get('suggestions', []):
+            uid = suggestion['uid']
+            new_address = suggestion['suggested_address']
+            if new_address == 0:
+                results.append({'uid': uid, 'success': False, 'error': 'No space available'})
+                continue
+            result = self.set_address_by_uid(uid, new_address)
+            results.append({'uid': uid, 'success': result.get('success', False),
+                           'address': new_address if result.get('success') else None,
+                           'error': result.get('error')})
+        return {'success': all(r['success'] for r in results), 'results': results}
+
+    def verify_cue_readiness(self, cue_data):
+        """Verify all fixtures required for a cue are ready."""
+        issues = []
+        warnings = []
+        required_fixtures = cue_data.get('fixtures', [])
+        if not self._devices:
+            warnings.append({'type': 'no_rdm_devices',
+                            'message': 'No RDM devices discovered - manual verification recommended'})
+        for fixture in required_fixtures:
+            fixture_uid = fixture.get('rdm_uid')
+            expected_address = fixture.get('dmx_address')
+            expected_footprint = fixture.get('footprint')
+            if not fixture_uid:
+                continue
+            device = self._devices.get(fixture_uid)
+            if not device:
+                issues.append({'type': 'device_not_found', 'uid': fixture_uid,
+                              'message': f'Device {fixture_uid} not found in RDM cache'})
+                continue
+            if expected_address and device.dmx_address != expected_address:
+                issues.append({'type': 'address_mismatch', 'uid': fixture_uid,
+                              'expected': expected_address, 'actual': device.dmx_address,
+                              'message': f'Wrong address: expected {expected_address}, found {device.dmx_address}'})
+            if expected_footprint and device.dmx_footprint != expected_footprint:
+                warnings.append({'type': 'footprint_mismatch', 'uid': fixture_uid,
+                                'expected': expected_footprint, 'actual': device.dmx_footprint,
+                                'message': f'Footprint mismatch: expected {expected_footprint}, device reports {device.dmx_footprint}'})
+        conflicts = self._find_all_conflicts()
+        if conflicts:
+            issues.append({'type': 'address_conflicts', 'conflicts': conflicts,
+                          'message': f'Found {len(conflicts)} address conflicts'})
+        ready = len(issues) == 0
+        return {'ready': ready, 'issues': issues, 'warnings': warnings,
+                'can_proceed': ready, 'recommendation': 'OK to proceed' if ready else 'Review issues before proceeding'}
+
+    # ─────────────────────────────────────────────────────────
+    # Internal Helpers
+    # ─────────────────────────────────────────────────────────
+
+    def _get_rdm_capable_nodes(self):
+        """Get list of online nodes that support RDM."""
+        if not self._node_manager:
+            return []
+        all_nodes = self._node_manager.get_all_nodes(include_offline=False)
+        return [n for n in all_nodes if 'rdm' in n.get('caps', [])]
+
+    def get_status(self):
+        """Get consolidated RDM status."""
+        all_devices = self.get_all_devices()
+        with self._lock:
+            return {
+                'enabled': True,
+                'device_count': len(all_devices),
+                'last_discovery': self._last_discovery.isoformat() if self._last_discovery else None,
+                'discovery_in_progress': self._discovery_in_progress,
+                'live_inventory': self.live_inventory,
+                'devices': all_devices
+            }
 
 rdm_manager = RDMManager()
 
@@ -5174,8 +5691,7 @@ def rdm_devices_for_node(node_id):
     return jsonify(devices)
 
 # Note: /api/rdm/devices, /api/rdm/devices/<uid>, /api/rdm/devices/<uid>/identify,
-# and /api/rdm/devices/<uid>/address are defined in Phase 4 RDM API section below
-# to avoid duplicate route definitions.
+# and /api/rdm/devices/<uid>/address are defined in the consolidated RDM API section below.
 
 @app.route('/api/rdm/devices/<uid>/label', methods=['POST'])
 def rdm_set_label(uid):
@@ -5189,6 +5705,18 @@ def rdm_set_label(uid):
     conn.commit()
 
     return jsonify({'success': True, 'uid': uid, 'label': label})
+
+@app.route('/api/rdm/devices/<uid>/personality', methods=['POST'])
+def rdm_set_personality(uid):
+    """Set RDM device personality — not yet supported in firmware."""
+    data = request.get_json() or {}
+    personality = data.get('personality')
+    return jsonify({
+        'success': False,
+        'error': 'SET_PERSONALITY not yet supported in firmware. Personality must be set on the fixture directly.',
+        'uid': uid,
+        'personality': personality
+    }), 501
 
 @app.route('/api/rdm/devices/<uid>', methods=['DELETE'])
 def rdm_delete_device(uid):
@@ -5447,6 +5975,82 @@ def reset_node(node_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/nodes/<node_id>/stats', methods=['GET'])
+def node_stats(node_id):
+    """Get real-time stats for a node from stored heartbeat data."""
+    node = node_manager.get_node(node_id)
+    if not node:
+        return jsonify({'error': 'Node not found'}), 404
+
+    return jsonify({
+        'rssi': node.get('rssi', 0),
+        'wifi_rssi': node.get('rssi', 0),
+        'dmx_fps': node.get('fps', 0),
+        'fps': node.get('fps', 0),
+        'uptime': node.get('uptime', 0),
+        'free_heap': node.get('free_heap', 0),
+        'firmware': node.get('firmware', 'Unknown'),
+        'hardware': 'ESP32',
+        'status': node.get('status', 'offline'),
+        'rx_packets': node.get('rx_total', 0),
+        'tx_packets': node.get('tx_dmx_frames', 0),
+        'rx_errors': node.get('rx_bad', 0),
+        'tx_errors': 0,
+        'node_id': node_id,
+        'ip': node.get('ip'),
+    })
+
+
+@app.route('/api/nodes/<node_id>/identify', methods=['POST'])
+def identify_node(node_id):
+    """Send identify command to flash the node's LED."""
+    node = node_manager.get_node(node_id)
+    if not node:
+        return jsonify({'success': False, 'error': 'Node not found'}), 404
+
+    node_ip = node.get('ip')
+    if not node_ip:
+        return jsonify({'success': False, 'error': 'Node has no IP address'}), 400
+
+    try:
+        result = node_manager.send_command_to_wifi(node_ip, {"cmd": "identify"})
+        return jsonify({'success': bool(result), 'node_id': node_id, 'action': 'identify'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/nodes/<node_id>/reboot', methods=['POST'])
+def reboot_node(node_id):
+    """Send reboot command to restart the node."""
+    print(f"🔄 REBOOT: /api/nodes/{node_id}/reboot called", flush=True)
+    node = node_manager.get_node(node_id)
+    if not node:
+        return jsonify({'success': False, 'error': 'Node not found'}), 404
+
+    node_ip = node.get('ip')
+    if not node_ip:
+        return jsonify({'success': False, 'error': 'Node has no IP address'}), 400
+
+    try:
+        result = node_manager.send_command_to_wifi(node_ip, {"cmd": "reboot"})
+        print(f"   {'✓' if result else '✗'} Reboot sent to {node_id} ({node_ip})", flush=True)
+        return jsonify({'success': bool(result), 'node_id': node_id, 'action': 'reboot'})
+    except Exception as e:
+        print(f"   ✗ Reboot {node_id} failed: {e}", flush=True)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/nodes/<node_id>/update', methods=['POST'])
+def update_node_firmware(node_id):
+    """Firmware OTA update — not yet supported over network."""
+    return jsonify({
+        'success': False,
+        'error': 'OTA firmware update not yet supported. Flash via USB.',
+        'node_id': node_id,
+        'action': 'update'
+    }), 501
+
+
 @app.route('/api/nodes/ping', methods=['POST'])
 def ping_all_nodes():
     """SAFETY ACTION: Health check for all online nodes.
@@ -5541,63 +6145,44 @@ def trust_clear_halt():
 
 
 # ============================================================
-# RDM API (Phase 4 Lane 4)
+# RDM API (Consolidated — all routes via rdm_manager singleton)
 # ============================================================
 
 @app.route('/api/rdm/status', methods=['GET'])
 def rdm_status():
-    """Get RDM service status.
-
-    Returns current RDM state including discovered devices.
-    """
-    return jsonify(get_rdm_status())
+    """Get consolidated RDM status including live_inventory."""
+    return jsonify(rdm_manager.get_status())
 
 
 @app.route('/api/rdm/discover', methods=['POST'])
 def rdm_discover_all():
-    """Run RDM discovery on all nodes.
-
-    AC1: Discovers all RDM-capable fixtures on the DMX bus.
-    Returns list of discovered devices with UIDs.
-    """
+    """Run RDM discovery on all nodes via consolidated RDMManager."""
     print("RDM: Discovery requested via API", flush=True)
-    result = discover_rdm_devices()
+    result = rdm_manager.discover_all()
     return jsonify(result)
 
 
 @app.route('/api/rdm/devices', methods=['GET'])
 def rdm_devices():
-    """Get cached RDM devices.
-
-    Returns list of previously discovered devices without new discovery.
-    """
-    return jsonify({'devices': get_rdm_devices()})
+    """Get cached RDM devices from consolidated RDMManager."""
+    return jsonify({'devices': rdm_manager.get_cached_devices()})
 
 
 @app.route('/api/rdm/devices/<uid>', methods=['GET'])
 def rdm_device_info(uid):
-    """Get info for a specific RDM device.
-
-    AC3: Returns device info including manufacturer, model, footprint.
-    """
-    return jsonify(rdm_service.get_device_info(uid))
+    """Get info for a specific RDM device from cache."""
+    return jsonify(rdm_manager.get_cached_device_info(uid))
 
 
 @app.route('/api/rdm/devices/<uid>/address', methods=['GET'])
 def rdm_device_get_address(uid):
-    """Get current DMX address for a device.
-
-    AC2: Reads current DMX address for any discovered device.
-    """
-    return jsonify(get_rdm_device_address(uid))
+    """Get current DMX address for a device via RDMManager."""
+    return jsonify(rdm_manager.get_address_by_uid(uid))
 
 
 @app.route('/api/rdm/devices/<uid>/address', methods=['POST'])
 def rdm_device_set_address(uid):
-    """Set DMX address for a device.
-
-    AC2: Sets new DMX address remotely.
-    """
+    """Set DMX address for a device via RDMManager."""
     data = request.get_json() or {}
     address = data.get('address')
 
@@ -5605,56 +6190,40 @@ def rdm_device_set_address(uid):
         return jsonify({'success': False, 'error': 'Address required'}), 400
 
     print(f"RDM: Setting {uid} to address {address}", flush=True)
-    result = set_rdm_device_address(uid, address)
+    result = rdm_manager.set_address_by_uid(uid, address)
     return jsonify(result)
 
 
 @app.route('/api/rdm/devices/<uid>/identify', methods=['POST'])
 def rdm_device_identify(uid):
-    """Turn identify mode on/off for a device.
-
-    AC3: Flashes device LED for identification.
-    """
+    """Turn identify mode on/off for a device via RDMManager."""
     data = request.get_json() or {}
     state = data.get('state', True)
 
     print(f"RDM: Identify {uid} = {state}", flush=True)
-    result = identify_rdm_device(uid, state)
+    result = rdm_manager.identify_by_uid(uid, state)
     return jsonify(result)
 
 
 @app.route('/api/rdm/address-suggestions', methods=['GET'])
 def rdm_address_suggestions():
-    """Get address suggestions to fix conflicts.
-
-    AC4: Analyzes current addressing and suggests optimal assignments.
-    Detects address conflicts before they happen.
-    """
-    return jsonify(get_rdm_address_suggestions())
+    """Get address conflict suggestions from consolidated RDMManager."""
+    return jsonify(rdm_manager.suggest_addresses())
 
 
 @app.route('/api/rdm/auto-fix', methods=['POST'])
 def rdm_auto_fix():
-    """Automatically fix all address conflicts.
-
-    AC4: "Fix All" option to auto-resolve conflicts.
-    """
+    """Automatically fix all address conflicts via RDMManager."""
     print("RDM: Auto-fix addresses requested", flush=True)
-    result = auto_fix_rdm_addresses()
+    result = rdm_manager.auto_fix_addresses()
     return jsonify(result)
 
 
 @app.route('/api/rdm/verify-cue', methods=['POST'])
 def rdm_verify_cue():
-    """Verify all fixtures for a cue are ready.
-
-    AC5: Before executing a cue, verifies all required fixtures are:
-    - Discovered and responding
-    - Addressed correctly
-    - Have expected footprint
-    """
+    """Verify all fixtures for a cue are ready via RDMManager."""
     data = request.get_json() or {}
-    result = verify_cue_rdm_readiness(data)
+    result = rdm_manager.verify_cue_readiness(data)
     return jsonify(result)
 
 
@@ -10436,9 +11005,11 @@ if __name__ == '__main__':
     start_trust_monitoring()
     print("✓ Operator Trust Enforcer started")
 
-    # Initialize RDM Service (Phase 4 Lane 4)
-    rdm_service.set_node_manager(node_manager)
-    print("✓ RDM Service initialized")
+    # Initialize consolidated RDM Manager
+    rdm_manager.set_node_manager(node_manager)
+    rdm_manager.set_socketio(socketio)
+    rdm_manager.set_playback_engine(unified_engine)
+    print("✓ RDM Manager initialized (consolidated)")
 
     print(f"✓ API server on port {API_PORT}")
     print(f"✓ Discovery on UDP {DISCOVERY_PORT}")

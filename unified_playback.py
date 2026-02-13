@@ -446,6 +446,12 @@ class UnifiedPlaybackEngine:
         self._actual_fps = 0.0
         self._last_frame_time = 0.0
 
+        # AI/RDM self-healing offsets
+        # Key: fixture_id (str)
+        # Value: { channel_offset_int: { "mode": "add"|"multiply", "value": float } }
+        self.ai_offsets: Dict[str, Dict[int, Dict[str, Any]]] = {}
+        self._ai_offsets_lock = threading.RLock()
+
     # ─────────────────────────────────────────────────────────
     # Configuration
     # ─────────────────────────────────────────────────────────
@@ -480,6 +486,89 @@ class UnifiedPlaybackEngine:
         If fixture_ids is None, returns all fixtures.
         """
         self._fixture_resolver = resolver
+
+    # ─────────────────────────────────────────────────────────
+    # AI/RDM Self-Healing Offsets
+    # ─────────────────────────────────────────────────────────
+
+    def set_ai_offset(self, fixture_id: str, channel_offsets: Dict[int, Dict[str, Any]]):
+        """Set AI-computed offsets for a fixture.
+
+        Args:
+            fixture_id: The fixture ID to apply offsets to
+            channel_offsets: { channel_number: { "mode": "add"|"multiply", "value": float } }
+                             channel_number is 1-based within the fixture
+        """
+        with self._ai_offsets_lock:
+            self.ai_offsets[fixture_id] = channel_offsets
+
+    def clear_offsets_for_fixture(self, fixture_id: str):
+        """Clear all AI offsets for a fixture.
+
+        Called automatically when RDMManager reports the fixture is healthy.
+        """
+        with self._ai_offsets_lock:
+            removed = self.ai_offsets.pop(fixture_id, None)
+            if removed:
+                print(f"🔧 AI offset cleared for fixture '{fixture_id}' (device healthy)")
+
+    def clear_all_offsets(self):
+        """Clear all AI offsets."""
+        with self._ai_offsets_lock:
+            count = len(self.ai_offsets)
+            self.ai_offsets.clear()
+            if count:
+                print(f"🔧 Cleared {count} AI offsets")
+
+    def _apply_ai_offsets(self, universe: int, channels: Dict[int, int]) -> Dict[int, int]:
+        """Apply AI offsets to rendered channel values before output.
+
+        Resolves which fixtures map to channels in this universe,
+        then applies add/multiply offsets. Short-circuits if no offsets.
+
+        Returns modified channels dict (mutated in place for performance).
+        """
+        # Get active offset fixture IDs (fast lock)
+        with self._ai_offsets_lock:
+            if not self.ai_offsets:
+                return channels
+            active_offsets = dict(self.ai_offsets)
+
+        # Resolve fixtures that have offsets and map to this universe
+        if not self._fixture_resolver:
+            return channels
+
+        offset_fixture_ids = list(active_offsets.keys())
+        fixtures = self._fixture_resolver(offset_fixture_ids)
+
+        for fixture in fixtures:
+            fid = fixture.get('fixture_id') or fixture.get('id')
+            if not fid or fid not in active_offsets:
+                continue
+
+            # Only apply to fixtures in this universe
+            if fixture.get('universe') != universe:
+                continue
+
+            fixture_start = fixture.get('start_channel', 0)
+            if fixture_start <= 0:
+                continue
+
+            for ch_offset, offset_spec in active_offsets[fid].items():
+                # ch_offset is 1-based within fixture
+                abs_channel = fixture_start + int(ch_offset) - 1
+                if abs_channel not in channels:
+                    continue
+
+                mode = offset_spec.get('mode', 'add')
+                value = offset_spec.get('value', 0)
+
+                if mode == 'add':
+                    channels[abs_channel] = max(0, min(255, channels[abs_channel] + int(value)))
+                elif mode == 'multiply':
+                    channels[abs_channel] = max(0, min(255, int(channels[abs_channel] * value)))
+
+        return channels
 
     # ─────────────────────────────────────────────────────────
     # Engine Control
@@ -756,6 +845,14 @@ class UnifiedPlaybackEngine:
                                     uo[ch] = 0
                     except Exception as e:
                         print(f"❌ Modifier render error for {session.name}: {e}")
+
+                # Apply AI/RDM self-healing offsets (after modifiers, before output)
+                if self.ai_offsets:
+                    for universe in universe_outputs:
+                        if universe_outputs[universe]:
+                            universe_outputs[universe] = self._apply_ai_offsets(
+                                universe, universe_outputs[universe]
+                            )
 
                 # Output combined results to each universe
                 if self._output_callback:

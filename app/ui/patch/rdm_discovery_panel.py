@@ -999,29 +999,16 @@ if HAS_PYSIDE6:
             self._set_state(DiscoveryState.IDLE)
 
         def _on_identify(self, uid: str) -> None:
-            """Identify a specific fixture."""
-            # Run identify in background
-            import asyncio
-
-            async def do_identify() -> None:
-                transport = getattr(self.rdm_manager, 'transport', None)
-                if transport:
-                    from core.rdm.types import RdmUid
-                    rdm_uid = RdmUid.from_string(uid)
-                    await transport.identify(self._node_ip, rdm_uid, True)
-                    await asyncio.sleep(3)
-                    await transport.identify(self._node_ip, rdm_uid, False)
-
-            # Run in thread
-            def run_identify() -> None:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    loop.run_until_complete(do_identify())
-                finally:
-                    loop.close()
-
+            """Identify a specific fixture via consolidated RDMManager."""
             import threading
+
+            def run_identify() -> None:
+                try:
+                    # Use consolidated RDMManager.identify_by_uid()
+                    self.rdm_manager.identify_by_uid(uid, True)
+                except Exception as e:
+                    print(f"⚠️ RDM identify failed for {uid}: {e}", flush=True)
+
             thread = threading.Thread(target=run_identify)
             thread.start()
 
