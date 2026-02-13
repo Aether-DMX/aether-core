@@ -9293,6 +9293,26 @@ def update_fixture(fixture_id):
 def delete_fixture(fixture_id):
     return jsonify(content_manager.delete_fixture(fixture_id))
 
+@app.route('/api/fixtures/<fixture_id>/identify', methods=['POST'])
+def identify_fixture(fixture_id):
+    """Identify a fixture by flashing its LED via RDM."""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('SELECT rdm_uid, universe FROM fixtures WHERE fixture_id = ?', (fixture_id,))
+    row = c.fetchone()
+    if not row:
+        return jsonify({'success': False, 'error': 'Fixture not found'}), 404
+    rdm_uid, universe = row
+    if not rdm_uid:
+        return jsonify({'success': False, 'error': 'Fixture has no RDM UID — cannot identify'}), 400
+    data = request.get_json() or {}
+    state = data.get('state', True)
+    try:
+        result = rdm_manager.identify_by_uid(rdm_uid, state)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/api/fixtures/universe/<int:universe>', methods=['GET'])
 def get_fixtures_by_universe(universe):
     fixtures = content_manager.get_fixtures()
