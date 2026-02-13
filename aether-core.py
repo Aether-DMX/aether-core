@@ -1306,6 +1306,7 @@ class ShowEngine:
         # MERGE LAYER: Reference and source tracking
         self._merge_layer = None
         self._merge_source_id = None
+        self._last_look_session = None
 
     def set_merge_layer(self, merge_layer_ref):
         """Set reference to merge layer for priority-based output"""
@@ -1568,6 +1569,10 @@ class ShowEngine:
             elif event_type == 'look':
                 if self.stop_flag.is_set():
                     return
+                # Stop previous look session from this show
+                if hasattr(self, '_last_look_session') and self._last_look_session:
+                    from unified_playback import stop as unified_stop
+                    unified_stop(self._last_look_session)
                 look_id = event.get('look_id') or event.get('action_id')
                 fade_ms = event.get('fade_ms', 500)
                 try:
@@ -1576,13 +1581,20 @@ class ShowEngine:
                         print(f"  ❌ Look '{look_id}' not found")
                     else:
                         look_data = look.to_dict()
-                        unified_play_look(
+                        # Extract universes from channel keys (e.g. "4:1")
+                        lu = set()
+                        for k in look.channels:
+                            if ':' in str(k):
+                                lu.add(int(str(k).split(':')[0]))
+                        tgt = sorted(lu) if lu else event_universes
+                        sid = unified_play_look(
                             look_id,
                             look_data,
-                            universes=event_universes,
+                            universes=tgt,
                             fade_ms=fade_ms
                         )
-                        print(f"  ▶️ Look '{look.name}' at {event.get('time_ms')}ms on universes {event_universes}")
+                        self._last_look_session = sid
+                        print(f"  ▶️ Look '{look.name}' at {event.get('time_ms')}ms on universes {tgt} (lu={lu})")
                 except Exception as look_err:
                     print(f"  ❌ Look play error: {look_err}")
 
@@ -6496,8 +6508,19 @@ def play_look(look_id):
         # No modifiers - just set static channels (like a scene)
         fade_ms = data.get('fade_ms', look.fade_ms or 0)
 
+        # Parse universe:channel format
         for universe in universes:
-            content_manager.set_channels(universe, look.channels, fade_ms=fade_ms)
+            parsed = {}
+            for k, v in look.channels.items():
+                ks = str(k)
+                if ':' in ks:
+                    u, ch = ks.split(':',1)
+                    if int(u) == universe:
+                        parsed[str(ch)] = v
+                else:
+                    parsed[ks] = v
+            if parsed:
+                content_manager.set_channels(universe, parsed, fade_ms=fade_ms)
 
         return jsonify({
             'success': True,

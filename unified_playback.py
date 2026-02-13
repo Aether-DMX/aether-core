@@ -71,6 +71,17 @@ from datetime import datetime
 # Enums and Constants
 # ============================================================
 
+def _parse_channels(raw: dict) -> dict:
+    r = {}
+    for k, v in raw.items():
+        ks = str(k)
+        if ':' in ks:
+            _, ch = ks.split(':',1)
+            r[int(ch)] = v
+        else:
+            r[int(ks)] = v
+    return r
+
 class PlaybackType(Enum):
     """All supported playback content types"""
     LOOK = "look"
@@ -898,7 +909,7 @@ class UnifiedPlaybackEngine:
             if session.look_id and self._look_resolver:
                 look_data = self._look_resolver(session.look_id)
                 if look_data:
-                    channels = {int(k): v for k, v in look_data.get('channels', {}).items()}
+                    channels = _parse_channels(look_data.get('channels', {}))
                     # Also get modifiers from look
                     if not session.modifiers and look_data.get('modifiers'):
                         session.modifiers = [
@@ -919,7 +930,7 @@ class UnifiedPlaybackEngine:
             if step.look_id and self._look_resolver:
                 look_data = self._look_resolver(step.look_id)
                 if look_data:
-                    channels = {int(k): v for k, v in look_data.get('channels', {}).items()}
+                    channels = _parse_channels(look_data.get('channels', {}))
 
             # Handle step crossfade
             step_elapsed = session.get_step_elapsed_time()
@@ -932,7 +943,7 @@ class UnifiedPlaybackEngine:
                     if prev_step.look_id and self._look_resolver:
                         look_data = self._look_resolver(prev_step.look_id)
                         if look_data:
-                            prev_channels = {int(k): v for k, v in look_data.get('channels', {}).items()}
+                            prev_channels = _parse_channels(look_data.get('channels', {}))
 
                     # Interpolate
                     all_chs = set(prev_channels.keys()) | set(channels.keys())
@@ -952,7 +963,7 @@ class UnifiedPlaybackEngine:
             if session.cue_stack_id and session.current_cue_index >= 0 and self._cue_resolver:
                 cue_data = self._cue_resolver(session.cue_stack_id, session.current_cue_index)
                 if cue_data:
-                    return {int(k): v for k, v in cue_data.get('channels', {}).items()}
+                    return _parse_channels(cue_data.get('channels', {}))
             return session.channels.copy()
 
         elif session.playback_type == PlaybackType.SHOW:
@@ -2090,7 +2101,7 @@ class SessionFactory:
     def from_look(look_id: str, look_data: Dict, universes: List[int] = None,
                   fade_ms: int = 0) -> PlaybackSession:
         """Create session from Look data"""
-        channels = {int(k): v for k, v in look_data.get('channels', {}).items()}
+        channels = _parse_channels(look_data.get('channels', {}))
         modifiers = [
             Modifier(**m) if isinstance(m, dict) else m
             for m in look_data.get('modifiers', [])
@@ -2229,7 +2240,7 @@ class SessionFactory:
     def from_scene(scene_id: str, scene_data: Dict,
                    universes: List[int] = None, fade_ms: int = 0) -> PlaybackSession:
         """Create session from legacy Scene data"""
-        channels = {int(k): v for k, v in scene_data.get('channels', {}).items()}
+        channels = _parse_channels(scene_data.get('channels', {}))
 
         session = PlaybackSession(
             session_id=f"scene_{scene_id}_{int(time.time()*1000)}",

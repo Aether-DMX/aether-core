@@ -1381,8 +1381,15 @@ class RenderEngine:
         if seed is None:
             seed = hash(look_id) & 0xFFFFFFFF
 
-        # Convert channel keys to int
-        int_channels = {int(k): v for k, v in channels.items()}
+        # Convert channel keys to int, handling universe:channel format
+        int_channels = {}
+        for k, v in channels.items():
+            ks = str(k)
+            if ':' in ks:
+                _, ch = ks.split(':',1)
+                int_channels[int(ch)] = v
+            else:
+                int_channels[int(ks)] = v
 
         # Create modifier states
         new_states = {}
