@@ -2273,7 +2273,8 @@ class SessionFactory:
     @staticmethod
     def from_fixture_effect(effect_type: str, fixture_ids: List[str] = None,
                             mode: str = 'chase', params: Dict = None,
-                            is_modifier: bool = False) -> PlaybackSession:
+                            is_modifier: bool = False,
+                            universes: List[int] = None) -> PlaybackSession:
         """
         Create session for fixture-aware effect.
 
@@ -2301,6 +2302,7 @@ class SessionFactory:
                 - min_brightness, max_brightness: For pulse effects
             is_modifier: If True, this effect acts as a brightness modifier
                 for other running effects (for effect stacking)
+            universes: Target universes. If None, resolves from fixture locations.
 
         Returns:
             PlaybackSession configured for fixture-based effect
@@ -2314,11 +2316,15 @@ class SessionFactory:
         # Honor is_modifier flag for all effects - this allows any effect to be used as a brightness modifier
         is_brightness_mod = is_modifier
 
+        # Target universes: caller should resolve from fixture DB and pass explicitly.
+        # Falls back to [1] only if nothing was provided.
+        target_universes = universes if universes else [1]
+
         return PlaybackSession(
             session_id=f"fixture_effect_{effect_type}_{mode}_{int(time.time()*1000)}",
             playback_type=PlaybackType.EFFECT,
             name=f'{effect_name} ({mode_name})',
-            universes=[1],  # Will be updated during render based on fixture locations
+            universes=target_universes,
             priority=Priority.EFFECT,
             effect_type=effect_type,
             effect_params=effect_params,
@@ -2412,7 +2418,8 @@ def play_effect(effect_type: str, params: Dict = None,
 
 def play_fixture_effect(effect_type: str, fixture_ids: List[str] = None,
                         mode: str = 'chase', params: Dict = None,
-                        is_modifier: bool = False) -> str:
+                        is_modifier: bool = False,
+                        universes: List[int] = None) -> str:
     """
     Play a fixture-aware effect.
 
@@ -2426,6 +2433,7 @@ def play_fixture_effect(effect_type: str, fixture_ids: List[str] = None,
         mode: 'chase' (phased/distributed) or 'sync' (all same)
         params: Effect-specific parameters (speed, color, etc.)
         is_modifier: If True, run as brightness modifier that stacks on other effects
+        universes: Target universes. If None, resolves from fixture locations.
 
     Returns:
         Session ID for the started playback
@@ -2441,7 +2449,7 @@ def play_fixture_effect(effect_type: str, fixture_ids: List[str] = None,
         play_fixture_effect('fixture_rainbow', mode='chase', params={'speed': 0.3})
         play_fixture_effect('wave', mode='chase', params={'speed': 0.8}, is_modifier=True)
     """
-    session = session_factory.from_fixture_effect(effect_type, fixture_ids, mode, params, is_modifier)
+    session = session_factory.from_fixture_effect(effect_type, fixture_ids, mode, params, is_modifier, universes)
     return unified_engine.play(session)
 
 

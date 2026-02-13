@@ -8352,13 +8352,32 @@ def play_fixture_effect_endpoint():
                     if session_info['id'].startswith('fixture_effect_'):
                         unified_engine.stop_session(session_info['id'])
 
-        # If target_universes provided and no fixture_ids, filter fixtures by universe
+        # Resolve fixtures and universes from the fixture database
+        all_fixtures = content_manager.get_fixtures()
+
         if target_universes and not fixture_ids:
-            all_fixtures = content_manager.get_fixtures()
+            # Filter fixtures to only those in the requested universes
             fixture_ids = [f['fixture_id'] for f in all_fixtures if f.get('universe') in target_universes]
             print(f"🎨 Filtered to {len(fixture_ids)} fixtures in universes {target_universes}", flush=True)
+        elif fixture_ids and not target_universes:
+            # Resolve universes from the fixture IDs
+            resolved = set()
+            for f in all_fixtures:
+                if f['fixture_id'] in fixture_ids:
+                    u = f.get('universe')
+                    if u is not None:
+                        resolved.add(int(u))
+            target_universes = sorted(resolved) if resolved else None
+        elif not fixture_ids and not target_universes:
+            # No filter at all — use all fixtures and resolve their universes
+            resolved = set()
+            for f in all_fixtures:
+                u = f.get('universe')
+                if u is not None:
+                    resolved.add(int(u))
+            target_universes = sorted(resolved) if resolved else None
 
-        session_id = play_fixture_effect(effect_type, fixture_ids, mode, params, is_modifier)
+        session_id = play_fixture_effect(effect_type, fixture_ids, mode, params, is_modifier, target_universes)
         print(f"🎨 Effect started: session_id={session_id}", flush=True)
 
         # Get session info for response
