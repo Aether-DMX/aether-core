@@ -3302,10 +3302,18 @@ class RDMManager:
         # Update status
         self.discovery_tasks[node_id] = {"status": "complete", "result": result}
 
-        # Save discovered devices to database
-        if result.get('success') and result.get('devices'):
+        # Save discovered devices to database and purge stale entries
+        if result.get('success'):
             universe = node.get('universe', 1)
-            self._save_devices(node_id, universe, result['devices'])
+            found_uids = []
+            for d in result.get('devices', []):
+                found_uids.append(d if isinstance(d, str) else d.get('uid'))
+
+            if result.get('devices'):
+                self._save_devices(node_id, universe, result['devices'])
+
+            # Purge stale devices: remove DB entries for this node that were NOT found
+            self._purge_stale_devices(node_id, found_uids)
 
             # Fetch detailed info for each device and populate cache + inventory
             for device in result['devices']:
@@ -3387,6 +3395,27 @@ class RDMManager:
         conn.commit()
         print(f"✓ Saved {len(devices)} RDM devices to database")
 
+    def _purge_stale_devices(self, node_id, found_uids):
+        """Remove devices from DB and caches that belong to this node but were NOT found in latest discovery."""
+        conn = get_db()
+        c = conn.cursor()
+        c.execute('SELECT uid FROM rdm_devices WHERE node_id = ?', (node_id,))
+        db_uids = [row[0] for row in c.fetchall()]
+
+        stale_uids = [uid for uid in db_uids if uid not in found_uids]
+        if not stale_uids:
+            return
+
+        for uid in stale_uids:
+            c.execute('DELETE FROM rdm_devices WHERE uid = ?', (uid,))
+            c.execute('DELETE FROM rdm_personalities WHERE device_uid = ?', (uid,))
+            with self._lock:
+                self._devices.pop(uid, None)
+                self.live_inventory.pop(uid, None)
+
+        conn.commit()
+        print(f"🗑️ Purged {len(stale_uids)} stale RDM devices from {node_id}: {stale_uids}")
+
     def get_device_info(self, node_id, uid):
         """Get detailed info for a specific RDM device."""
         node = node_manager.get_node(node_id)
@@ -3410,8 +3439,8 @@ class RDMManager:
             dmx_address = ?, dmx_footprint = ?, personality_id = ?, personality_count = ?,
             software_version = ?, sensor_count = ?, last_seen = ?
             WHERE uid = ?''',
-            (info.get('dmx_address', 0), info.get('footprint', 0),
-             info.get('personality_current', 0), info.get('personality_count', 0),
+            (info.get('dmx_address', 0), info.get('dmx_footprint', info.get('footprint', 0)),
+             info.get('personality_id', info.get('personality_current', 0)), info.get('personality_count', 0),
              info.get('software_version', ''), info.get('sensor_count', 0),
              datetime.now().isoformat(), uid))
 
