@@ -429,6 +429,13 @@ class UnifiedPlaybackEngine:
         # Modifier renderer (from render_engine.py)
         self._modifier_renderer = None
 
+        # DMX state reader - reads current live DMX values for modifier-only universes
+        self._dmx_state_reader: Optional[Callable[[int], Dict[int, int]]] = None
+
+        # Snapshot of base DMX state for modifier-only universes (avoids feedback loop)
+        # Key: universe, Value: {channel: value} - captured once, reused each frame
+        self._modifier_base_snapshot: Dict[int, Dict[int, int]] = {}
+
         # Engine state
         self._running = False
         self._stop_flag = threading.Event()
@@ -454,6 +461,10 @@ class UnifiedPlaybackEngine:
     def set_cue_resolver(self, resolver: Callable[[str, int], Optional[Dict]]):
         """Set function to resolve Cue: resolver(stack_id, cue_index) -> cue_data"""
         self._cue_resolver = resolver
+
+    def set_dmx_state_reader(self, reader: Callable[[int], Dict[int, int]]):
+        """Set function to read current DMX state: reader(universe) -> {channel: value}"""
+        self._dmx_state_reader = reader
 
     def set_modifier_renderer(self, renderer):
         """Set the modifier renderer from render_engine.py"""
@@ -547,6 +558,12 @@ class UnifiedPlaybackEngine:
             # Register session
             self._sessions[session.session_id] = session
 
+            # Clear modifier base snapshots for this session's universes
+            # so modifiers will re-snapshot from the new base
+            if not session.is_brightness_modifier:
+                for u in session.universes:
+                    self._modifier_base_snapshot.pop(u, None)
+
             print(f"▶️ Playing {session.playback_type.value}: {session.name} (ID: {session.session_id})")
             return session.session_id
 
@@ -594,6 +611,10 @@ class UnifiedPlaybackEngine:
                 )
                 session.state = PlaybackState.FADING_OUT
             else:
+                # If stopping a modifier, clear base snapshots for its universes
+                if session.is_brightness_modifier:
+                    for u in session.universes:
+                        self._modifier_base_snapshot.pop(u, None)
                 session.state = PlaybackState.STOPPED
                 del self._sessions[session_id]
                 self._modifier_states.pop(session_id, None)
@@ -603,6 +624,7 @@ class UnifiedPlaybackEngine:
 
     def stop_all(self, fade_ms: int = 0):
         """Stop all sessions"""
+        self._modifier_base_snapshot.clear()
         with self._session_lock:
             session_ids = list(self._sessions.keys())
             for sid in session_ids:
@@ -697,6 +719,23 @@ class UnifiedPlaybackEngine:
                                     universe_outputs[universe][ch] = val
                     except Exception as e:
                         print(f"❌ Render error for {session.name}: {e}")
+
+                # For modifier-only universes (no base session), use snapshotted base state
+                # The snapshot is captured once from live DMX and reused each frame
+                # to avoid feedback loops (modifier output overwriting its own base)
+                if modifier_sessions and self._dmx_state_reader:
+                    for session in modifier_sessions:
+                        for universe in session.universes:
+                            if universe not in universe_outputs:
+                                # Check if we have a snapshot for this universe
+                                if universe not in self._modifier_base_snapshot:
+                                    # First time: capture current live DMX as base snapshot
+                                    live_state = self._dmx_state_reader(universe)
+                                    if live_state:
+                                        self._modifier_base_snapshot[universe] = dict(live_state)
+                                # Use snapshot as base (copy so we don't mutate it)
+                                if universe in self._modifier_base_snapshot:
+                                    universe_outputs[universe] = dict(self._modifier_base_snapshot[universe])
 
                 # Apply brightness modifiers to the combined output
                 for session in modifier_sessions:
@@ -857,6 +896,203 @@ class UnifiedPlaybackEngine:
             for i, fixture in enumerate(fixtures):
                 rng.seed(session.seed + i + time_seed * 1000)
                 brightness = 1.0 if rng.random() < density else 0.1
+
+                start_ch = fixture.get('start_channel', 1)
+                ch_count = fixture.get('channel_count', 4)
+                for ch_offset in range(ch_count):
+                    brightness_map[start_ch + ch_offset] = brightness
+
+        elif effect_type == "fixture_pulse":
+            # Fixture-aware pulse/breathing as brightness modifier
+            mode = session.distribution_mode or params.get('mode', 'sync')
+            speed = params.get('speed', 0.5)
+            min_bright = params.get('min_brightness', 0.1)
+            max_bright = params.get('max_brightness', 1.0)
+
+            for i, fixture in enumerate(fixtures):
+                if mode == 'chase':
+                    phase_offset = i / num_fixtures
+                    phase = (elapsed * speed + phase_offset) % 1.0
+                else:
+                    phase = (elapsed * speed) % 1.0
+
+                brightness = min_bright + (max_bright - min_bright) * (0.5 + 0.5 * math.sin(phase * 2 * math.pi))
+
+                start_ch = fixture.get('start_channel', 1)
+                ch_count = fixture.get('channel_count', 4)
+                for ch_offset in range(ch_count):
+                    brightness_map[start_ch + ch_offset] = brightness
+
+        elif effect_type == "fixture_strobe":
+            # Fixture-aware strobe as brightness modifier
+            speed = params.get('speed', 0.5)
+            duty_cycle = params.get('duty_cycle', 0.5)
+
+            rate = 1.0 / max(0.05, speed)
+            phase = (elapsed * rate) % 1.0
+            brightness = 1.0 if phase < duty_cycle else 0.0
+
+            for fixture in fixtures:
+                start_ch = fixture.get('start_channel', 1)
+                ch_count = fixture.get('channel_count', 4)
+                for ch_offset in range(ch_count):
+                    brightness_map[start_ch + ch_offset] = brightness
+
+        elif effect_type == "fixture_chase":
+            # Galactic wave chase as brightness modifier
+            speed = params.get('speed', 2.0)
+            tail_length = params.get('tail_length', 2)
+
+            wave_width = 0.15 + (tail_length / 8.0) * 0.6
+            phase = (elapsed * speed * 0.5) % 1.0
+
+            for i, fixture in enumerate(fixtures):
+                fixture_pos = i / num_fixtures
+                dist = fixture_pos - phase
+                if dist > 0.5:
+                    dist -= 1.0
+                elif dist < -0.5:
+                    dist += 1.0
+
+                normalized_dist = abs(dist) / wave_width
+
+                if normalized_dist < 1.0:
+                    brightness = 0.5 * (1.0 + math.cos(normalized_dist * math.pi))
+                    ripple = 0.1 * math.sin(elapsed * 3.0 + i * 0.5) * (1.0 - normalized_dist)
+                    brightness = min(1.0, brightness + ripple)
+                else:
+                    falloff = (normalized_dist - 1.0) * 2.0
+                    brightness = max(0.0, 0.08 * math.exp(-falloff))
+
+                start_ch = fixture.get('start_channel', 1)
+                ch_count = fixture.get('channel_count', 4)
+                for ch_offset in range(ch_count):
+                    brightness_map[start_ch + ch_offset] = brightness
+
+        elif effect_type == "fixture_scanner":
+            # Scanner beam sweep as brightness modifier
+            speed = params.get('speed', 1.5)
+            width = params.get('width', 2)
+            direction = params.get('direction', 'bounce')
+            depth = params.get('depth', 100) / 100.0
+
+            if direction == "bounce":
+                cycle = (elapsed * speed) % 2.0
+                beam_pos = cycle * (num_fixtures - 1) if cycle < 1.0 else (2.0 - cycle) * (num_fixtures - 1)
+            elif direction == "forward":
+                beam_pos = (elapsed * speed * num_fixtures) % num_fixtures
+            else:
+                beam_pos = num_fixtures - (elapsed * speed * num_fixtures) % num_fixtures
+
+            for i, fixture in enumerate(fixtures):
+                distance = abs(i - beam_pos)
+                if distance >= width:
+                    multiplier = 0.0
+                else:
+                    multiplier = (math.cos((distance / width) * math.pi) + 1) / 2
+
+                brightness = 1.0 + (multiplier - 1.0) * depth
+
+                start_ch = fixture.get('start_channel', 1)
+                ch_count = fixture.get('channel_count', 4)
+                for ch_offset in range(ch_count):
+                    brightness_map[start_ch + ch_offset] = brightness
+
+        elif effect_type == "fixture_sparkle":
+            # Sparkle flashes as brightness modifier
+            density = params.get('density', 30) / 100.0
+            flash_duration = params.get('flash_duration', 200) / 1000.0
+            depth = params.get('depth', 100) / 100.0
+
+            state_key = session.session_id
+            if state_key not in self._modifier_states:
+                self._modifier_states[state_key] = {}
+            states = self._modifier_states[state_key]
+
+            import random as py_random
+
+            for i, fixture in enumerate(fixtures):
+                fkey = f"sparkle_{i}"
+                if fkey not in states:
+                    states[fkey] = {"active": False, "start": 0.0, "next_check": 0.0}
+                fs = states[fkey]
+
+                if not fs["active"]:
+                    if elapsed >= fs["next_check"]:
+                        rng = py_random.Random(session.seed + i + int(elapsed * 20) * 1000)
+                        if rng.random() < density * 0.05:
+                            fs["active"] = True
+                            fs["start"] = elapsed
+                        fs["next_check"] = elapsed + 0.05
+
+                if fs["active"]:
+                    flash_elapsed = elapsed - fs["start"]
+                    if flash_elapsed >= flash_duration:
+                        fs["active"] = False
+                        brightness = 1.0
+                    else:
+                        brightness = 1.0 + (1.0 - flash_elapsed / flash_duration) * depth
+                else:
+                    brightness = 1.0
+
+                start_ch = fixture.get('start_channel', 1)
+                ch_count = fixture.get('channel_count', 4)
+                for ch_offset in range(ch_count):
+                    brightness_map[start_ch + ch_offset] = brightness
+
+        elif effect_type == "fixture_lightning":
+            # Lightning flash as brightness modifier
+            frequency = params.get('frequency', 0.5)
+            intensity = params.get('intensity', 100) / 100.0
+            decay_time = params.get('decay', 200) / 1000.0
+            depth = params.get('depth', 100) / 100.0
+
+            state_key = session.session_id
+            if state_key not in self._modifier_states:
+                self._modifier_states[state_key] = {"flash_active": False, "flash_start": 0.0, "next_check": 0.0}
+            fs = self._modifier_states[state_key]
+
+            import random as py_random
+
+            if not fs.get("flash_active", False):
+                if elapsed >= fs.get("next_check", 0.0):
+                    rng = py_random.Random(session.seed + int(elapsed * 10))
+                    if rng.random() < frequency * 0.1:
+                        fs["flash_active"] = True
+                        fs["flash_start"] = elapsed
+                    fs["next_check"] = elapsed + 0.1
+
+            if fs.get("flash_active", False):
+                flash_elapsed = elapsed - fs["flash_start"]
+                if flash_elapsed >= decay_time:
+                    fs["flash_active"] = False
+                    brightness = 1.0
+                else:
+                    brightness = 1.0 + intensity * math.exp(-3 * flash_elapsed / decay_time) * depth
+            else:
+                brightness = 1.0
+
+            for fixture in fixtures:
+                start_ch = fixture.get('start_channel', 1)
+                ch_count = fixture.get('channel_count', 4)
+                for ch_offset in range(ch_count):
+                    brightness_map[start_ch + ch_offset] = brightness
+
+        elif effect_type == "fixture_saturation_pulse":
+            # Saturation pulse as brightness modifier - modulates brightness sinusoidally
+            mode = session.distribution_mode or params.get('mode', 'sync')
+            speed = params.get('speed', 0.5)
+            min_sat = params.get('min_saturation', 0) / 100.0
+            max_sat = params.get('max_saturation', 100) / 100.0
+
+            # Remap saturation range to brightness range (0.3 to 1.0)
+            min_b = max(0.3, min_sat)
+            max_b = min(1.0, max_sat) if max_sat > 0.01 else 1.0
+
+            for i, fixture in enumerate(fixtures):
+                phase_off = (i / num_fixtures) if mode == 'chase' else 0
+                phase = (elapsed * speed + phase_off) % 1.0
+                brightness = min_b + (max_b - min_b) * (0.5 + 0.5 * math.sin(phase * 2 * math.pi))
 
                 start_ch = fixture.get('start_channel', 1)
                 ch_count = fixture.get('channel_count', 4)

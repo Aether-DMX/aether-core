@@ -10390,6 +10390,22 @@ if __name__ == '__main__':
     unified_engine.set_look_resolver(unified_look_resolver)
     unified_engine.set_fixture_resolver(unified_fixture_resolver)
     unified_engine.set_modifier_renderer(ModifierRenderer())
+
+    # DMX state reader - allows modifiers to read current live DMX values
+    # when no base session exists (e.g., look played via render_engine or direct set)
+    def unified_dmx_state_reader(universe: int) -> dict:
+        """Read current DMX state for a universe from dmx_state (the SSOT)"""
+        try:
+            with dmx_state.lock:
+                if universe in dmx_state.universes:
+                    raw = dmx_state.universes[universe]
+                    # Return only non-zero channels as {channel: value} (1-indexed)
+                    return {ch + 1: val for ch, val in enumerate(raw) if val > 0}
+            return {}
+        except Exception:
+            return {}
+
+    unified_engine.set_dmx_state_reader(unified_dmx_state_reader)
     unified_engine.start()
     print("✓ Unified Playback Engine started (30 fps)")
 
