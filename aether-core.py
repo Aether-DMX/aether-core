@@ -9007,6 +9007,43 @@ def apply_scene_to_all_fixtures():
         'channels_by_universe': all_channels
     })
 
+@app.route('/api/fixture-library/apply-look-to-all', methods=['POST'])
+def apply_look_to_all_fixtures():
+    data = request.get_json() or {}
+    look_id = data.get('look_id')
+    fade_ms = data.get('fade_ms', 1000)
+    universes_filter = data.get('universes', [])
+    if not look_id:
+        return jsonify({'error': 'look_id required'}), 400
+    look = looks_sequences_manager.get_look(look_id)
+    if not look:
+        return jsonify({'error': 'Look not found'}), 404
+    ch = look.channels
+    if not ch:
+        return jsonify({'error': 'Look has no channels'}), 400
+    # Group channels by universe
+    by_univ = {}
+    for k, v in ch.items():
+        ks = str(k)
+        if ':' in ks:
+            u, c_num = ks.split(':',1)
+            u = int(u)
+        else:
+            u = 1
+            c_num = ks
+        if universes_filter and u not in universes_filter:
+            continue
+        if u not in by_univ:
+            by_univ[u] = {}
+        by_univ[u][c_num] = v
+    for u, channels in by_univ.items():
+        content_manager.set_channels(u, channels, fade_ms=fade_ms)
+    return jsonify({
+        'success': True,
+        'look_name': look.name,
+        'universes': list(by_univ.keys()),
+    })
+
 @app.route('/api/fixture-library/apply-color-to-all', methods=['POST'])
 def apply_color_to_all_fixtures():
     """
