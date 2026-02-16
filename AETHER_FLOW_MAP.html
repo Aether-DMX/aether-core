@@ -82,8 +82,7 @@
   .tab-panel.active { display: block; }
 
   /* REDLINE STYLES */
-  .redline-marker { cursor: pointer; transition: transform 0.15s; }
-  .redline-marker:hover { transform: scale(1.15); }
+  .redline-marker { cursor: pointer; }
   .flaw-ring { fill: none; stroke-width: 2; stroke-dasharray: 4 2; opacity: 0.7; }
   .sev-crit { stroke: #ff4444; fill: rgba(255,68,68,0.08); }
   .sev-high { stroke: #ff8800; fill: rgba(255,136,0,0.08); }
@@ -924,10 +923,10 @@
         <text class="flaw-badge" font-size="8" fill="#fff" text-anchor="middle" x="118" y="414">F04</text>
       </g>
 
-      <!-- FLAW-05: CORS Wildcard — ring around CORS box -->
+      <!-- FLAW-05: CORS Wildcard — FIXED -->
       <g class="redline-marker" onclick="showFlaw('F05')">
-        <rect class="flaw-ring sev-crit" x="466" y="372" width="128" height="34" rx="6"/>
-        <circle cx="600" cy="380" r="12" fill="#ff4444"/>
+        <rect class="flaw-ring" x="466" y="372" width="128" height="34" rx="6" stroke="#44cc44"/>
+        <circle cx="600" cy="380" r="12" fill="#44cc44"/>
         <text class="flaw-badge" font-size="8" fill="#fff" text-anchor="middle" x="600" y="384">F05</text>
       </g>
 
@@ -983,11 +982,11 @@
         <text class="flaw-badge" font-size="8" fill="#000" text-anchor="middle" x="170" y="148">F11</text>
       </g>
 
-      <!-- FLAW-12: No Input Validation — on ContentManager -->
+      <!-- FLAW-12: Input Validation — FIXED -->
       <g class="redline-marker" onclick="showFlaw('F12')">
-        <rect class="flaw-ring sev-med" x="372" y="264" width="123" height="36" rx="6"/>
-        <circle cx="500" cy="266" r="12" fill="#ddaa00"/>
-        <text class="flaw-badge" font-size="8" fill="#000" text-anchor="middle" x="500" y="270">F12</text>
+        <rect class="flaw-ring" x="372" y="264" width="123" height="36" rx="6" stroke="#44cc44"/>
+        <circle cx="500" cy="266" r="12" fill="#44cc44"/>
+        <text class="flaw-badge" font-size="8" fill="#fff" text-anchor="middle" x="500" y="270">F12</text>
       </g>
 
       <!-- FLAW-13: Memory Growth Unbounded Threads -->
@@ -997,18 +996,18 @@
         <text font-size="7" fill="#ddaa00" x="678" y="344">thread leaks</text>
       </g>
 
-      <!-- FLAW-14: Scheduler Naive Cron — on Scheduler box -->
+      <!-- FLAW-14: Cron Parser — FIXED -->
       <g class="redline-marker" onclick="showFlaw('F14')">
-        <rect class="flaw-ring sev-med" x="111" y="408" width="93" height="36" rx="6"/>
-        <circle cx="210" cy="410" r="12" fill="#ddaa00"/>
-        <text class="flaw-badge" font-size="8" fill="#000" text-anchor="middle" x="210" y="414">F14</text>
+        <rect class="flaw-ring" x="111" y="408" width="93" height="36" rx="6" stroke="#44cc44"/>
+        <circle cx="210" cy="410" r="12" fill="#44cc44"/>
+        <text class="flaw-badge" font-size="8" fill="#fff" text-anchor="middle" x="210" y="414">F14</text>
       </g>
 
-      <!-- FLAW-15: ShowEngine Timeline Drift — on ShowEngine box -->
+      <!-- FLAW-15: Timeline Drift — FIXED -->
       <g class="redline-marker" onclick="showFlaw('F15')">
-        <rect class="flaw-ring sev-med" x="435" y="318" width="93" height="38" rx="6"/>
-        <circle cx="534" cy="320" r="12" fill="#ddaa00"/>
-        <text class="flaw-badge" font-size="8" fill="#000" text-anchor="middle" x="534" y="324">F15</text>
+        <rect class="flaw-ring" x="435" y="318" width="93" height="38" rx="6" stroke="#44cc44"/>
+        <circle cx="534" cy="320" r="12" fill="#44cc44"/>
+        <text class="flaw-badge" font-size="8" fill="#fff" text-anchor="middle" x="534" y="324">F15</text>
       </g>
 
       <!-- ========================================================================== -->
@@ -1028,10 +1027,10 @@
         <text class="flaw-badge" font-size="7" fill="#fff" text-anchor="middle" x="456" y="386">F17</text>
       </g>
 
-      <!-- FLAW-18: Dead Frontend Code — on 23 Stores -->
+      <!-- FLAW-18: Dead Frontend Code — FIXED -->
       <g class="redline-marker" onclick="showFlaw('F18')">
-        <rect class="flaw-ring sev-low" x="141" y="80" width="113" height="38" rx="6"/>
-        <circle cx="260" cy="82" r="10" fill="#888888"/>
+        <rect class="flaw-ring" x="141" y="80" width="113" height="38" rx="6" stroke="#44cc44"/>
+        <circle cx="260" cy="82" r="10" fill="#44cc44"/>
         <text class="flaw-badge" font-size="7" fill="#fff" text-anchor="middle" x="260" y="86">F18</text>
       </g>
 
@@ -1069,7 +1068,7 @@
         <circle cx="752" cy="352" r="6" fill="#ff4444"/><text font-size="9" fill="var(--text)" x="764" y="356">F04  SQLite No Pooling — 35 threads, no context mgrs, "db locked"</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('F05')">
-        <circle cx="752" cy="370" r="6" fill="#ff4444"/><text font-size="9" fill="var(--text)" x="764" y="374">F05  CORS origins="*" — any website can control your DMX</text>
+        <circle cx="752" cy="370" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="374">F05  ✅ FIXED — CORS now uses ALLOWED_ORIGINS</text>
       </g>
 
       <!-- HIGH -->
@@ -1096,16 +1095,16 @@
         <circle cx="752" cy="534" r="6" fill="#ddaa00"/><text font-size="9" fill="var(--text)" x="764" y="538">F11  API Routing Split — some bypass Express, breaks middleware</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('F12')">
-        <circle cx="752" cy="552" r="6" fill="#ddaa00"/><text font-size="9" fill="var(--text)" x="764" y="556">F12  No Value Validation — ch values >255 accepted, no universe check</text>
+        <circle cx="752" cy="552" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="556">F12  ✅ FIXED — values clamped 0-255, universe validated 1-64</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('F13')">
         <circle cx="752" cy="570" r="6" fill="#ddaa00"/><text font-size="9" fill="var(--text)" x="764" y="574">F13  Unbounded Threads — Supabase spawns new thread per op, no pool</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('F14')">
-        <circle cx="752" cy="588" r="6" fill="#ddaa00"/><text font-size="9" fill="var(--text)" x="764" y="592">F14  Custom Cron Parser — 60s granularity, no error handling</text>
+        <circle cx="752" cy="588" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="592">F14  ✅ FIXED — croniter replaces hand-rolled parser</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('F15')">
-        <circle cx="752" cy="606" r="6" fill="#ddaa00"/><text font-size="9" fill="var(--text)" x="764" y="610">F15  ShowEngine Drift — tempo math bug + time.time() vs monotonic</text>
+        <circle cx="752" cy="606" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="610">F15  ✅ FIXED — monotonic clock + correct tempo scaling</text>
       </g>
 
       <!-- LOW -->
@@ -1117,7 +1116,7 @@
         <circle cx="752" cy="670" r="6" fill="#888888"/><text font-size="9" fill="var(--text)" x="764" y="674">F17  FPS Mismatch — effects 30fps vs DMX 40fps = uneven frames</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('F18')">
-        <circle cx="752" cy="688" r="6" fill="#888888"/><text font-size="9" fill="var(--text)" x="764" y="692">F18  Dead Frontend Code — 3 unused stores (569 LOC), 2 legacy overlap</text>
+        <circle cx="752" cy="688" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="692">F18  ✅ FIXED — dead stores removed, intentContextStore is alive</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('F19')">
         <circle cx="752" cy="706" r="6" fill="#888888"/><text font-size="9" fill="var(--text)" x="764" y="710">F19  Supabase No Conflict Resolution — one-way push, no merge</text>
@@ -1257,20 +1256,20 @@ const flaws = {
   'F02': {title:'F02 — 8,446-LOC Monolithic God File (CRITICAL)', sev:'CRITICAL', sevColor:'#ff4444', component:'aether-core.py', problem:'15+ classes, 186+ routes, 87 bare except clauses, 35 thread spawns, ~167 get_db() calls — ALL in one file. Single syntax error prevents entire system from starting.', scenario:'Developer introduces bug in a rarely-used route. File fails to parse at import time. Entire Flask app cannot start. All DMX offline.', fix:'Decompose into Flask Blueprints:\n  routes/, engines/, managers/, models/\nEach module testable independently.'},
   'F03': {title:'F03 — UDP No Delivery Guarantee (CRITICAL)', sev:'CRITICAL', sevColor:'#ff4444', component:'NodeManager.send_udpjson() (L1948)', problem:'ALL DMX commands sent via UDP fire-and-forget. No ACK, no retry, no verification. WiFi packet loss 1-5% typical.', scenario:'Critical blackout/panic UDP packet dropped. Node continues outputting previous state. SSOT believes blackout was sent but physical output does not match. Safety failure.', fix:'1) Add ACK mode for critical commands (blackout, panic)\n2) Auto-retry with 25ms backoff for non-critical\n3) Track per-node delivery success rates'},
   'F04': {title:'F04 — SQLite Concurrent Access (CRITICAL)', sev:'CRITICAL', sevColor:'#ff4444', component:'get_db() and all DB operations', problem:'New sqlite3.connect() on every call with check_same_thread=False. No pooling, no context managers. ~167 get_db()/close() pairs, many without try/finally. 35+ concurrent threads hitting SQLite.', scenario:'Concurrent writes cause "database is locked" timeout. Leaked connections from exception paths hold locks indefinitely. Progressive degradation until restart.', fix:'1) Connection pool or single-writer pattern\n2) Context manager: with get_db() as conn:\n3) Enable WAL mode (PRAGMA journal_mode=WAL)'},
-  'F05': {title:'F05 — CORS Wildcard (CRITICAL)', sev:'CRITICAL', sevColor:'#ff4444', component:'aether-core.py L305-332', problem:'Code computes ALLOWED_ORIGINS but then uses origins="*" on L331. SocketIO also uses cors_allowed_origins="*". ANY website can make API calls.', scenario:'User connects phone to AetherDMX WiFi. Compromised website on phone makes cross-origin request to /api/blackout. Unauthorized DMX control.', fix:'Replace origins="*" with origins=ALLOWED_ORIGINS\nSame for SocketIO cors_allowed_origins.\nThis is a 1-line fix.'},
+  'F05': {title:'F05 — CORS Wildcard ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'aether-core.py L305-332', problem:'[FIXED] Code computed ALLOWED_ORIGINS but used origins="*". Now uses ALLOWED_ORIGINS for both Flask-CORS and SocketIO.', scenario:'Fixed in commit 86589f1. Evil origins now blocked.', fix:'RESOLVED: origins=ALLOWED_ORIGINS on both Flask-CORS and SocketIO.'},
   'F06': {title:'F06 — Duplicate Playback Systems (HIGH)', sev:'HIGH', sevColor:'#ff8800', component:'ChaseEngine, ShowEngine, UnifiedPlayback, RenderEngine, PlaybackCtrl', problem:'5 separate playback systems with independent timing loops and thread management. Code has "AUTHORITY VIOLATION" warning comments. ChaseEngine and ShowEngine bypass UnifiedPlaybackEngine.', scenario:'Look + Chase on same universe. Both engines write to dmx_state within same 25ms frame. Interleaved channel values cause flickering.', fix:'Complete TASK-0006/0007 migration:\nRetire ChaseEngine/ShowEngine timing loops.\nExtract as pure functions called by UnifiedPlayback.'},
   'F07': {title:'F07 — Dual Fade Engine (HIGH)', sev:'HIGH', sevColor:'#ff8800', component:'DMXStateManager.get_output_values() + ESP32 firmware', problem:'Two independent fade engines: Python Hermite smoothstep AND ESP32 local linear fade. Both active simultaneously when fade_ms > 0. AETHER_NOW.md calls this "undefined behavior."', scenario:'2-second fade requested. Python interpolates with smoothstep. 40Hz loop sends interpolated values to ESP32 which tries to fade each received value. Result: stutter-step jerky fades.', fix:'Choose ONE fade authority.\nRecommended: ESP32 handles all fades locally.\nSSOT sends target + fade_ms, removes own interpolation.'},
   'F08': {title:'F08 — Arbitration TOCTOU Race (HIGH)', sev:'HIGH', sevColor:'#ff8800', component:'ArbitrationManager (L931)', problem:'TOCTOU race: engine calls acquire(), does work, then writes. Between acquire and write, another engine can acquire with higher priority, changing the owner. release() unconditionally resets to idle.', scenario:'Effect engine acquires (60). Chase force-acquires. Effect thread still running writes channels via content_manager — both engines writing, arbitration not preventing it.', fix:'1) Per-write arbitration tokens\n2) acquire() returns token, set_channels() requires it\n3) Revoke callback so engines stop when they lose ownership'},
   'F09': {title:'F09 — No Crash Recovery (HIGH)', sev:'HIGH', sevColor:'#ff8800', component:'All global singletons', problem:'10+ module-level globals with all runtime state in memory. _save_state() has 1s debounce. Active playback type, arbitration owner, running threads, merge registrations — NEVER persisted.', scenario:'Pi loses power during 3-hour show. On restart: all channels zero, show not resumed, schedule runner reloads but in-progress show is lost. Operator must manually restart.', fix:'1) Persist playback state on every transition\n2) On startup, check for interrupted playback + offer resume\n3) Implement the last_session TODO documented in AETHER_NOW.md'},
   'F10': {title:'F10 — Discovery No Authentication (HIGH)', sev:'HIGH', sevColor:'#ff8800', component:'discovery_listener() (L4850)', problem:'UDP discovery on port 9999 accepts any JSON from any IP. No auth, no signing, no allowlist. msg["ip"] = addr[0] overwrites. Rogue device can register with any node_id.', scenario:'Attacker on AetherDMX WiFi sends spoofed registration as "pulse-422C". NodeManager updates IP. DMX commands go to attacker instead of real node.', fix:'1) HMAC shared secret on registration packets\n2) Validate source IP matches registered IP\n3) Re-registration from different IP triggers alert\n4) Node allowlist'},
   'F11': {title:'F11 — API Routing Inconsistency (MEDIUM)', sev:'MEDIUM', sevColor:'#ddaa00', component:'Frontend stores + Express proxy', problem:'Some calls go through Express proxy (port 3000), others bypass to Flask directly (port 8891). Look/Sequence playback calls Flask direct. Express middleware skipped for critical operations.', scenario:'Auth middleware added to Express. Playback control remains unprotected. Bug in Express proxy makes proxied requests fail, but direct calls work — intermittent failure.', fix:'Choose one routing strategy consistently.\nRecommend: everything through Express for auth/logging.'},
-  'F12': {title:'F12 — No Input Validation (MEDIUM)', sev:'MEDIUM', sevColor:'#ddaa00', component:'DMXStateManager.set_channels(), ContentManager, API routes', problem:'Channel range validated (1-512) but VALUES not validated. No clamp to 0-255. Negative values, >255, floats accepted. Universe numbers also not validated.', scenario:'Frontend bug sends value 300. Stored in SSOT. ESP32 wraps (300 & 0xFF = 44). Unexpected dimming. Or universe=-1 creates phantom entry.', fix:'1) Clamp values to 0-255 in set_channels()\n2) Validate universe range (1-64)\n3) Input validation middleware for API routes'},
+  'F12': {title:'F12 — Input Validation ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'DMXStateManager.set_channels()', problem:'[FIXED] Values now clamped max(0, min(255, int(value))) at SSOT write point. Universe validated int 1-64.', scenario:'Fixed in commit 810ede1. Boundary tested: 0, 255, 300, -10, None.', fix:'RESOLVED: Clamping + universe validation in set_channels().'},
   'F13': {title:'F13 — Unbounded Thread Spawning (MEDIUM)', sev:'MEDIUM', sevColor:'#ddaa00', component:'ChaseEngine, Supabase sync, node cache refresh', problem:'35 threading.Thread spawns. Supabase spawns NEW thread per create/update — no pool, no limit. Node cache refresh leaks connections. Crashed chase threads never cleaned up.', scenario:'Rapid scene creation + slow Supabase = hundreds of threads. Each creates network connection + DB connection. Pi RAM exhausted. OOM kill.', fix:'1) ThreadPoolExecutor for Supabase sync\n2) Context managers for all SQLite connections\n3) Memory monitoring in health endpoint\n4) Max thread counts for engines'},
-  'F14': {title:'F14 — Custom Cron Parser (MEDIUM)', sev:'MEDIUM', sevColor:'#ddaa00', component:'ScheduleRunner (L1039)', problem:'Custom cron parser instead of APScheduler/croniter. 60-second check granularity. No error handling on DB read in update_schedules().', scenario:'Scheduled sunset look at 18:00. Cron parser has edge case bug. Schedule never fires. Or DB error empties schedule list silently.', fix:'1) Replace with APScheduler or croniter\n2) Add error handling around DB operations\n3) Log schedule fire/miss events'},
-  'F15': {title:'F15 — ShowEngine Timeline Drift (MEDIUM)', sev:'MEDIUM', sevColor:'#ddaa00', component:'ShowEngine._run_timeline() (L1428)', problem:'Wait loop subtracts 0.1s regardless of actual sleep duration. Tempo division applied to sleep but not to countdown. Uses time.time() instead of time.monotonic().', scenario:'Tempo 0.5x for slow dramatic show. Timing math causes cumulative drift. Over 30-min show, events minutes off. NTP sync mid-show causes timing jump.', fix:'1) time.monotonic() instead of time.time()\n2) Fix tempo math in both sleep + countdown\n3) Use absolute event times, not accumulated deltas'},
+  'F14': {title:'F14 — Cron Parser ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'ScheduleRunner (L1089)', problem:'[FIXED] Replaced 20-line hand-rolled cron parser with croniter.match(). Full cron syntax support.', scenario:'Fixed in commit eaf1e8d. croniter 6.0.0 installed. Tested wildcards, steps, ranges.', fix:'RESOLVED: croniter.match() replaces custom parser.'},
+  'F15': {title:'F15 — Timeline Drift ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'ShowEngine._run_timeline() (L1439)', problem:'[FIXED] Replaced time.time() with time.monotonic(). Fixed tempo math: elapsed_logical = wall_time * tempo.', scenario:'Fixed in commit 00b4bf6. Tested tempo 0.5x, 1.0x, 2.0x — sub-1ms drift.', fix:'RESOLVED: Monotonic clock + correct tempo scaling.'},
   'F16': {title:'F16 — No Persistent Audit Log (LOW)', sev:'LOW', sevColor:'#888888', component:'ArbitrationManager.history', problem:'In-memory list capped at 50 entries. Rejected writes capped at 20. Lost on restart. Post-incident analysis impossible.', scenario:'Lighting "glitched" during live event. History overwritten by normal operations. No way to determine cause.', fix:'1) Structured logging with file rotation\n2) Persist audit trail to SQLite\n3) Timestamps + correlation IDs'},
   'F17': {title:'F17 — FPS Mismatch 30 vs 40 (LOW)', sev:'LOW', sevColor:'#888888', component:'EffectsEngine (30fps) vs NodeManager refresh (40fps)', problem:'Effects render at 30fps, DMX refresh at 40fps. 25% of frames have no new data. Some effect frames held 25ms, others 50ms.', scenario:'Strobe at 30Hz appears subtly uneven — irregular frame timing from FPS mismatch.', fix:'Align all render loops to same FPS.\n40fps recommended (matches DMX512 spec).'},
-  'F18': {title:'F18 — Dead Frontend Code (LOW)', sev:'LOW', sevColor:'#888888', component:'intentContextStore (479 LOC), activeChannelStore (44), stageStore (46)', problem:'3 stores with zero imports = 569 LOC dead code. 2 legacy stores (sceneStore, chaseStore) overlap with newer stores. Cognitive load + bundle size.', scenario:'Developer modifies sceneStore thinking it is active path. Change works in testing, fails in production because code path goes through lookStore.', fix:'Execute AETHER_CLEANUP_PLAN Phase 1+2:\nDelete unused stores, migrate legacy stores.'},
+  'F18': {title:'F18 — Dead Frontend Code ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'Frontend stores', problem:'[FIXED] activeChannelStore + stageStore already deleted. intentContextStore found to be ACTIVELY USED (17+ refs across 6 files).', scenario:'Resolved: dead stores cleaned, live store reclassified.', fix:'RESOLVED: Dead code already removed in prior cleanup.'},
   'F19': {title:'F19 — Supabase No Conflict Resolution (LOW)', sev:'LOW', sevColor:'#888888', component:'supabase_service.py, initial_sync()', problem:'One-way push (local->cloud). No merge strategy. initial_sync() pushes all local data. Two installations or direct Supabase edits cause silent overwrites. No rate limiting on bulk operations.', scenario:'Operator renames look in Supabase dashboard. Pi restarts. Local data overwrites cloud change. Or 50-scene import spawns 50 simultaneous HTTP requests.', fix:'1) Last-modified timestamps + conflict detection\n2) Rate-limit Supabase API with queue\n3) Bidirectional sync with merge policy'},
   'F20': {title:'F20 — Stale Node No Escalation (LOW)', sev:'LOW', sevColor:'#888888', component:'stale_checker() (L4886)', problem:'Marks nodes stale after 60s without heartbeat. No UI notification, no playback pause, DMX still sent to stale IP. If IP reassigned, wrong device gets commands.', scenario:'WiFi node loses connection. Marked stale. Chase engine keeps sending to dead IP. Other nodes work fine, masking the issue. Operator does not notice.', fix:'1) SocketIO alert to frontend on stale event\n2) Optionally pause playback for that universe\n3) Stop sending to confirmed-stale nodes\n4) Auto-reconnection probing (pings every 10s)'},
 };
