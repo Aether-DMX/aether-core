@@ -31,7 +31,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Dict, Optional
 from croniter import croniter
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit
 
@@ -5087,6 +5087,24 @@ def check_database_health():
     except Exception as e:
         result['error'] = str(e)
     return result
+
+
+@app.route('/api/flow-map', methods=['GET'])
+def flow_map():
+    """Serve the interactive AETHER architecture flow map dashboard."""
+    map_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'AETHER_FLOW_MAP.html')
+    if os.path.exists(map_path):
+        return send_file(map_path, mimetype='text/html')
+    return jsonify({'error': 'Flow map not found'}), 404
+
+
+@app.route('/api/flow-status', methods=['GET'])
+def flow_status():
+    """Serve the aether-status.json for flow map live status overlay."""
+    status_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'aether-status.json')
+    if os.path.exists(status_path):
+        return send_file(status_path, mimetype='application/json')
+    return jsonify({'error': 'Status file not found'}), 404
 
 
 @app.route('/api/health', methods=['GET'])
