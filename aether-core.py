@@ -1437,31 +1437,42 @@ class ShowEngine:
         print(f"⏩ Tempo set to {self.tempo}x")
     
     def _run_timeline(self, timeline, universe, loop=True):
-        """Execute timeline events in sequence, with optional looping"""
+        """Execute timeline events in sequence, with optional looping.
+
+        [F15] Uses time.monotonic() to prevent NTP-induced timing jumps.
+        Tempo scaling is applied to logical time tracking, not just sleep duration.
+        """
         sorted_events = sorted(timeline, key=lambda x: x.get('time_ms', 0))
-        
+
         while self.running and not self.stop_flag.is_set():
-            start_time = time.time() * 1000  # Convert to ms
-            
+            start_time = time.monotonic()  # [F15] monotonic prevents NTP drift
+
             for event in sorted_events:
                 if self.stop_flag.is_set():
                     break
-                # Wait until event time
-                event_time = event.get('time_ms', 0)
-                elapsed = (time.time() * 1000) - start_time
-                wait_time = (event_time - elapsed) / 1000  # Convert to seconds
-                if wait_time > 0:
-                    # Wait in small increments, checking stop/pause flags and applying tempo
-                    while wait_time > 0 and not self.stop_flag.is_set():
-                        # Check pause
-                        while self.pause_flag.is_set() and not self.stop_flag.is_set():
-                            time.sleep(0.1)
-                        if self.stop_flag.is_set():
-                            break
-                        # Apply tempo to sleep time
-                        sleep_chunk = min(wait_time, 0.1) / self.tempo
-                        time.sleep(sleep_chunk)
-                        wait_time -= 0.1
+                # Wait until event time (scaled by tempo)
+                event_time_s = event.get('time_ms', 0) / 1000.0  # Convert ms to seconds
+
+                while not self.stop_flag.is_set():
+                    # Check pause — paused time doesn't count toward elapsed
+                    while self.pause_flag.is_set() and not self.stop_flag.is_set():
+                        time.sleep(0.1)
+                        start_time += 0.1  # Shift origin so pause doesn't eat timeline
+                    if self.stop_flag.is_set():
+                        break
+
+                    # [F15] Elapsed logical time = wall time * tempo
+                    elapsed_wall = time.monotonic() - start_time
+                    elapsed_logical = elapsed_wall * self.tempo
+                    remaining = event_time_s - elapsed_logical
+
+                    if remaining <= 0:
+                        break  # Event time reached
+
+                    # Sleep in small chunks, converting logical remaining to wall time
+                    wall_remaining = remaining / self.tempo
+                    sleep_chunk = min(wall_remaining, 0.1)
+                    time.sleep(sleep_chunk)
                 if self.stop_flag.is_set():
                     break
                 # Execute the event
