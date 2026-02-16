@@ -9,322 +9,1132 @@
     --bg: #0d1117; --surface: #161b22; --border: #30363d;
     --text: #e6edf3; --text-dim: #8b949e; --accent: #58a6ff;
     --green: #3fb950; --yellow: #d29922; --red: #f85149;
+    --purple: #bc8cff; --orange: #f0883e;
     --green-bg: rgba(63,185,80,0.12); --yellow-bg: rgba(210,153,34,0.12);
-    --red-bg: rgba(248,81,73,0.12);
+    --red-bg: rgba(248,81,73,0.12); --purple-bg: rgba(188,140,255,0.12);
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; }
-  .header { padding: 24px 32px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
-  .header h1 { font-size: 20px; font-weight: 600; }
-  .header .meta { color: var(--text-dim); font-size: 13px; }
-  .legend { display: flex; gap: 16px; padding: 12px 32px; border-bottom: 1px solid var(--border); font-size: 13px; }
-  .legend-item { display: flex; align-items: center; gap: 6px; }
-  .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+  body { font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; overflow: hidden; height: 100vh; }
+
+  /* HEADER */
+  .header { padding: 10px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
+  .header h1 { font-size: 16px; font-weight: 600; }
+  .header .meta { color: var(--text-dim); font-size: 11px; }
+
+  /* TAB BAR */
+  .tab-bar { display: flex; gap: 0; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .tab { padding: 8px 20px; font-size: 12px; color: var(--text-dim); cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.15s; background: none; border-top: none; border-left: none; border-right: none; font-family: inherit; }
+  .tab:hover { color: var(--text); background: rgba(255,255,255,0.03); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  /* LEGEND */
+  .legend { display: flex; gap: 14px; padding: 6px 20px; border-bottom: 1px solid var(--border); font-size: 11px; flex-shrink: 0; }
+  .legend-item { display: flex; align-items: center; gap: 4px; }
+  .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
   .legend-dot.green { background: var(--green); }
   .legend-dot.yellow { background: var(--yellow); }
   .legend-dot.red { background: var(--red); }
   .legend-dot.blue { background: var(--accent); }
+  .legend-dot.purple { background: var(--purple); }
 
-  .container { display: flex; height: calc(100vh - 100px); }
-  .diagram { flex: 1; overflow: auto; padding: 32px; position: relative; }
-  .sidebar { width: 400px; border-left: 1px solid var(--border); overflow-y: auto; display: none; }
+  /* MAIN LAYOUT */
+  .main { display: flex; flex: 1; overflow: hidden; height: calc(100vh - 90px - 172px); }
+  .diagram-wrap { flex: 1; overflow: auto; position: relative; }
+  .diagram-wrap svg { display: block; }
+
+  /* SIDEBAR */
+  .sidebar { width: 360px; border-left: 1px solid var(--border); overflow-y: auto; display: none; flex-shrink: 0; background: var(--surface); }
   .sidebar.open { display: block; }
-  .sidebar-header { padding: 16px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
-  .sidebar-header h3 { font-size: 15px; }
-  .sidebar-close { background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 18px; padding: 4px 8px; }
-  .sidebar-close:hover { color: var(--text); }
-  .sidebar-body { padding: 16px; }
-  .sidebar-body .field { margin-bottom: 16px; }
-  .sidebar-body .field-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-dim); margin-bottom: 4px; }
-  .sidebar-body .field-value { font-size: 14px; }
-  .sidebar-body pre { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 12px; font-size: 12px; overflow-x: auto; white-space: pre-wrap; word-break: break-word; }
-  .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; }
+  .sidebar-header { padding: 12px 14px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; background: var(--surface); z-index: 1; }
+  .sidebar-header h3 { font-size: 13px; font-weight: 600; }
+  .sidebar-close { background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 16px; padding: 2px 6px; border-radius: 4px; }
+  .sidebar-close:hover { color: var(--text); background: rgba(255,255,255,0.08); }
+  .sidebar-body { padding: 14px; }
+  .sidebar-body .field { margin-bottom: 12px; }
+  .sidebar-body .field-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-dim); margin-bottom: 2px; }
+  .sidebar-body .field-value { font-size: 13px; }
+  .sidebar-body pre { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 10px; font-size: 11px; overflow-x: auto; white-space: pre-wrap; word-break: break-word; line-height: 1.4; }
+  .badge { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 10px; font-weight: 600; }
   .badge.green { background: var(--green-bg); color: var(--green); border: 1px solid var(--green); }
   .badge.yellow { background: var(--yellow-bg); color: var(--yellow); border: 1px solid var(--yellow); }
   .badge.red { background: var(--red-bg); color: var(--red); border: 1px solid var(--red); }
+  .badge.purple { background: var(--purple-bg); color: var(--purple); border: 1px solid var(--purple); }
 
-  /* SVG diagram */
-  svg { width: 100%; min-width: 1000px; }
+  /* SVG SHARED STYLES */
   .node-box { cursor: pointer; transition: filter 0.15s; }
-  .node-box:hover { filter: brightness(1.2); }
-  .node-rect { rx: 8; ry: 8; stroke-width: 2; }
-  .node-label { font-family: inherit; font-size: 13px; fill: var(--text); font-weight: 600; text-anchor: middle; pointer-events: none; }
-  .node-sub { font-family: inherit; font-size: 10px; fill: var(--text-dim); text-anchor: middle; pointer-events: none; }
-  .edge { stroke: var(--border); stroke-width: 1.5; fill: none; marker-end: url(#arrowhead); }
-  .edge.data { stroke: var(--accent); stroke-dasharray: 6 3; }
-  .edge.fixed { stroke: var(--green); stroke-width: 2; }
-  .change-indicator { cursor: pointer; transition: transform 0.15s; }
-  .change-indicator:hover { transform: scale(1.2); }
-  .section-label { font-family: inherit; font-size: 11px; fill: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; }
-  .section-bg { fill: var(--surface); rx: 12; ry: 12; stroke: var(--border); stroke-width: 1; }
+  .node-box:hover { filter: brightness(1.25); }
+  .node-rect { rx: 5; ry: 5; stroke-width: 1.5; }
+  .node-label { font-family: -apple-system, 'Segoe UI', sans-serif; font-weight: 600; fill: var(--text); text-anchor: middle; pointer-events: none; }
+  .node-sub { font-family: -apple-system, 'Segoe UI', sans-serif; fill: var(--text-dim); text-anchor: middle; pointer-events: none; }
+  .edge { stroke: #2d333b; stroke-width: 1; fill: none; }
+  .edge.data { stroke: var(--accent); stroke-dasharray: 4 2; opacity: 0.6; }
+  .edge.fixed { stroke: var(--green); stroke-width: 1.5; }
+  .edge.socket { stroke: var(--purple); stroke-dasharray: 3 3; opacity: 0.5; }
+  .section-label { font-family: -apple-system, 'Segoe UI', sans-serif; fill: var(--text-dim); text-transform: uppercase; letter-spacing: 0.8px; font-weight: 600; }
+  .section-bg { fill: rgba(22,27,34,0.7); rx: 8; ry: 8; stroke: var(--border); stroke-width: 1; }
+  .change-dot { cursor: pointer; transition: transform 0.15s; }
+  .change-dot:hover { transform: scale(1.3); }
+  .mini-label { font-family: -apple-system, 'Segoe UI', sans-serif; fill: var(--text-dim); pointer-events: none; }
+  .port-label { font-family: 'SF Mono', 'Cascadia Code', monospace; fill: var(--orange); font-weight: 600; pointer-events: none; }
+
+  /* TAB PANELS */
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* REDLINE STYLES */
+  .redline-marker { cursor: pointer; transition: transform 0.15s; }
+  .redline-marker:hover { transform: scale(1.15); }
+  .flaw-ring { fill: none; stroke-width: 2; stroke-dasharray: 4 2; opacity: 0.7; }
+  .sev-crit { stroke: #ff4444; fill: rgba(255,68,68,0.08); }
+  .sev-high { stroke: #ff8800; fill: rgba(255,136,0,0.08); }
+  .sev-med { stroke: #ddaa00; fill: rgba(221,170,0,0.08); }
+  .sev-low { stroke: #888888; fill: rgba(136,136,136,0.08); }
+  .flaw-badge { font-family: 'SF Mono','Cascadia Code',monospace; font-weight: 700; pointer-events: none; }
+  .redline-connector { stroke-width: 1; stroke-dasharray: 3 2; fill: none; opacity: 0.5; }
+
+  /* LIVE STATUS PANEL */
+  .live-panel { position: fixed; bottom: 0; left: 0; right: 0; background: #0d1117; border-top: 2px solid var(--accent); z-index: 100; font-size: 12px; transition: transform 0.3s; }
+  .live-panel.collapsed { transform: translateY(calc(100% - 32px)); }
+  .live-toggle { position: absolute; top: -28px; right: 20px; background: var(--accent); color: #000; border: none; padding: 4px 14px; border-radius: 6px 6px 0 0; cursor: pointer; font-size: 11px; font-weight: 700; font-family: inherit; }
+  .live-toggle:hover { background: #79bbff; }
+  .live-bar { display: flex; align-items: stretch; height: 140px; }
+  .live-section { padding: 8px 14px; border-right: 1px solid var(--border); flex-shrink: 0; overflow-y: auto; }
+  .live-section:last-child { border-right: none; }
+  .live-section.current { width: 320px; }
+  .live-section.sprint { width: 200px; }
+  .live-section.log { flex: 1; min-width: 300px; }
+  .live-section.flaws { width: 340px; }
+  .live-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-dim); margin-bottom: 4px; font-weight: 600; }
+  .live-title { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 2px; }
+  .live-component { font-size: 11px; color: var(--accent); font-family: monospace; }
+  .live-notes { font-size: 11px; color: var(--text-dim); margin-top: 4px; line-height: 1.4; }
+  .live-status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+  .live-status-dot.active { background: #3fb950; box-shadow: 0 0 6px #3fb950; }
+  .live-status-dot.idle { background: var(--text-dim); }
+  .live-log-entry { font-size: 10px; color: var(--text-dim); line-height: 1.6; font-family: monospace; }
+  .live-flaw-row { display: inline-block; width: 14px; height: 14px; border-radius: 3px; margin: 1px; font-size: 8px; text-align: center; line-height: 14px; font-weight: 700; cursor: default; }
+  .live-flaw-row.open-crit { background: #ff4444; color: #fff; }
+  .live-flaw-row.open-high { background: #ff8800; color: #fff; }
+  .live-flaw-row.open-med { background: #ddaa00; color: #000; }
+  .live-flaw-row.open-low { background: #555; color: #fff; }
+  .live-flaw-row.fixed { background: #3fb950; color: #000; }
+  .live-flaw-row.wip { background: var(--accent); color: #000; }
+  .live-sprint-item { font-size: 11px; color: var(--text-dim); padding: 1px 0; }
+  .live-sprint-item.active { color: var(--accent); font-weight: 600; }
+  .live-sprint-item.done { color: var(--green); text-decoration: line-through; }
+  .live-updated { font-size: 9px; color: var(--text-dim); position: absolute; top: 8px; right: 14px; }
 </style>
 </head>
 <body>
 <div class="header">
   <h1>AETHER DMX &mdash; System Flow Map</h1>
-  <div class="meta">Feb 16, 2026 &bull; Beta 1 Audit Fixes &bull; Click annotated nodes for details</div>
+  <div class="meta">Feb 16 2026 &bull; Commit ed219ef &bull; Click any node for details</div>
+</div>
+<div class="tab-bar">
+  <button class="tab active" onclick="switchTab('arch')">Full Architecture</button>
+  <button class="tab" onclick="switchTab('changelog')">Changelog (5 Fixes)</button>
+  <button class="tab" onclick="switchTab('redline')" style="color:var(--red)">&#9888; Redlines (20 Flaws)</button>
 </div>
 <div class="legend">
   <div class="legend-item"><div class="legend-dot green"></div> Fixed</div>
   <div class="legend-item"><div class="legend-dot yellow"></div> Mitigated</div>
-  <div class="legend-item"><div class="legend-dot red"></div> Known Limitation (deferred)</div>
-  <div class="legend-item"><div class="legend-dot blue"></div> Unmodified</div>
+  <div class="legend-item"><div class="legend-dot red"></div> Deferred</div>
+  <div class="legend-item"><div class="legend-dot blue"></div> Core</div>
+  <div class="legend-item"><div class="legend-dot purple"></div> SocketIO</div>
 </div>
-<div class="container">
-  <div class="diagram">
-    <svg viewBox="0 0 1100 820" xmlns="http://www.w3.org/2000/svg">
+<div class="main">
+  <div class="diagram-wrap">
+
+    <!-- ===================== TAB 1: FULL ARCHITECTURE ===================== -->
+    <div class="tab-panel active" id="panel-arch">
+    <svg viewBox="0 0 1280 900" xmlns="http://www.w3.org/2000/svg" style="min-width:1100px">
       <defs>
-        <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
-          <polygon points="0 0, 8 3, 0 6" fill="#30363d"/>
-        </marker>
-        <marker id="arrowhead-green" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
-          <polygon points="0 0, 8 3, 0 6" fill="#3fb950"/>
-        </marker>
-        <marker id="arrowhead-blue" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
-          <polygon points="0 0, 8 3, 0 6" fill="#58a6ff"/>
-        </marker>
+        <marker id="a" markerWidth="6" markerHeight="5" refX="6" refY="2.5" orient="auto"><polygon points="0 0,6 2.5,0 5" fill="#2d333b"/></marker>
+        <marker id="ag" markerWidth="6" markerHeight="5" refX="6" refY="2.5" orient="auto"><polygon points="0 0,6 2.5,0 5" fill="#3fb950"/></marker>
+        <marker id="ab" markerWidth="6" markerHeight="5" refX="6" refY="2.5" orient="auto"><polygon points="0 0,6 2.5,0 5" fill="#58a6ff"/></marker>
+        <marker id="ap" markerWidth="6" markerHeight="5" refX="6" refY="2.5" orient="auto"><polygon points="0 0,6 2.5,0 5" fill="#bc8cff"/></marker>
       </defs>
 
-      <!-- Section: Frontend -->
-      <rect class="section-bg" x="20" y="10" width="310" height="120" />
-      <text class="section-label" x="40" y="32">Frontend (portal-os :3000)</text>
+      <!-- ========== SECTION: BROWSER / FRONTEND ========== -->
+      <rect class="section-bg" x="10" y="8" width="520" height="165"/>
+      <text class="section-label" font-size="9" x="22" y="22">FRONTEND &mdash; React 18 + Vite + Tailwind</text>
+      <text class="port-label" font-size="9" x="490" y="22">:3000</text>
 
-      <!-- Node: React UI -->
-      <g class="node-box" data-node="react-ui">
-        <rect class="node-rect" x="40" y="45" width="120" height="55" fill="#161b22" stroke="#30363d"/>
-        <text class="node-label" x="100" y="70">React UI</text>
-        <text class="node-sub" x="100" y="85">Touchscreen</text>
+      <!-- Views cluster -->
+      <g class="node-box" onclick="showInfo('views')">
+        <rect class="node-rect" x="22" y="32" width="115" height="38" fill="#161b22" stroke="#30363d"/>
+        <text class="node-label" font-size="10" x="79" y="49">26 Views</text>
+        <text class="node-sub" font-size="8" x="79" y="61">Dashboard, Looks, Scenes...</text>
       </g>
 
-      <!-- Node: AIOrchestrator -->
-      <g class="node-box" data-node="ai-orchestrator">
-        <rect class="node-rect" x="190" y="45" width="120" height="55" fill="#161b22" stroke="#30363d"/>
-        <text class="node-label" x="250" y="70">AIOrchestrator</text>
-        <text class="node-sub" x="250" y="85">LUX (Claude)</text>
+      <!-- Stores cluster -->
+      <g class="node-box" onclick="showInfo('stores')">
+        <rect class="node-rect" x="145" y="32" width="105" height="38" fill="#161b22" stroke="#30363d"/>
+        <text class="node-label" font-size="10" x="197" y="49">23 Stores</text>
+        <text class="node-sub" font-size="8" x="197" y="61">Zustand state</text>
       </g>
 
-      <!-- Section: Backend -->
-      <rect class="section-bg" x="20" y="150" width="740" height="420" />
-      <text class="section-label" x="40" y="172">Backend (aether-core :8891)</text>
-
-      <!-- Node: Flask API -->
-      <g class="node-box" data-node="flask-api">
-        <rect class="node-rect" x="40" y="190" width="140" height="55" fill="#161b22" stroke="#30363d"/>
-        <text class="node-label" x="110" y="215">Flask API</text>
-        <text class="node-sub" x="110" y="230">REST + SocketIO</text>
+      <!-- Key UI Components -->
+      <g class="node-box" onclick="showInfo('ui-components')">
+        <rect class="node-rect" x="258" y="32" width="120" height="38" fill="#161b22" stroke="#30363d"/>
+        <text class="node-label" font-size="10" x="318" y="49">UI Components</text>
+        <text class="node-sub" font-size="8" x="318" y="61">Modals, Screensaver...</text>
       </g>
 
-      <!-- Node: SQLite (Problem #5 - FIXED) -->
-      <g class="node-box" data-node="sqlite" onclick="showChange('sqlite')">
-        <rect class="node-rect" x="40" y="280" width="140" height="55" fill="#161b22" stroke="var(--green)"/>
-        <text class="node-label" x="110" y="305">SQLite DB</text>
-        <text class="node-sub" x="110" y="320">aether-core.db</text>
-        <circle cx="170" cy="285" r="9" fill="var(--green)" class="change-indicator"/>
-        <text x="170" y="289" text-anchor="middle" font-size="12" fill="#0d1117" font-weight="bold" pointer-events="none">+</text>
+      <!-- Layout modes -->
+      <g class="node-box" onclick="showInfo('layouts')">
+        <rect class="node-rect" x="386" y="32" width="135" height="38" fill="#161b22" stroke="#30363d"/>
+        <text class="node-label" font-size="10" x="453" y="49">3 Layout Modes</text>
+        <text class="node-sub" font-size="8" x="453" y="61">Desktop / Kiosk / Mobile</text>
       </g>
 
-      <!-- Node: ArbitrationManager (Problem #2 - MITIGATED) -->
-      <g class="node-box" data-node="arbitration" onclick="showChange('arbitration')">
-        <rect class="node-rect" x="220" y="190" width="160" height="55" fill="#161b22" stroke="var(--yellow)"/>
-        <text class="node-label" x="300" y="215">ArbitrationMgr</text>
-        <text class="node-sub" x="300" y="230">Priority-based control</text>
-        <circle cx="370" cy="195" r="9" fill="var(--yellow)" class="change-indicator"/>
-        <text x="370" y="199" text-anchor="middle" font-size="12" fill="#0d1117" font-weight="bold" pointer-events="none">!</text>
+      <!-- SocketIO listener -->
+      <g class="node-box" onclick="showInfo('socketio')">
+        <rect class="node-rect" x="22" y="80" width="90" height="34" fill="#161b22" stroke="var(--purple)"/>
+        <text class="node-label" font-size="9" x="67" y="95">SocketIO</text>
+        <text class="node-sub" font-size="7" x="67" y="105">10 events</text>
       </g>
 
-      <!-- Node: DMXStateManager -->
-      <g class="node-box" data-node="dmx-state">
-        <rect class="node-rect" x="220" y="280" width="160" height="55" fill="#161b22" stroke="#30363d"/>
-        <text class="node-label" x="300" y="305">DMXStateManager</text>
-        <text class="node-sub" x="300" y="320">SSOT dmx_state{}</text>
+      <!-- API Client -->
+      <g class="node-box" onclick="showInfo('api-client')">
+        <rect class="node-rect" x="120" y="80" width="100" height="34" fill="#161b22" stroke="#30363d"/>
+        <text class="node-label" font-size="9" x="170" y="95">API Client</text>
+        <text class="node-sub" font-size="7" x="170" y="105">axios / fetch</text>
       </g>
 
-      <!-- Node: UnifiedPlaybackEngine -->
-      <g class="node-box" data-node="unified-engine">
-        <rect class="node-rect" x="420" y="190" width="160" height="55" fill="#161b22" stroke="#58a6ff"/>
-        <text class="node-label" x="500" y="215">UnifiedPlayback</text>
-        <text class="node-sub" x="500" y="230">30fps SSOT authority</text>
+      <!-- AI Chat -->
+      <g class="node-box" onclick="showInfo('ai-chat-ui')">
+        <rect class="node-rect" x="228" y="80" width="100" height="34" fill="#161b22" stroke="#30363d"/>
+        <text class="node-label" font-size="9" x="278" y="95">AI Chat Panel</text>
+        <text class="node-sub" font-size="7" x="278" y="105">+ Voice STT</text>
       </g>
 
-      <!-- Node: RenderEngine (Problem #2 - MITIGATED) -->
-      <g class="node-box" data-node="render-engine" onclick="showChange('render-engine')">
-        <rect class="node-rect" x="420" y="280" width="150" height="55" fill="#161b22" stroke="var(--yellow)"/>
-        <text class="node-label" x="495" y="305">RenderEngine</text>
-        <text class="node-sub" x="495" y="320">Modifiers (TASK-0004)</text>
-        <circle cx="560" cy="285" r="9" fill="var(--yellow)" class="change-indicator"/>
-        <text x="560" y="289" text-anchor="middle" font-size="12" fill="#0d1117" font-weight="bold" pointer-events="none">!</text>
+      <!-- Kiosk -->
+      <g class="node-box" onclick="showInfo('kiosk')">
+        <rect class="node-rect" x="336" y="80" width="85" height="34" fill="#161b22" stroke="#30363d"/>
+        <text class="node-label" font-size="9" x="378" y="95">Kiosk</text>
+        <text class="node-sub" font-size="7" x="378" y="105">Chromium 800x480</text>
       </g>
 
-      <!-- Node: ChaseEngine (Problem #2 - MITIGATED) -->
-      <g class="node-box" data-node="chase-engine" onclick="showChange('chase-engine')">
-        <rect class="node-rect" x="420" y="370" width="150" height="55" fill="#161b22" stroke="var(--yellow)"/>
-        <text class="node-label" x="495" y="395">ChaseEngine</text>
-        <text class="node-sub" x="495" y="410">TASK-0006 violation</text>
-        <circle cx="560" cy="375" r="9" fill="var(--yellow)" class="change-indicator"/>
-        <text x="560" y="379" text-anchor="middle" font-size="12" fill="#0d1117" font-weight="bold" pointer-events="none">!</text>
+      <!-- Screensaver -->
+      <g class="node-box" onclick="showInfo('screensaver')">
+        <rect class="node-rect" x="429" y="80" width="90" height="34" fill="#161b22" stroke="#30363d"/>
+        <text class="node-label" font-size="9" x="474" y="95">Screensaver</text>
+        <text class="node-sub" font-size="7" x="474" y="105">Idle + sheen</text>
       </g>
 
-      <!-- Node: DynamicEffectsEngine -->
-      <g class="node-box" data-node="effects-engine">
-        <rect class="node-rect" x="610" y="280" width="135" height="55" fill="#161b22" stroke="var(--yellow)"/>
-        <text class="node-label" x="677" y="305">EffectsEngine</text>
-        <text class="node-sub" x="677" y="320">TASK-0005 violation</text>
+      <!-- Direct Flask call label -->
+      <text class="mini-label" font-size="7" x="130" y="132">via Express proxy</text>
+      <line class="edge" x1="170" y1="114" x2="170" y2="148" marker-end="url(#a)"/>
+      <text class="mini-label" font-size="7" x="260" y="132">Looks/Seq direct</text>
+      <path class="edge data" d="M278,114 L278,142 L640,142 L640,210" marker-end="url(#ab)" style="opacity:0.5"/>
+      <text class="mini-label" font-size="7" x="630" y="148" fill="var(--accent)">:8891</text>
+
+      <!-- ========== SECTION: EXPRESS PROXY ========== -->
+      <rect class="section-bg" x="10" y="150" width="520" height="80"/>
+      <text class="section-label" font-size="9" x="22" y="164">EXPRESS PROXY &mdash; Node.js</text>
+      <text class="port-label" font-size="9" x="490" y="164">:3000</text>
+
+      <g class="node-box" onclick="showInfo('proxy-routes')">
+        <rect class="node-rect" x="22" y="174" width="90" height="34" fill="#161b22" stroke="#30363d"/>
+        <text class="node-label" font-size="9" x="67" y="189">Proxy Routes</text>
+        <text class="node-sub" font-size="7" x="67" y="199">70+ endpoints</text>
+      </g>
+      <g class="node-box" onclick="showInfo('ai-orchestrator')">
+        <rect class="node-rect" x="120" y="174" width="105" height="34" fill="#161b22" stroke="#58a6ff"/>
+        <text class="node-label" font-size="9" x="172" y="189">AIOrchestrator</text>
+        <text class="node-sub" font-size="7" x="172" y="199">Claude + 10 tools</text>
+      </g>
+      <g class="node-box" onclick="showInfo('local-intent')">
+        <rect class="node-rect" x="233" y="174" width="90" height="34" fill="#161b22" stroke="#30363d"/>
+        <text class="node-label" font-size="9" x="278" y="189">LocalIntent</text>
+        <text class="node-sub" font-size="7" x="278" y="199">Offline fallback</text>
+      </g>
+      <g class="node-box" onclick="showInfo('express-routes')">
+        <rect class="node-rect" x="331" y="174" width="90" height="34" fill="#161b22" stroke="#30363d"/>
+        <text class="node-label" font-size="9" x="376" y="189">8 Route Files</text>
+        <text class="node-sub" font-size="7" x="376" y="199">ai, dmx, scene...</text>
+      </g>
+      <g class="node-box" onclick="showInfo('stt')">
+        <rect class="node-rect" x="429" y="174" width="90" height="34" fill="#161b22" stroke="#30363d"/>
+        <text class="node-label" font-size="9" x="474" y="189">STT</text>
+        <text class="node-sub" font-size="7" x="474" y="199">faster-whisper</text>
       </g>
 
-      <!-- Node: ShowEngine -->
-      <g class="node-box" data-node="show-engine">
-        <rect class="node-rect" x="610" y="370" width="135" height="55" fill="#161b22" stroke="var(--yellow)"/>
-        <text class="node-label" x="677" y="395">ShowEngine</text>
-        <text class="node-sub" x="677" y="410">TASK-0007 violation</text>
+      <!-- Express -> Flask -->
+      <line class="edge" x1="67" y1="208" x2="67" y2="252" marker-end="url(#a)"/>
+
+      <!-- ========== SECTION: FLASK BACKEND ========== -->
+      <rect class="section-bg" x="10" y="245" width="740" height="330"/>
+      <text class="section-label" font-size="9" x="22" y="259">FLASK BACKEND &mdash; aether-core.py (8,446 LOC) &mdash; SSOT</text>
+      <text class="port-label" font-size="9" x="710" y="259">:8891</text>
+
+      <!-- Row 1: API + State managers -->
+      <g class="node-box" onclick="showInfo('flask-api')">
+        <rect class="node-rect" x="22" y="268" width="100" height="36" fill="#161b22" stroke="#30363d"/>
+        <text class="node-label" font-size="9" x="72" y="284">Flask API</text>
+        <text class="node-sub" font-size="7" x="72" y="296">186+ routes</text>
+      </g>
+      <g class="node-box" onclick="showInfo('arbitration')">
+        <rect class="node-rect" x="130" y="268" width="110" height="36" fill="#161b22" stroke="var(--yellow)"/>
+        <text class="node-label" font-size="9" x="185" y="284">ArbitrationMgr</text>
+        <text class="node-sub" font-size="7" x="185" y="296">8 priority levels</text>
+        <circle class="change-dot" cx="233" cy="272" r="6" fill="var(--yellow)" onclick="event.stopPropagation();showChange('arbitration')"/>
+        <text x="233" y="275" text-anchor="middle" font-size="8" fill="#0d1117" font-weight="bold" pointer-events="none">!</text>
+      </g>
+      <g class="node-box" onclick="showInfo('dmx-state')">
+        <rect class="node-rect" x="248" y="268" width="120" height="36" fill="#161b22" stroke="var(--accent)"/>
+        <text class="node-label" font-size="9" x="308" y="284">DMXStateManager</text>
+        <text class="node-sub" font-size="7" x="308" y="296">SSOT dmx_state{}</text>
+      </g>
+      <g class="node-box" onclick="showInfo('content-mgr')">
+        <rect class="node-rect" x="376" y="268" width="115" height="36" fill="#161b22" stroke="var(--accent)"/>
+        <text class="node-label" font-size="9" x="433" y="284">ContentManager</text>
+        <text class="node-sub" font-size="7" x="433" y="296">SSOT write point</text>
+      </g>
+      <g class="node-box" onclick="showInfo('node-manager')">
+        <rect class="node-rect" x="499" y="268" width="100" height="36" fill="#161b22" stroke="#30363d"/>
+        <text class="node-label" font-size="9" x="549" y="284">NodeManager</text>
+        <text class="node-sub" font-size="7" x="549" y="296">Universe routing</text>
+      </g>
+      <g class="node-box" onclick="showInfo('merge-layer')">
+        <rect class="node-rect" x="607" y="268" width="90" height="36" fill="#161b22" stroke="#30363d"/>
+        <text class="node-label" font-size="9" x="652" y="284">MergeLayer</text>
+        <text class="node-sub" font-size="7" x="652" y="296">HTP / LTP</text>
       </g>
 
-      <!-- Node: ContentManager + UDP Output -->
-      <g class="node-box" data-node="content-mgr">
-        <rect class="node-rect" x="220" y="370" width="160" height="55" fill="#161b22" stroke="#30363d"/>
-        <text class="node-label" x="300" y="395">ContentManager</text>
-        <text class="node-sub" x="300" y="410">UDPJSON dispatch</text>
+      <!-- Row 2: Playback Engines -->
+      <text class="mini-label" font-size="8" x="22" y="322" fill="var(--text-dim)">Playback Engines</text>
+      <g class="node-box" onclick="showInfo('unified-engine')">
+        <rect class="node-rect" x="22" y="328" width="120" height="36" fill="#161b22" stroke="var(--accent)"/>
+        <text class="node-label" font-size="9" x="82" y="344">UnifiedPlayback</text>
+        <text class="node-sub" font-size="7" x="82" y="356">30fps SSOT authority</text>
+      </g>
+      <g class="node-box" onclick="showInfo('render-engine')">
+        <rect class="node-rect" x="150" y="328" width="105" height="36" fill="#161b22" stroke="var(--yellow)"/>
+        <text class="node-label" font-size="9" x="202" y="344">RenderEngine</text>
+        <text class="node-sub" font-size="7" x="202" y="356">TASK-0004</text>
+        <circle class="change-dot" cx="249" cy="332" r="6" fill="var(--yellow)" onclick="event.stopPropagation();showChange('render-engine')"/>
+        <text x="249" y="335" text-anchor="middle" font-size="8" fill="#0d1117" font-weight="bold" pointer-events="none">!</text>
+      </g>
+      <g class="node-box" onclick="showInfo('chase-engine')">
+        <rect class="node-rect" x="263" y="328" width="100" height="36" fill="#161b22" stroke="var(--yellow)"/>
+        <text class="node-label" font-size="9" x="313" y="344">ChaseEngine</text>
+        <text class="node-sub" font-size="7" x="313" y="356">TASK-0006</text>
+        <circle class="change-dot" cx="357" cy="332" r="6" fill="var(--yellow)" onclick="event.stopPropagation();showChange('chase-engine')"/>
+        <text x="357" y="335" text-anchor="middle" font-size="8" fill="#0d1117" font-weight="bold" pointer-events="none">!</text>
+      </g>
+      <g class="node-box" onclick="showInfo('effects-engine')">
+        <rect class="node-rect" x="371" y="328" width="105" height="36" fill="#161b22" stroke="var(--yellow)"/>
+        <text class="node-label" font-size="9" x="423" y="344">EffectsEngine</text>
+        <text class="node-sub" font-size="7" x="423" y="356">TASK-0005 (guarded)</text>
+        <circle class="change-dot" cx="470" cy="332" r="6" fill="var(--yellow)" opacity="0.5" onclick="event.stopPropagation();showChange('effects-engine')"/>
+        <text x="470" y="335" text-anchor="middle" font-size="8" fill="#0d1117" font-weight="bold" pointer-events="none">&#10003;</text>
+      </g>
+      <g class="node-box" onclick="showInfo('show-engine')">
+        <rect class="node-rect" x="484" y="328" width="95" height="36" fill="#161b22" stroke="var(--yellow)"/>
+        <text class="node-label" font-size="9" x="531" y="344">ShowEngine</text>
+        <text class="node-sub" font-size="7" x="531" y="356">TASK-0007</text>
+      </g>
+      <g class="node-box" onclick="showInfo('playback-ctrl')">
+        <rect class="node-rect" x="587" y="328" width="110" height="36" fill="#161b22" stroke="#30363d" stroke-dasharray="3 2"/>
+        <text class="node-label" font-size="9" x="642" y="344" fill="var(--text-dim)">PlaybackCtrl</text>
+        <text class="node-sub" font-size="7" x="642" y="356">Legacy (duplicate)</text>
       </g>
 
-      <!-- Node: 40Hz Refresh Loop -->
-      <g class="node-box" data-node="refresh-loop">
-        <rect class="node-rect" x="130" y="460" width="160" height="55" fill="#161b22" stroke="#30363d"/>
-        <text class="node-label" x="210" y="485">40Hz Refresh</text>
-        <text class="node-sub" x="210" y="500">UDP to all nodes</text>
+      <!-- Row 3: Support modules -->
+      <text class="mini-label" font-size="8" x="22" y="382" fill="var(--text-dim)">Support Modules</text>
+      <g class="node-box" onclick="showInfo('modifier-registry')">
+        <rect class="node-rect" x="22" y="388" width="95" height="32" fill="#161b22" stroke="#30363d"/>
+        <text class="node-label" font-size="9" x="69" y="403">ModifierReg</text>
+        <text class="node-sub" font-size="7" x="69" y="413">6 effect types</text>
+      </g>
+      <g class="node-box" onclick="showInfo('fixture-lib')">
+        <rect class="node-rect" x="125" y="388" width="90" height="32" fill="#161b22" stroke="#30363d"/>
+        <text class="node-label" font-size="9" x="170" y="403">FixtureLib</text>
+        <text class="node-sub" font-size="7" x="170" y="413">Profiles + maps</text>
+      </g>
+      <g class="node-box" onclick="showInfo('looks-seq')">
+        <rect class="node-rect" x="223" y="388" width="90" height="32" fill="#161b22" stroke="#30363d"/>
+        <text class="node-label" font-size="9" x="268" y="403">Looks/Seq</text>
+        <text class="node-sub" font-size="7" x="268" y="413">Data models</text>
+      </g>
+      <g class="node-box" onclick="showInfo('cue-stacks')">
+        <rect class="node-rect" x="321" y="388" width="80" height="32" fill="#161b22" stroke="#30363d"/>
+        <text class="node-label" font-size="9" x="361" y="403">CueStacks</text>
+        <text class="node-sub" font-size="7" x="361" y="413">Theatrical</text>
+      </g>
+      <g class="node-box" onclick="showInfo('pixel-mapper')">
+        <rect class="node-rect" x="409" y="388" width="85" height="32" fill="#161b22" stroke="#30363d"/>
+        <text class="node-label" font-size="9" x="451" y="403">PixelMapper</text>
+        <text class="node-sub" font-size="7" x="451" y="413">Pixel arrays</text>
+      </g>
+      <g class="node-box" onclick="showInfo('preview-svc')">
+        <rect class="node-rect" x="502" y="388" width="85" height="32" fill="#161b22" stroke="#30363d"/>
+        <text class="node-label" font-size="9" x="544" y="403">PreviewSvc</text>
+        <text class="node-sub" font-size="7" x="544" y="413">Sandbox mode</text>
+      </g>
+      <g class="node-box" onclick="showInfo('dist-modes')">
+        <rect class="node-rect" x="595" y="388" width="95" height="32" fill="#161b22" stroke="#30363d"/>
+        <text class="node-label" font-size="9" x="642" y="403">Distribution</text>
+        <text class="node-sub" font-size="7" x="642" y="413">Unified / Pixel</text>
       </g>
 
-      <!-- Section: Cloud -->
-      <rect class="section-bg" x="790" y="10" width="290" height="260" />
-      <text class="section-label" x="810" y="32">Cloud (Supabase)</text>
-
-      <!-- Node: SupabaseService (Problem #1 - FIXED) -->
-      <g class="node-box" data-node="supabase-service" onclick="showChange('supabase-service')">
-        <rect class="node-rect" x="810" y="50" width="250" height="55" fill="#161b22" stroke="var(--green)"/>
-        <text class="node-label" x="935" y="75">SupabaseService</text>
-        <text class="node-sub" x="935" y="90">supabase_service.py</text>
-        <circle cx="1050" cy="55" r="9" fill="var(--green)" class="change-indicator"/>
-        <text x="1050" y="59" text-anchor="middle" font-size="12" fill="#0d1117" font-weight="bold" pointer-events="none">&#10003;</text>
+      <!-- Row 4: DB + schedules + AI helpers -->
+      <text class="mini-label" font-size="8" x="22" y="438" fill="var(--text-dim)">Persistence &amp; Scheduling</text>
+      <g class="node-box" onclick="showInfo('sqlite')">
+        <rect class="node-rect" x="22" y="444" width="95" height="32" fill="#161b22" stroke="var(--green)"/>
+        <text class="node-label" font-size="9" x="69" y="459">SQLite</text>
+        <text class="node-sub" font-size="7" x="69" y="469">15+ tables</text>
+        <circle class="change-dot" cx="111" cy="448" r="6" fill="var(--green)" onclick="event.stopPropagation();showChange('sqlite')"/>
+        <text x="111" y="451" text-anchor="middle" font-size="8" fill="#0d1117" font-weight="bold" pointer-events="none">+</text>
+      </g>
+      <g class="node-box" onclick="showInfo('schedules')">
+        <rect class="node-rect" x="125" y="444" width="90" height="32" fill="#161b22" stroke="#30363d"/>
+        <text class="node-label" font-size="9" x="170" y="459">Scheduler</text>
+        <text class="node-sub" font-size="7" x="170" y="469">Cron + Timers</text>
+      </g>
+      <g class="node-box" onclick="showInfo('rdm')">
+        <rect class="node-rect" x="223" y="444" width="80" height="32" fill="#161b22" stroke="#30363d" stroke-dasharray="3 2"/>
+        <text class="node-label" font-size="9" x="263" y="459" fill="var(--text-dim)">RDM</text>
+        <text class="node-sub" font-size="7" x="263" y="469">Stubbed proto</text>
+      </g>
+      <g class="node-box" onclick="showInfo('ai-helpers')">
+        <rect class="node-rect" x="311" y="444" width="100" height="32" fill="#161b22" stroke="#30363d"/>
+        <text class="node-label" font-size="9" x="361" y="459">AI Helpers</text>
+        <text class="node-sub" font-size="7" x="361" y="469">Advisor + SSOT</text>
       </g>
 
-      <!-- Node: PendingSyncQueue (Problem #1 - FIXED) -->
-      <g class="node-box" data-node="pending-queue" onclick="showChange('pending-queue')">
-        <rect class="node-rect" x="810" y="130" width="250" height="55" fill="#161b22" stroke="var(--green)"/>
-        <text class="node-label" x="935" y="155">PendingSyncQueue</text>
-        <text class="node-sub" x="935" y="170">Retry with UUID guard</text>
-        <circle cx="1050" cy="135" r="9" fill="var(--green)" class="change-indicator"/>
-        <text x="1050" y="139" text-anchor="middle" font-size="12" fill="#0d1117" font-weight="bold" pointer-events="none">&#10003;</text>
+      <!-- 40Hz refresh -->
+      <g class="node-box" onclick="showInfo('refresh-loop')">
+        <rect class="node-rect" x="499" y="444" width="120" height="32" fill="#161b22" stroke="var(--accent)"/>
+        <text class="node-label" font-size="9" x="559" y="459">40Hz Refresh</text>
+        <text class="node-sub" font-size="7" x="559" y="469">UDPJSON v2 dispatch</text>
       </g>
 
-      <!-- Node: AI Cloud Log (Problem #3 - FIXED) -->
-      <g class="node-box" data-node="ai-cloud-log" onclick="showChange('ai-cloud-log')">
-        <rect class="node-rect" x="810" y="210" width="250" height="55" fill="#161b22" stroke="var(--green)"/>
-        <text class="node-label" x="935" y="235">AI Cloud Logging</text>
-        <text class="node-sub" x="935" y="250">Conversations + Learnings</text>
-        <circle cx="1050" cy="215" r="9" fill="var(--green)" class="change-indicator"/>
-        <text x="1050" y="219" text-anchor="middle" font-size="12" fill="#0d1117" font-weight="bold" pointer-events="none">&#10003;</text>
+      <!-- Key internal edges -->
+      <line class="edge" x1="122" y1="286" x2="130" y2="286" marker-end="url(#a)"/><!-- Flask->Arb -->
+      <line class="edge" x1="240" y1="286" x2="248" y2="286" marker-end="url(#a)"/><!-- Arb->DMX -->
+      <line class="edge" x1="368" y1="286" x2="376" y2="286" marker-end="url(#a)"/><!-- DMX->Content -->
+      <line class="edge" x1="491" y1="286" x2="499" y2="286" marker-end="url(#a)"/><!-- Content->NodeMgr -->
+      <line class="edge" x1="433" y1="304" x2="433" y2="328" marker-end="url(#a)"/><!-- Content->Engines label zone -->
+      <!-- UnifiedPlayback -> MergeLayer -> ContentMgr -->
+      <path class="edge" d="M142,346 L148,346 L652,304" marker-end="url(#a)" style="opacity:0.4"/>
+      <!-- NodeMgr -> 40Hz refresh -->
+      <line class="edge" x1="549" y1="304" x2="559" y2="444" marker-end="url(#a)" style="opacity:0.4"/>
+
+      <!-- ========== SECTION: CLOUD (SUPABASE) ========== -->
+      <rect class="section-bg" x="770" y="8" width="500" height="285"/>
+      <text class="section-label" font-size="9" x="782" y="22">CLOUD &mdash; Supabase</text>
+
+      <g class="node-box" onclick="showInfo('supabase-service')">
+        <rect class="node-rect" x="782" y="32" width="145" height="36" fill="#161b22" stroke="var(--green)"/>
+        <text class="node-label" font-size="9" x="854" y="48">SupabaseService</text>
+        <text class="node-sub" font-size="7" x="854" y="60">Singleton, feature-gated</text>
+        <circle class="change-dot" cx="921" cy="36" r="6" fill="var(--green)" onclick="event.stopPropagation();showChange('supabase-service')"/>
+        <text x="921" y="39" text-anchor="middle" font-size="8" fill="#0d1117" font-weight="bold" pointer-events="none">&#10003;</text>
+      </g>
+      <g class="node-box" onclick="showInfo('pending-queue')">
+        <rect class="node-rect" x="935" y="32" width="145" height="36" fill="#161b22" stroke="var(--green)"/>
+        <text class="node-label" font-size="9" x="1007" y="48">PendingSyncQueue</text>
+        <text class="node-sub" font-size="7" x="1007" y="60">Disk-persisted retry</text>
+        <circle class="change-dot" cx="1074" cy="36" r="6" fill="var(--green)" onclick="event.stopPropagation();showChange('pending-queue')"/>
+        <text x="1074" y="39" text-anchor="middle" font-size="8" fill="#0d1117" font-weight="bold" pointer-events="none">&#10003;</text>
+      </g>
+      <g class="node-box" onclick="showInfo('id-mapping')">
+        <rect class="node-rect" x="1088" y="32" width="115" height="36" fill="#161b22" stroke="#30363d"/>
+        <text class="node-label" font-size="9" x="1145" y="48">ID Mapping</text>
+        <text class="node-sub" font-size="7" x="1145" y="60">UUID v5 deterministic</text>
+      </g>
+      <g class="node-box" onclick="showInfo('sync-decorator')">
+        <rect class="node-rect" x="1088" y="76" width="115" height="32" fill="#161b22" stroke="#30363d"/>
+        <text class="node-label" font-size="9" x="1145" y="91">@sync_to_cloud</text>
+        <text class="node-sub" font-size="7" x="1145" y="101">Auto CRUD sync</text>
+      </g>
+      <g class="node-box" onclick="showInfo('ai-cloud-log')">
+        <rect class="node-rect" x="782" y="76" width="145" height="32" fill="#161b22" stroke="var(--green)"/>
+        <text class="node-label" font-size="9" x="854" y="91">AI Cloud Logging</text>
+        <text class="node-sub" font-size="7" x="854" y="101">Conversations + Learnings</text>
+        <circle class="change-dot" cx="921" cy="80" r="6" fill="var(--green)" onclick="event.stopPropagation();showChange('ai-cloud-log')"/>
+        <text x="921" y="83" text-anchor="middle" font-size="8" fill="#0d1117" font-weight="bold" pointer-events="none">&#10003;</text>
       </g>
 
-      <!-- Section: Nodes -->
-      <rect class="section-bg" x="20" y="560" width="740" height="110" />
-      <text class="section-label" x="40" y="582">Pulse Nodes (ESP32 via WiFi)</text>
+      <!-- Supabase Tables -->
+      <rect x="782" y="118" width="480" height="165" fill="rgba(13,17,23,0.5)" rx="6" stroke="var(--border)" stroke-width="0.5"/>
+      <text class="section-label" font-size="8" x="792" y="133">11 CLOUD TABLES</text>
+      <text font-family="monospace" font-size="9" fill="var(--text-dim)" x="792" y="150">installations</text>
+      <text font-family="monospace" font-size="9" fill="var(--text-dim)" x="792" y="164">devices (20)</text>
+      <text font-family="monospace" font-size="9" fill="var(--text-dim)" x="792" y="178">scene_templates (151)</text>
+      <text font-family="monospace" font-size="9" fill="var(--text-dim)" x="792" y="192">fixture_library (14)</text>
+      <text font-family="monospace" font-size="9" fill="var(--text-dim)" x="792" y="206">conversations (25)</text>
+      <text font-family="monospace" font-size="9" fill="var(--text-dim)" x="792" y="220">messages</text>
+      <text font-family="monospace" font-size="9" fill="var(--green)" x="950" y="150">ai_learnings</text>
+      <text font-family="monospace" font-size="9" fill="var(--green)" x="950" y="164">ai_feedback</text>
+      <text font-family="monospace" font-size="9" fill="var(--text-dim)" x="950" y="178">usage_events</text>
+      <text font-family="monospace" font-size="9" fill="var(--text-dim)" x="950" y="192">schedules</text>
+      <text font-family="monospace" font-size="9" fill="var(--text-dim)" x="950" y="206">groups</text>
+      <text font-family="monospace" font-size="9" fill="var(--green)" x="1100" y="150">&#9679; ai_learnings now queued</text>
+      <text font-family="monospace" font-size="9" fill="var(--green)" x="1100" y="164">&#9679; UUID-safe retry</text>
+      <text font-family="monospace" font-size="9" fill="var(--green)" x="1100" y="178">&#9679; Permanent fail detection</text>
 
-      <!-- Node: WiFi AP (Problem #4 - DEFERRED) -->
-      <g class="node-box" data-node="wifi-ap" onclick="showChange('wifi-ap')">
-        <rect class="node-rect" x="40" y="595" width="140" height="55" fill="#161b22" stroke="var(--red)"/>
-        <text class="node-label" x="110" y="620">WiFi AP</text>
-        <text class="node-sub" x="110" y="635">AetherDMX 5GHz</text>
-        <circle cx="170" cy="600" r="9" fill="var(--red)" class="change-indicator"/>
-        <text x="170" y="604" text-anchor="middle" font-size="12" fill="#fff" font-weight="bold" pointer-events="none">&#8212;</text>
-      </g>
-
-      <!-- Pulse nodes -->
-      <g class="node-box" data-node="pulse-direct">
-        <rect class="node-rect" x="220" y="595" width="120" height="55" fill="#161b22" stroke="#30363d"/>
-        <text class="node-label" x="280" y="620">Direct Nodes</text>
-        <text class="node-sub" x="280" y="635">U2, U3</text>
-      </g>
-      <g class="node-box" data-node="seance-bridge">
-        <rect class="node-rect" x="380" y="595" width="140" height="55" fill="#161b22" stroke="#30363d"/>
-        <text class="node-label" x="450" y="620">Seance Bridge</text>
-        <text class="node-sub" x="450" y="635">192.168.50.80</text>
-      </g>
-      <g class="node-box" data-node="pulse-bridged">
-        <rect class="node-rect" x="560" y="595" width="120" height="55" fill="#161b22" stroke="#30363d"/>
-        <text class="node-label" x="620" y="620">Bridged Nodes</text>
-        <text class="node-sub" x="620" y="635">U4-U7</text>
-      </g>
-
-      <!-- Section: Supabase Tables -->
-      <rect class="section-bg" x="790" y="290" width="290" height="200" />
-      <text class="section-label" x="810" y="312">Supabase Tables</text>
-      <text x="820" y="340" font-family="monospace" font-size="11" fill="var(--text-dim)">installations &bull; devices (20)</text>
-      <text x="820" y="358" font-family="monospace" font-size="11" fill="var(--text-dim)">scene_templates (151)</text>
-      <text x="820" y="376" font-family="monospace" font-size="11" fill="var(--text-dim)">fixture_library (14)</text>
-      <text x="820" y="394" font-family="monospace" font-size="11" fill="var(--text-dim)">conversations (25) &bull; messages</text>
-      <text x="820" y="412" font-family="monospace" font-size="11" fill="var(--green)">ai_learnings &bull; ai_feedback</text>
-      <text x="820" y="430" font-family="monospace" font-size="11" fill="var(--text-dim)">usage_events &bull; schedules</text>
-      <text x="820" y="448" font-family="monospace" font-size="11" fill="var(--text-dim)">groups</text>
-      <text x="820" y="470" font-family="monospace" font-size="11" fill="var(--green)">&#9679; ai_learnings now uses retry queue</text>
-
-      <!-- EDGES -->
-      <!-- React -> Flask -->
-      <line class="edge" x1="100" y1="100" x2="100" y2="190"/>
-      <!-- AI -> Flask -->
-      <line class="edge" x1="250" y1="100" x2="180" y2="190" marker-end="url(#arrowhead)"/>
-      <!-- AI -> Cloud (conversation logging - FIXED) -->
-      <path class="edge fixed" d="M310,72 L810,72" marker-end="url(#arrowhead-green)"/>
-      <text x="560" y="64" font-size="10" fill="var(--green)" text-anchor="middle">log-conversation (now queued)</text>
-
-      <!-- Flask -> SQLite -->
-      <line class="edge" x1="110" y1="245" x2="110" y2="280"/>
-      <!-- Flask -> Arbitration -->
-      <line class="edge" x1="180" y1="217" x2="220" y2="217"/>
-      <!-- Flask -> DMXState -->
-      <line class="edge" x1="180" y1="235" x2="220" y2="295" marker-end="url(#arrowhead)"/>
-      <!-- Arbitration -> DMXState -->
-      <line class="edge" x1="300" y1="245" x2="300" y2="280"/>
-      <!-- UnifiedPlayback -> DMXState -->
-      <line class="edge" x1="455" y1="245" x2="370" y2="290" marker-end="url(#arrowhead)"/>
-
-      <!-- RenderEngine -> DMXState (with arbitration guard) -->
-      <path class="edge fixed" d="M420,310 L380,310" marker-end="url(#arrowhead-green)"/>
-      <text x="400" y="302" font-size="9" fill="var(--green)" text-anchor="middle">+arb guard</text>
-
-      <!-- ChaseEngine -> ContentManager (with arbitration guard) -->
-      <path class="edge fixed" d="M420,397 L380,397" marker-end="url(#arrowhead-green)"/>
-      <text x="400" y="389" font-size="9" fill="var(--green)" text-anchor="middle">+arb guard</text>
-
-      <!-- EffectsEngine -> ContentManager (already had arb check) -->
-      <line class="edge" x1="610" y1="315" x2="380" y2="390" marker-end="url(#arrowhead)"/>
-      <!-- ShowEngine -> ContentManager -->
-      <line class="edge" x1="610" y1="397" x2="380" y2="397" marker-end="url(#arrowhead)"/>
-
-      <!-- DMXState -> ContentManager -->
-      <line class="edge" x1="300" y1="335" x2="300" y2="370"/>
-      <!-- ContentManager -> Refresh -->
-      <line class="edge" x1="260" y1="425" x2="230" y2="460" marker-end="url(#arrowhead)"/>
-      <!-- Refresh -> WiFi -->
-      <line class="edge" x1="190" y1="515" x2="110" y2="595" marker-end="url(#arrowhead)"/>
-      <!-- WiFi -> Direct nodes -->
-      <line class="edge" x1="155" y1="622" x2="220" y2="622"/>
-      <!-- WiFi -> Seance -->
-      <line class="edge" x1="155" y1="630" x2="380" y2="630" marker-end="url(#arrowhead)"/>
-      <!-- Seance -> Bridged -->
-      <line class="edge" x1="520" y1="622" x2="560" y2="622" marker-end="url(#arrowhead)"/>
-
-      <!-- Flask -> SupabaseService -->
-      <path class="edge data" d="M180,210 C400,160 650,80 810,77" marker-end="url(#arrowhead-blue)"/>
       <!-- SupabaseService -> PendingQueue -->
-      <line class="edge fixed" x1="935" y1="105" x2="935" y2="130" marker-end="url(#arrowhead-green)"/>
-      <text x="960" y="120" font-size="9" fill="var(--green)">UUID-safe retry</text>
+      <line class="edge fixed" x1="927" y1="50" x2="935" y2="50" marker-end="url(#ag)"/>
+      <!-- Flask -> Supabase -->
+      <path class="edge data" d="M530,270 L770,50" marker-end="url(#ab)" style="opacity:0.4"/>
+      <text class="mini-label" font-size="7" x="660" y="145" fill="var(--accent)">cloud sync</text>
 
-      <!-- PendingQueue -> Tables -->
-      <line class="edge" x1="935" y1="185" x2="935" y2="210"/>
+      <!-- ========== SECTION: TRANSPORT ========== -->
+      <rect class="section-bg" x="10" y="590" width="740" height="55"/>
+      <text class="section-label" font-size="9" x="22" y="604">TRANSPORT</text>
+
+      <g class="node-box" onclick="showInfo('udp-6455')">
+        <rect class="node-rect" x="22" y="612" width="110" height="26" fill="#161b22" stroke="var(--orange)"/>
+        <text class="node-label" font-size="9" x="77" y="628" fill="var(--orange)">UDP :6455</text>
+      </g>
+      <text class="mini-label" font-size="7" x="30" y="609">UDPJSON v2 DMX data</text>
+
+      <g class="node-box" onclick="showInfo('udp-9999')">
+        <rect class="node-rect" x="140" y="612" width="110" height="26" fill="#161b22" stroke="var(--orange)"/>
+        <text class="node-label" font-size="9" x="195" y="628" fill="var(--orange)">UDP :9999</text>
+      </g>
+      <text class="mini-label" font-size="7" x="148" y="609">Discovery heartbeats</text>
+
+      <g class="node-box" onclick="showInfo('udp-8888')">
+        <rect class="node-rect" x="258" y="612" width="100" height="26" fill="#161b22" stroke="var(--orange)"/>
+        <text class="node-label" font-size="9" x="308" y="628" fill="var(--orange)">UDP :8888</text>
+      </g>
+      <text class="mini-label" font-size="7" x="266" y="609">Node config</text>
+
+      <g class="node-box" onclick="showInfo('socketio-server')">
+        <rect class="node-rect" x="366" y="612" width="110" height="26" fill="#161b22" stroke="var(--purple)"/>
+        <text class="node-label" font-size="9" x="421" y="628" fill="var(--purple)">SocketIO</text>
+      </g>
+      <text class="mini-label" font-size="7" x="374" y="609">10fps state push</text>
+
+      <g class="node-box" onclick="showInfo('http-8891')">
+        <rect class="node-rect" x="484" y="612" width="100" height="26" fill="#161b22" stroke="var(--accent)"/>
+        <text class="node-label" font-size="9" x="534" y="628" fill="var(--accent)">HTTP :8891</text>
+      </g>
+      <text class="mini-label" font-size="7" x="492" y="609">REST API</text>
+
+      <g class="node-box" onclick="showInfo('http-3000')">
+        <rect class="node-rect" x="592" y="612" width="100" height="26" fill="#161b22" stroke="var(--accent)"/>
+        <text class="node-label" font-size="9" x="642" y="628" fill="var(--accent)">HTTP :3000</text>
+      </g>
+      <text class="mini-label" font-size="7" x="600" y="609">Frontend + Proxy</text>
+
+      <!-- Transport -> Refresh loop -->
+      <line class="edge" x1="559" y1="476" x2="77" y2="612" marker-end="url(#a)" style="opacity:0.3"/>
+
+      <!-- SocketIO up to frontend -->
+      <path class="edge socket" d="M421,612 L421,590 L50,590 L50,114" marker-end="url(#ap)"/>
+
+      <!-- ========== SECTION: HARDWARE ========== -->
+      <rect class="section-bg" x="10" y="660" width="740" height="100"/>
+      <text class="section-label" font-size="9" x="22" y="674">HARDWARE &mdash; ESP32 Pulse Nodes + Pi 5</text>
+
+      <!-- Pi -->
+      <g class="node-box" onclick="showInfo('pi')">
+        <rect class="node-rect" x="22" y="684" width="110" height="36" fill="#161b22" stroke="var(--accent)"/>
+        <text class="node-label" font-size="9" x="77" y="700">Raspberry Pi 5</text>
+        <text class="node-sub" font-size="7" x="77" y="712">192.168.50.1</text>
+      </g>
+
+      <!-- WiFi AP -->
+      <g class="node-box" onclick="showInfo('wifi-ap')">
+        <rect class="node-rect" x="140" y="684" width="100" height="36" fill="#161b22" stroke="var(--red)"/>
+        <text class="node-label" font-size="9" x="190" y="700">WiFi AP</text>
+        <text class="node-sub" font-size="7" x="190" y="712">AetherDMX 5GHz</text>
+        <circle class="change-dot" cx="234" cy="688" r="6" fill="var(--red)" onclick="event.stopPropagation();showChange('wifi-ap')"/>
+        <text x="234" y="691" text-anchor="middle" font-size="8" fill="#fff" font-weight="bold" pointer-events="none">&mdash;</text>
+      </g>
+
+      <!-- Nodes -->
+      <g class="node-box" onclick="showInfo('pulse-422c')">
+        <rect class="node-rect" x="258" y="684" width="90" height="36" fill="#161b22" stroke="#30363d"/>
+        <text class="node-label" font-size="9" x="303" y="700">PULSE-422C</text>
+        <text class="node-sub" font-size="7" x="303" y="712">U2 .50.16</text>
+      </g>
+      <g class="node-box" onclick="showInfo('pulse-76e4')">
+        <rect class="node-rect" x="356" y="684" width="90" height="36" fill="#161b22" stroke="#30363d"/>
+        <text class="node-label" font-size="9" x="401" y="700">PULSE-76E4</text>
+        <text class="node-sub" font-size="7" x="401" y="712">U3 .50.28</text>
+      </g>
+      <g class="node-box" onclick="showInfo('seance')">
+        <rect class="node-rect" x="454" y="684" width="100" height="36" fill="#161b22" stroke="#30363d"/>
+        <text class="node-label" font-size="9" x="504" y="700">Seance Bridge</text>
+        <text class="node-sub" font-size="7" x="504" y="712">.50.80 AP:.60.1</text>
+      </g>
+      <g class="node-box" onclick="showInfo('pulse-4690')">
+        <rect class="node-rect" x="562" y="684" width="85" height="36" fill="#161b22" stroke="#30363d"/>
+        <text class="node-label" font-size="9" x="604" y="700">PULSE-4690</text>
+        <text class="node-sub" font-size="7" x="604" y="712">U4 via Seance</text>
+      </g>
+      <g class="node-box" onclick="showInfo('pulse-7394')">
+        <rect class="node-rect" x="655" y="684" width="85" height="36" fill="#161b22" stroke="#30363d"/>
+        <text class="node-label" font-size="9" x="697" y="700">PULSE-7394</text>
+        <text class="node-sub" font-size="7" x="697" y="712">U5</text>
+      </g>
+
+      <!-- DMX512 output row -->
+      <rect class="section-bg" x="10" y="770" width="740" height="40"/>
+      <text class="section-label" font-size="9" x="22" y="784">DMX512 OUTPUT &mdash; RS-485 @ 40Hz per node</text>
+      <text font-family="monospace" font-size="9" fill="var(--text-dim)" x="22" y="800">512 ch/universe &bull; Local fade engine &bull; Hold-last on network loss &bull; v4.1.0 bulletproof firmware</text>
+
+      <!-- Edges: WiFi -> Nodes -->
+      <line class="edge" x1="240" y1="702" x2="258" y2="702" marker-end="url(#a)"/>
+      <line class="edge" x1="240" y1="702" x2="356" y2="702" marker-end="url(#a)" style="opacity:0.3"/>
+      <line class="edge" x1="240" y1="702" x2="454" y2="702" marker-end="url(#a)" style="opacity:0.3"/>
+      <line class="edge" x1="554" y1="702" x2="562" y2="702" marker-end="url(#a)"/>
+      <line class="edge" x1="554" y1="702" x2="655" y2="702" marker-end="url(#a)" style="opacity:0.3"/>
+
+      <!-- ========== SECTION: ARBITRATION PRIORITY (right side) ========== -->
+      <rect class="section-bg" x="770" y="310" width="240" height="195"/>
+      <text class="section-label" font-size="9" x="782" y="324">ARBITRATION PRIORITY</text>
+      <text font-family="monospace" font-size="10" fill="var(--red)" x="792" y="345">100 BLACKOUT</text>
+      <text font-family="monospace" font-size="10" fill="var(--orange)" x="792" y="362">80  MANUAL</text>
+      <text font-family="monospace" font-size="10" fill="var(--yellow)" x="792" y="379">60  EFFECT &#9679;</text>
+      <text font-family="monospace" font-size="10" fill="var(--accent)" x="792" y="396">50  LOOK</text>
+      <text font-family="monospace" font-size="10" fill="var(--accent)" x="792" y="413">45  SEQUENCE</text>
+      <text font-family="monospace" font-size="10" fill="var(--yellow)" x="792" y="430">40  CHASE &#9679;</text>
+      <text font-family="monospace" font-size="10" fill="var(--text-dim)" x="792" y="447">20  SCENE</text>
+      <text font-family="monospace" font-size="10" fill="var(--text-dim)" x="792" y="464">0   IDLE</text>
+      <text font-family="monospace" font-size="8" fill="var(--green)" x="792" y="490">&#9679; = arb guard added (Beta 1)</text>
+      <text font-family="monospace" font-size="8" fill="var(--yellow)" x="792" y="500">&#9679; = pre-existing guard</text>
+
+      <!-- ========== SECTION: DMX PIPELINE (right side) ========== -->
+      <rect class="section-bg" x="770" y="520" width="500" height="120"/>
+      <text class="section-label" font-size="9" x="782" y="534">DMX OUTPUT PIPELINE</text>
+      <text font-family="monospace" font-size="9" fill="var(--text)" x="792" y="554">PlaybackSession (30fps)</text>
+      <text font-family="monospace" font-size="9" fill="var(--text-dim)" x="820" y="568">&rarr; ModifierRenderer.render()</text>
+      <text font-family="monospace" font-size="9" fill="var(--text-dim)" x="820" y="582">&rarr; MergeLayer.compute_merge() [HTP/LTP]</text>
+      <text font-family="monospace" font-size="9" fill="var(--accent)" x="820" y="596">&rarr; ContentManager.set_channels() [SSOT]</text>
+      <text font-family="monospace" font-size="9" fill="var(--text-dim)" x="820" y="610">&rarr; DMXStateManager update (thread-locked)</text>
+      <text font-family="monospace" font-size="9" fill="var(--orange)" x="820" y="624">&rarr; 40Hz refresh &rarr; UDP :6455 &rarr; ESP32 &rarr; DMX512</text>
+
+      <!-- ========== SECTION: DATA FLOW NUMBERS (right bottom) ========== -->
+      <rect class="section-bg" x="770" y="660" width="500" height="150"/>
+      <text class="section-label" font-size="9" x="782" y="674">8 DATA FLOWS</text>
+      <text font-family="monospace" font-size="8" fill="var(--text-dim)" x="792" y="692">1. UI &rarr; Store &rarr; Express &rarr; Flask &rarr; DMXState &rarr; UDP &rarr; Node &rarr; DMX</text>
+      <text font-family="monospace" font-size="8" fill="var(--text-dim)" x="792" y="706">2. AI Chat &rarr; AIOrchestrator &rarr; Claude API &rarr; ToolBridge &rarr; Flask</text>
+      <text font-family="monospace" font-size="8" fill="var(--text-dim)" x="792" y="720">3. Look Play &rarr; Flask DIRECT &rarr; UnifiedPlayback &rarr; Merge &rarr; Content</text>
+      <text font-family="monospace" font-size="8" fill="var(--text-dim)" x="792" y="734">4. Chase &rarr; ChaseEngine &rarr; MergeLayer &rarr; ContentManager</text>
+      <text font-family="monospace" font-size="8" fill="var(--text-dim)" x="792" y="748">5. Effect &rarr; EffectsEngine &rarr; ContentManager</text>
+      <text font-family="monospace" font-size="8" fill="var(--text-dim)" x="792" y="762">6. Node Heartbeat &rarr; UDP 9999 &rarr; Flask Discovery</text>
+      <text font-family="monospace" font-size="8" fill="var(--text-dim)" x="792" y="776">7. Flask CRUD &rarr; @sync_to_cloud &rarr; Supabase (retry on fail)</text>
+      <text font-family="monospace" font-size="8" fill="var(--purple)" x="792" y="790">8. Flask SocketIO push &rarr; Frontend stores &rarr; React re-render</text>
+
     </svg>
+    </div>
+
+    <!-- ===================== TAB 2: CHANGELOG ===================== -->
+    <div class="tab-panel" id="panel-changelog">
+    <svg viewBox="0 0 900 520" xmlns="http://www.w3.org/2000/svg" style="min-width:800px">
+      <defs>
+        <marker id="ca" markerWidth="6" markerHeight="5" refX="6" refY="2.5" orient="auto"><polygon points="0 0,6 2.5,0 5" fill="#2d333b"/></marker>
+        <marker id="cg" markerWidth="6" markerHeight="5" refX="6" refY="2.5" orient="auto"><polygon points="0 0,6 2.5,0 5" fill="#3fb950"/></marker>
+      </defs>
+
+      <text class="section-label" font-size="10" x="20" y="24">BETA 1 AUDIT FIXES &mdash; 5 PROBLEMS, 8 CHANGES &mdash; COMMIT ed219ef</text>
+
+      <!-- Problem 1: UUID -->
+      <rect class="section-bg" x="10" y="38" width="430" height="130"/>
+      <text class="section-label" font-size="9" x="22" y="54" fill="var(--green)">PROBLEM #1 &mdash; UUID DOUBLE-CONVERSION (FIXED)</text>
+      <g class="node-box" onclick="showChange('supabase-service')">
+        <rect class="node-rect" x="22" y="64" width="195" height="38" fill="#161b22" stroke="var(--green)"/>
+        <text class="node-label" font-size="10" x="119" y="80">_is_valid_uuid()</text>
+        <text class="node-sub" font-size="8" x="119" y="94">supabase_service.py:1236</text>
+      </g>
+      <g class="node-box" onclick="showChange('pending-queue')">
+        <rect class="node-rect" x="225" y="64" width="205" height="38" fill="#161b22" stroke="var(--green)"/>
+        <text class="node-label" font-size="10" x="327" y="80">Permanent Fail Detection</text>
+        <text class="node-sub" font-size="8" x="327" y="94">23505/23503/23502/42P01</text>
+      </g>
+      <g class="node-box" onclick="showChange('supabase-service')">
+        <rect class="node-rect" x="22" y="110" width="195" height="38" fill="#161b22" stroke="var(--green)"/>
+        <text class="node-label" font-size="10" x="119" y="126">_clear_stale_pending()</text>
+        <text class="node-sub" font-size="8" x="119" y="140">Prune >10 retries only</text>
+      </g>
+      <line class="edge fixed" x1="217" y1="83" x2="225" y2="83" marker-end="url(#cg)"/>
+
+      <!-- Problem 2: Arbitration -->
+      <rect class="section-bg" x="10" y="178" width="430" height="130"/>
+      <text class="section-label" font-size="9" x="22" y="194" fill="var(--yellow)">PROBLEM #2 &mdash; RENDER LOOP VIOLATIONS (MITIGATED)</text>
+      <g class="node-box" onclick="showChange('render-engine')">
+        <rect class="node-rect" x="22" y="204" width="130" height="38" fill="#161b22" stroke="var(--yellow)"/>
+        <text class="node-label" font-size="10" x="87" y="220">RenderEngine</text>
+        <text class="node-sub" font-size="8" x="87" y="234">+arb guard :1553</text>
+      </g>
+      <g class="node-box" onclick="showChange('chase-engine')">
+        <rect class="node-rect" x="160" y="204" width="130" height="38" fill="#161b22" stroke="var(--yellow)"/>
+        <text class="node-label" font-size="10" x="225" y="220">ChaseEngine</text>
+        <text class="node-sub" font-size="8" x="225" y="234">+arb guard :914</text>
+      </g>
+      <g class="node-box" onclick="showChange('effects-engine')">
+        <rect class="node-rect" x="298" y="204" width="130" height="38" fill="#161b22" stroke="var(--yellow)" stroke-dasharray="3 2"/>
+        <text class="node-label" font-size="10" x="363" y="220">EffectsEngine</text>
+        <text class="node-sub" font-size="8" x="363" y="234">pre-existing :104</text>
+      </g>
+      <g class="node-box" onclick="showChange('arbitration')">
+        <rect class="node-rect" x="22" y="252" width="195" height="38" fill="#161b22" stroke="var(--yellow)"/>
+        <text class="node-label" font-size="10" x="119" y="268">set_arbitration() wiring</text>
+        <text class="node-sub" font-size="8" x="119" y="282">aether-core.py:4570</text>
+      </g>
+      <text font-size="9" fill="var(--text-dim)" x="225" y="275">Phase 2: consolidate all into UnifiedPlayback</text>
+
+      <!-- Problem 3: AI Cloud -->
+      <rect class="section-bg" x="450" y="38" width="440" height="130"/>
+      <text class="section-label" font-size="9" x="462" y="54" fill="var(--green)">PROBLEM #3 &mdash; AI CLOUD RELIABILITY (FIXED)</text>
+      <g class="node-box" onclick="showChange('ai-cloud-log')">
+        <rect class="node-rect" x="462" y="64" width="210" height="38" fill="#161b22" stroke="var(--green)"/>
+        <text class="node-label" font-size="10" x="567" y="80">log_learning() &rarr; _sync_execute()</text>
+        <text class="node-sub" font-size="8" x="567" y="94">Failures now queued for retry</text>
+      </g>
+      <g class="node-box" onclick="showChange('ai-cloud-log')">
+        <rect class="node-rect" x="680" y="64" width="200" height="38" fill="#161b22" stroke="var(--green)"/>
+        <text class="node-label" font-size="10" x="780" y="80">TABLE_PK_MAP updated</text>
+        <text class="node-sub" font-size="8" x="780" y="94">+ai_learnings +ai_feedback</text>
+      </g>
+      <g class="node-box" onclick="showChange('ai-cloud-log')">
+        <rect class="node-rect" x="462" y="110" width="210" height="38" fill="#161b22" stroke="#30363d" stroke-dasharray="3 2"/>
+        <text class="node-label" font-size="10" x="567" y="126" fill="var(--text-dim)">log_conversation()</text>
+        <text class="node-sub" font-size="8" x="567" y="140">Already used _sync_execute()</text>
+      </g>
+
+      <!-- Problem 5: SQLite -->
+      <rect class="section-bg" x="450" y="178" width="440" height="110"/>
+      <text class="section-label" font-size="9" x="462" y="194" fill="var(--green)">PROBLEM #5 &mdash; SQLITE HEALTH CHECK (FIXED)</text>
+      <g class="node-box" onclick="showChange('sqlite')">
+        <rect class="node-rect" x="462" y="204" width="210" height="38" fill="#161b22" stroke="var(--green)"/>
+        <text class="node-label" font-size="10" x="567" y="220">check_database_health()</text>
+        <text class="node-sub" font-size="8" x="567" y="234">exists + size + PRAGMA + disk</text>
+      </g>
+      <g class="node-box" onclick="showChange('sqlite')">
+        <rect class="node-rect" x="680" y="204" width="200" height="38" fill="#161b22" stroke="var(--green)"/>
+        <text class="node-label" font-size="10" x="780" y="220">/api/health upgraded</text>
+        <text class="node-sub" font-size="8" x="780" y="234">Real checks, not hardcoded True</text>
+      </g>
+      <text font-size="9" fill="var(--text-dim)" x="462" y="275">Verified on Pi: integrity=ok, 18.6GB free, 0 pending ops</text>
+
+      <!-- Problem 4: WiFi -->
+      <rect class="section-bg" x="450" y="300" width="440" height="70"/>
+      <text class="section-label" font-size="9" x="462" y="316" fill="var(--red)">PROBLEM #4 &mdash; WIFI SPOF (DEFERRED)</text>
+      <g class="node-box" onclick="showChange('wifi-ap')">
+        <rect class="node-rect" x="462" y="326" width="250" height="32" fill="#161b22" stroke="var(--red)"/>
+        <text class="node-label" font-size="10" x="587" y="346">Single AP = single point of failure</text>
+      </g>
+      <text font-size="9" fill="var(--text-dim)" x="720" y="346">Post-beta: wired DMX fallback</text>
+
+      <!-- Summary -->
+      <rect class="section-bg" x="10" y="400" width="880" height="110"/>
+      <text class="section-label" font-size="9" x="22" y="416">VERIFICATION RESULTS (Pi, Feb 16 2026)</text>
+      <text font-family="monospace" font-size="9" fill="var(--green)" x="22" y="438">/api/health        status: healthy | integrity: ok | disk_free_mb: 18621.6</text>
+      <text font-family="monospace" font-size="9" fill="var(--green)" x="22" y="454">/api/cloud/status   connected: true | pending_operations: 0</text>
+      <text font-family="monospace" font-size="9" fill="var(--green)" x="22" y="470">/api/arbitration    current_owner: idle | rejected_writes: 0</text>
+      <text font-family="monospace" font-size="9" fill="var(--text-dim)" x="22" y="490">Files changed: supabase_service.py, render_engine.py, aether-core.py</text>
+      <text font-family="monospace" font-size="9" fill="var(--text-dim)" x="22" y="502">Net diff: +132 insertions, -23 deletions</text>
+    </svg>
+    </div>
+
+    <!-- ===================== TAB 3: REDLINES ===================== -->
+    <div class="tab-panel" id="panel-redline">
+    <svg viewBox="0 0 1380 1080" xmlns="http://www.w3.org/2000/svg" style="min-width:1100px">
+      <defs>
+        <marker id="ra" markerWidth="6" markerHeight="5" refX="6" refY="2.5" orient="auto"><polygon points="0 0,6 2.5,0 5" fill="#2d333b"/></marker>
+        <marker id="rr" markerWidth="6" markerHeight="5" refX="6" refY="2.5" orient="auto"><polygon points="0 0,6 2.5,0 5" fill="#ff4444"/></marker>
+      </defs>
+
+      <!-- Title -->
+      <text font-family="-apple-system,'Segoe UI',sans-serif" font-size="14" fill="var(--text)" font-weight="700" x="20" y="24">ARCHITECTURE REDLINES — 20 Identified Flaws</text>
+      <text font-family="-apple-system,'Segoe UI',sans-serif" font-size="10" fill="var(--text-dim)" x="20" y="40">Click any flaw marker for details. Dashed rings = affected components.</text>
+
+      <!-- Severity Legend -->
+      <rect x="700" y="8" width="360" height="36" fill="rgba(22,27,34,0.7)" rx="6" stroke="var(--border)" stroke-width="0.5"/>
+      <circle cx="718" cy="26" r="8" fill="#ff4444"/><text font-size="9" fill="var(--text)" x="730" y="30">CRITICAL (5)</text>
+      <circle cx="808" cy="26" r="8" fill="#ff8800"/><text font-size="9" fill="var(--text)" x="820" y="30">HIGH (5)</text>
+      <circle cx="888" cy="26" r="8" fill="#ddaa00"/><text font-size="9" fill="var(--text)" x="900" y="30">MEDIUM (5)</text>
+      <circle cx="978" cy="26" r="8" fill="#888888"/><text font-size="9" fill="var(--text)" x="990" y="30">LOW (5)</text>
+
+      <!-- ========== ARCHITECTURE GHOST (simplified) ========== -->
+
+      <!-- Frontend -->
+      <rect class="section-bg" x="10" y="60" width="520" height="100"/>
+      <text class="section-label" font-size="9" x="22" y="74">FRONTEND — React 18 + Vite + Tailwind</text>
+      <text class="port-label" font-size="9" x="490" y="74">:3000</text>
+      <rect x="22" y="84" width="115" height="30" rx="4" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+      <text font-size="9" fill="var(--text)" text-anchor="middle" x="79" y="102" font-weight="600">26 Views</text>
+      <rect x="145" y="84" width="105" height="30" rx="4" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+      <text font-size="9" fill="var(--text)" text-anchor="middle" x="197" y="102" font-weight="600">23 Stores</text>
+      <rect x="258" y="84" width="120" height="30" rx="4" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+      <text font-size="9" fill="var(--text)" text-anchor="middle" x="318" y="102" font-weight="600">UI Components</text>
+      <rect x="386" y="84" width="135" height="30" rx="4" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+      <text font-size="9" fill="var(--text)" text-anchor="middle" x="453" y="102" font-weight="600">SocketIO + API</text>
+      <rect x="22" y="120" width="90" height="24" rx="4" fill="#161b22" stroke="var(--purple)" stroke-width="1"/>
+      <text font-size="8" fill="var(--purple)" text-anchor="middle" x="67" y="135">SocketIO 10evt</text>
+      <rect x="120" y="120" width="100" height="24" rx="4" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+      <text font-size="8" fill="var(--text)" text-anchor="middle" x="170" y="135">API Client</text>
+
+      <!-- Express Proxy -->
+      <rect class="section-bg" x="10" y="170" width="520" height="60"/>
+      <text class="section-label" font-size="9" x="22" y="184">EXPRESS PROXY — Node.js</text>
+      <text class="port-label" font-size="9" x="490" y="184">:3000</text>
+      <rect x="22" y="192" width="90" height="28" rx="4" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+      <text font-size="8" fill="var(--text)" text-anchor="middle" x="67" y="209" font-weight="600">Proxy Routes</text>
+      <rect x="120" y="192" width="105" height="28" rx="4" fill="#161b22" stroke="#58a6ff" stroke-width="1"/>
+      <text font-size="8" fill="var(--text)" text-anchor="middle" x="172" y="209" font-weight="600">AIOrchestrator</text>
+      <rect x="233" y="192" width="90" height="28" rx="4" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+      <text font-size="8" fill="var(--text)" text-anchor="middle" x="278" y="209" font-weight="600">LocalIntent</text>
+      <rect x="331" y="192" width="90" height="28" rx="4" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+      <text font-size="8" fill="var(--text)" text-anchor="middle" x="376" y="209" font-weight="600">STT</text>
+
+      <!-- Flask Backend -->
+      <rect class="section-bg" x="10" y="245" width="700" height="310"/>
+      <text class="section-label" font-size="9" x="22" y="259">FLASK BACKEND — aether-core.py (8,446 LOC) — SSOT</text>
+      <text class="port-label" font-size="9" x="670" y="259">:8891</text>
+      <!-- State managers row -->
+      <rect x="22" y="268" width="100" height="32" rx="4" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+      <text font-size="8" fill="var(--text)" text-anchor="middle" x="72" y="287" font-weight="600">Flask API 186+</text>
+      <rect x="130" y="268" width="110" height="32" rx="4" fill="#161b22" stroke="var(--yellow)" stroke-width="1"/>
+      <text font-size="8" fill="var(--text)" text-anchor="middle" x="185" y="287" font-weight="600">ArbitrationMgr</text>
+      <rect x="248" y="268" width="120" height="32" rx="4" fill="#161b22" stroke="var(--accent)" stroke-width="1"/>
+      <text font-size="8" fill="var(--text)" text-anchor="middle" x="308" y="287" font-weight="600">DMXStateMgr</text>
+      <rect x="376" y="268" width="115" height="32" rx="4" fill="#161b22" stroke="var(--accent)" stroke-width="1"/>
+      <text font-size="8" fill="var(--text)" text-anchor="middle" x="433" y="287" font-weight="600">ContentManager</text>
+      <rect x="499" y="268" width="100" height="32" rx="4" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+      <text font-size="8" fill="var(--text)" text-anchor="middle" x="549" y="287" font-weight="600">NodeManager</text>
+      <rect x="607" y="268" width="90" height="32" rx="4" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+      <text font-size="8" fill="var(--text)" text-anchor="middle" x="652" y="287" font-weight="600">MergeLayer</text>
+      <!-- Engines row -->
+      <text class="mini-label" font-size="7" x="22" y="316">Playback Engines</text>
+      <rect x="22" y="322" width="105" height="30" rx="4" fill="#161b22" stroke="var(--accent)" stroke-width="1"/>
+      <text font-size="8" fill="var(--text)" text-anchor="middle" x="74" y="340" font-weight="600">UnifiedPlayback</text>
+      <rect x="135" y="322" width="95" height="30" rx="4" fill="#161b22" stroke="var(--yellow)" stroke-width="1"/>
+      <text font-size="8" fill="var(--text)" text-anchor="middle" x="182" y="340" font-weight="600">RenderEngine</text>
+      <rect x="238" y="322" width="90" height="30" rx="4" fill="#161b22" stroke="var(--yellow)" stroke-width="1"/>
+      <text font-size="8" fill="var(--text)" text-anchor="middle" x="283" y="340" font-weight="600">ChaseEngine</text>
+      <rect x="336" y="322" width="95" height="30" rx="4" fill="#161b22" stroke="var(--yellow)" stroke-width="1"/>
+      <text font-size="8" fill="var(--text)" text-anchor="middle" x="383" y="340" font-weight="600">EffectsEngine</text>
+      <rect x="439" y="322" width="85" height="30" rx="4" fill="#161b22" stroke="var(--yellow)" stroke-width="1"/>
+      <text font-size="8" fill="var(--text)" text-anchor="middle" x="481" y="340" font-weight="600">ShowEngine</text>
+      <rect x="532" y="322" width="100" height="30" rx="4" fill="#161b22" stroke="#30363d" stroke-width="1" stroke-dasharray="3 2"/>
+      <text font-size="8" fill="var(--text-dim)" text-anchor="middle" x="582" y="340" font-weight="600">PlaybackCtrl</text>
+      <!-- Support row -->
+      <text class="mini-label" font-size="7" x="22" y="370">Support + Persistence</text>
+      <rect x="22" y="376" width="85" height="26" rx="4" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+      <text font-size="7" fill="var(--text)" text-anchor="middle" x="64" y="392" font-weight="600">ModifierReg</text>
+      <rect x="115" y="376" width="80" height="26" rx="4" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+      <text font-size="7" fill="var(--text)" text-anchor="middle" x="155" y="392" font-weight="600">FixtureLib</text>
+      <rect x="203" y="376" width="80" height="26" rx="4" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+      <text font-size="7" fill="var(--text)" text-anchor="middle" x="243" y="392" font-weight="600">Looks/Seq</text>
+      <rect x="291" y="376" width="80" height="26" rx="4" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+      <text font-size="7" fill="var(--text)" text-anchor="middle" x="331" y="392" font-weight="600">CueStacks</text>
+      <!-- Persistence row -->
+      <rect x="22" y="412" width="85" height="28" rx="4" fill="#161b22" stroke="var(--green)" stroke-width="1"/>
+      <text font-size="8" fill="var(--text)" text-anchor="middle" x="64" y="430" font-weight="600">SQLite</text>
+      <rect x="115" y="412" width="85" height="28" rx="4" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+      <text font-size="8" fill="var(--text)" text-anchor="middle" x="157" y="430" font-weight="600">Scheduler</text>
+      <rect x="208" y="412" width="80" height="28" rx="4" fill="#161b22" stroke="#30363d" stroke-width="1" stroke-dasharray="3 2"/>
+      <text font-size="8" fill="var(--text-dim)" text-anchor="middle" x="248" y="430" font-weight="600">RDM</text>
+      <rect x="296" y="412" width="90" height="28" rx="4" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+      <text font-size="8" fill="var(--text)" text-anchor="middle" x="341" y="430" font-weight="600">AI Helpers</text>
+      <!-- 40Hz Refresh -->
+      <rect x="470" y="412" width="120" height="28" rx="4" fill="#161b22" stroke="var(--accent)" stroke-width="1"/>
+      <text font-size="8" fill="var(--text)" text-anchor="middle" x="530" y="430" font-weight="600">40Hz Refresh Loop</text>
+      <!-- CORS label -->
+      <rect x="470" y="376" width="120" height="26" rx="4" fill="#161b22" stroke="var(--red)" stroke-width="1"/>
+      <text font-size="7" fill="var(--red)" text-anchor="middle" x="530" y="392" font-weight="600">CORS origins="*"</text>
+
+      <!-- Cloud/Supabase -->
+      <rect class="section-bg" x="730" y="60" width="360" height="160"/>
+      <text class="section-label" font-size="9" x="742" y="74">CLOUD — Supabase</text>
+      <rect x="742" y="84" width="130" height="30" rx="4" fill="#161b22" stroke="var(--green)" stroke-width="1"/>
+      <text font-size="8" fill="var(--text)" text-anchor="middle" x="807" y="102" font-weight="600">SupabaseService</text>
+      <rect x="880" y="84" width="130" height="30" rx="4" fill="#161b22" stroke="var(--green)" stroke-width="1"/>
+      <text font-size="8" fill="var(--text)" text-anchor="middle" x="945" y="102" font-weight="600">PendingSyncQueue</text>
+      <rect x="742" y="122" width="130" height="30" rx="4" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+      <text font-size="8" fill="var(--text)" text-anchor="middle" x="807" y="140" font-weight="600">ID Mapping</text>
+      <rect x="880" y="122" width="130" height="30" rx="4" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+      <text font-size="8" fill="var(--text)" text-anchor="middle" x="945" y="140" font-weight="600">@sync_to_cloud</text>
+      <text font-size="8" fill="var(--text-dim)" x="742" y="172">11 tables • No conflict resolution</text>
+      <text font-size="8" fill="var(--text-dim)" x="742" y="184">One-way push • No rate limiting</text>
+
+      <!-- Transport -->
+      <rect class="section-bg" x="10" y="570" width="700" height="50"/>
+      <text class="section-label" font-size="9" x="22" y="584">TRANSPORT</text>
+      <rect x="22" y="592" width="95" height="22" rx="4" fill="#161b22" stroke="var(--orange)" stroke-width="1"/>
+      <text font-size="8" fill="var(--orange)" text-anchor="middle" x="69" y="606">UDP :6455</text>
+      <rect x="125" y="592" width="95" height="22" rx="4" fill="#161b22" stroke="var(--orange)" stroke-width="1"/>
+      <text font-size="8" fill="var(--orange)" text-anchor="middle" x="172" y="606">UDP :9999</text>
+      <rect x="228" y="592" width="85" height="22" rx="4" fill="#161b22" stroke="var(--orange)" stroke-width="1"/>
+      <text font-size="8" fill="var(--orange)" text-anchor="middle" x="270" y="606">UDP :8888</text>
+      <rect x="321" y="592" width="95" height="22" rx="4" fill="#161b22" stroke="var(--purple)" stroke-width="1"/>
+      <text font-size="8" fill="var(--purple)" text-anchor="middle" x="368" y="606">SocketIO</text>
+      <rect x="424" y="592" width="90" height="22" rx="4" fill="#161b22" stroke="var(--accent)" stroke-width="1"/>
+      <text font-size="8" fill="var(--accent)" text-anchor="middle" x="469" y="606">HTTP :8891</text>
+
+      <!-- Hardware -->
+      <rect class="section-bg" x="10" y="635" width="700" height="80"/>
+      <text class="section-label" font-size="9" x="22" y="649">HARDWARE — ESP32 Pulse Nodes + Pi 5</text>
+      <rect x="22" y="658" width="100" height="30" rx="4" fill="#161b22" stroke="var(--accent)" stroke-width="1"/>
+      <text font-size="8" fill="var(--text)" text-anchor="middle" x="72" y="676" font-weight="600">Pi 5</text>
+      <rect x="130" y="658" width="90" height="30" rx="4" fill="#161b22" stroke="var(--red)" stroke-width="1"/>
+      <text font-size="8" fill="var(--text)" text-anchor="middle" x="175" y="676" font-weight="600">WiFi AP</text>
+      <rect x="228" y="658" width="80" height="30" rx="4" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+      <text font-size="7" fill="var(--text)" text-anchor="middle" x="268" y="676" font-weight="600">PULSE-422C</text>
+      <rect x="316" y="658" width="80" height="30" rx="4" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+      <text font-size="7" fill="var(--text)" text-anchor="middle" x="356" y="676" font-weight="600">PULSE-76E4</text>
+      <rect x="404" y="658" width="85" height="30" rx="4" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+      <text font-size="7" fill="var(--text)" text-anchor="middle" x="446" y="676" font-weight="600">Seance Bridge</text>
+      <rect x="497" y="658" width="80" height="30" rx="4" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+      <text font-size="7" fill="var(--text)" text-anchor="middle" x="537" y="676" font-weight="600">PULSE-4690</text>
+      <rect x="585" y="658" width="80" height="30" rx="4" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+      <text font-size="7" fill="var(--text)" text-anchor="middle" x="625" y="676" font-weight="600">PULSE-7394</text>
+      <!-- DMX output -->
+      <rect x="10" y="725" width="700" height="24" fill="rgba(22,27,34,0.7)" rx="4" stroke="var(--border)" stroke-width="0.5"/>
+      <text font-size="8" fill="var(--text-dim)" x="22" y="741">DMX512 OUTPUT — RS-485 @ 40Hz per node • 512 ch/universe • Hold-last on loss</text>
+
+      <!-- ========================================================================== -->
+      <!-- REDLINE MARKERS — CRITICAL (red circles with flaw IDs) -->
+      <!-- ========================================================================== -->
+
+      <!-- FLAW-01: Single-Process Flask — ring around entire Flask section -->
+      <g class="redline-marker" onclick="showFlaw('F01')">
+        <rect class="flaw-ring sev-crit" x="6" y="241" width="708" height="318" rx="10"/>
+        <circle cx="720" cy="250" r="12" fill="#ff4444"/>
+        <text class="flaw-badge" font-size="8" fill="#fff" text-anchor="middle" x="720" y="254">F01</text>
+      </g>
+
+      <!-- FLAW-02: Monolithic God File — badge on the section title -->
+      <g class="redline-marker" onclick="showFlaw('F02')">
+        <circle cx="465" cy="259" r="12" fill="#ff4444"/>
+        <text class="flaw-badge" font-size="8" fill="#fff" text-anchor="middle" x="465" y="263">F02</text>
+      </g>
+
+      <!-- FLAW-03: UDP No Delivery Guarantee — ring around UDP :6455 -->
+      <g class="redline-marker" onclick="showFlaw('F03')">
+        <rect class="flaw-ring sev-crit" x="18" y="588" width="103" height="30" rx="6"/>
+        <circle cx="130" cy="588" r="12" fill="#ff4444"/>
+        <text class="flaw-badge" font-size="8" fill="#fff" text-anchor="middle" x="130" y="592">F03</text>
+      </g>
+
+      <!-- FLAW-04: SQLite Concurrent Access — ring around SQLite box -->
+      <g class="redline-marker" onclick="showFlaw('F04')">
+        <rect class="flaw-ring sev-crit" x="18" y="408" width="93" height="36" rx="6"/>
+        <circle cx="118" cy="410" r="12" fill="#ff4444"/>
+        <text class="flaw-badge" font-size="8" fill="#fff" text-anchor="middle" x="118" y="414">F04</text>
+      </g>
+
+      <!-- FLAW-05: CORS Wildcard — ring around CORS box -->
+      <g class="redline-marker" onclick="showFlaw('F05')">
+        <rect class="flaw-ring sev-crit" x="466" y="372" width="128" height="34" rx="6"/>
+        <circle cx="600" cy="380" r="12" fill="#ff4444"/>
+        <text class="flaw-badge" font-size="8" fill="#fff" text-anchor="middle" x="600" y="384">F05</text>
+      </g>
+
+      <!-- ========================================================================== -->
+      <!-- REDLINE MARKERS — HIGH (orange circles) -->
+      <!-- ========================================================================== -->
+
+      <!-- FLAW-06: Duplicate Playback Systems — ring spans all engines -->
+      <g class="redline-marker" onclick="showFlaw('F06')">
+        <rect class="flaw-ring sev-high" x="18" y="318" width="618" height="38" rx="6"/>
+        <circle cx="644" cy="320" r="12" fill="#ff8800"/>
+        <text class="flaw-badge" font-size="8" fill="#fff" text-anchor="middle" x="644" y="324">F06</text>
+      </g>
+
+      <!-- FLAW-07: Dual Fade Engine — between DMXStateMgr and hardware -->
+      <g class="redline-marker" onclick="showFlaw('F07')">
+        <rect class="flaw-ring sev-high" x="244" y="264" width="128" height="36" rx="6"/>
+        <line class="redline-connector" stroke="#ff8800" x1="308" y1="300" x2="308" y2="658"/>
+        <circle cx="314" cy="478" r="12" fill="#ff8800"/>
+        <text class="flaw-badge" font-size="8" fill="#fff" text-anchor="middle" x="314" y="482">F07</text>
+      </g>
+
+      <!-- FLAW-08: Arbitration Race — on ArbitrationMgr -->
+      <g class="redline-marker" onclick="showFlaw('F08')">
+        <rect class="flaw-ring sev-high" x="126" y="264" width="118" height="36" rx="6"/>
+        <circle cx="250" cy="264" r="12" fill="#ff8800"/>
+        <text class="flaw-badge" font-size="8" fill="#fff" text-anchor="middle" x="250" y="268">F08</text>
+      </g>
+
+      <!-- FLAW-09: In-Memory State / No Crash Recovery — floating in Flask section -->
+      <g class="redline-marker" onclick="showFlaw('F09')">
+        <circle cx="660" cy="450" r="12" fill="#ff8800"/>
+        <text class="flaw-badge" font-size="8" fill="#fff" text-anchor="middle" x="660" y="454">F09</text>
+        <text font-size="7" fill="#ff8800" x="678" y="454">no crash recovery</text>
+      </g>
+
+      <!-- FLAW-10: Discovery Listener No Auth — on UDP :9999 -->
+      <g class="redline-marker" onclick="showFlaw('F10')">
+        <rect class="flaw-ring sev-high" x="121" y="588" width="103" height="30" rx="6"/>
+        <circle cx="232" cy="588" r="12" fill="#ff8800"/>
+        <text class="flaw-badge" font-size="8" fill="#fff" text-anchor="middle" x="232" y="592">F10</text>
+      </g>
+
+      <!-- ========================================================================== -->
+      <!-- REDLINE MARKERS — MEDIUM (yellow circles) -->
+      <!-- ========================================================================== -->
+
+      <!-- FLAW-11: Frontend API Routing Inconsistency -->
+      <g class="redline-marker" onclick="showFlaw('F11')">
+        <line class="redline-connector" stroke="#ddaa00" x1="170" y1="144" x2="130" y2="192"/>
+        <line class="redline-connector" stroke="#ddaa00" x1="170" y1="144" x2="72" y2="268"/>
+        <circle cx="170" cy="144" r="12" fill="#ddaa00"/>
+        <text class="flaw-badge" font-size="8" fill="#000" text-anchor="middle" x="170" y="148">F11</text>
+      </g>
+
+      <!-- FLAW-12: No Input Validation — on ContentManager -->
+      <g class="redline-marker" onclick="showFlaw('F12')">
+        <rect class="flaw-ring sev-med" x="372" y="264" width="123" height="36" rx="6"/>
+        <circle cx="500" cy="266" r="12" fill="#ddaa00"/>
+        <text class="flaw-badge" font-size="8" fill="#000" text-anchor="middle" x="500" y="270">F12</text>
+      </g>
+
+      <!-- FLAW-13: Memory Growth Unbounded Threads -->
+      <g class="redline-marker" onclick="showFlaw('F13')">
+        <circle cx="660" cy="340" r="12" fill="#ddaa00"/>
+        <text class="flaw-badge" font-size="8" fill="#000" text-anchor="middle" x="660" y="344">F13</text>
+        <text font-size="7" fill="#ddaa00" x="678" y="344">thread leaks</text>
+      </g>
+
+      <!-- FLAW-14: Scheduler Naive Cron — on Scheduler box -->
+      <g class="redline-marker" onclick="showFlaw('F14')">
+        <rect class="flaw-ring sev-med" x="111" y="408" width="93" height="36" rx="6"/>
+        <circle cx="210" cy="410" r="12" fill="#ddaa00"/>
+        <text class="flaw-badge" font-size="8" fill="#000" text-anchor="middle" x="210" y="414">F14</text>
+      </g>
+
+      <!-- FLAW-15: ShowEngine Timeline Drift — on ShowEngine box -->
+      <g class="redline-marker" onclick="showFlaw('F15')">
+        <rect class="flaw-ring sev-med" x="435" y="318" width="93" height="38" rx="6"/>
+        <circle cx="534" cy="320" r="12" fill="#ddaa00"/>
+        <text class="flaw-badge" font-size="8" fill="#000" text-anchor="middle" x="534" y="324">F15</text>
+      </g>
+
+      <!-- ========================================================================== -->
+      <!-- REDLINE MARKERS — LOW (grey circles) -->
+      <!-- ========================================================================== -->
+
+      <!-- FLAW-16: No Audit Log — near ArbitrationMgr -->
+      <g class="redline-marker" onclick="showFlaw('F16')">
+        <circle cx="185" cy="306" r="10" fill="#888888"/>
+        <text class="flaw-badge" font-size="7" fill="#fff" text-anchor="middle" x="185" y="310">F16</text>
+      </g>
+
+      <!-- FLAW-17: FPS Mismatch 30 vs 40 — between EffectsEngine and 40Hz -->
+      <g class="redline-marker" onclick="showFlaw('F17')">
+        <line class="redline-connector" stroke="#888888" x1="383" y1="352" x2="530" y2="412"/>
+        <circle cx="456" cy="382" r="10" fill="#888888"/>
+        <text class="flaw-badge" font-size="7" fill="#fff" text-anchor="middle" x="456" y="386">F17</text>
+      </g>
+
+      <!-- FLAW-18: Dead Frontend Code — on 23 Stores -->
+      <g class="redline-marker" onclick="showFlaw('F18')">
+        <rect class="flaw-ring sev-low" x="141" y="80" width="113" height="38" rx="6"/>
+        <circle cx="260" cy="82" r="10" fill="#888888"/>
+        <text class="flaw-badge" font-size="7" fill="#fff" text-anchor="middle" x="260" y="86">F18</text>
+      </g>
+
+      <!-- FLAW-19: Supabase No Conflict Resolution — in cloud section -->
+      <g class="redline-marker" onclick="showFlaw('F19')">
+        <circle cx="1050" cy="172" r="10" fill="#888888"/>
+        <text class="flaw-badge" font-size="7" fill="#fff" text-anchor="middle" x="1050" y="176">F19</text>
+      </g>
+
+      <!-- FLAW-20: Stale Node No Escalation — between discovery and nodes -->
+      <g class="redline-marker" onclick="showFlaw('F20')">
+        <line class="redline-connector" stroke="#888888" x1="172" y1="614" x2="268" y2="658"/>
+        <circle cx="220" cy="640" r="10" fill="#888888"/>
+        <text class="flaw-badge" font-size="7" fill="#fff" text-anchor="middle" x="220" y="644">F20</text>
+      </g>
+
+      <!-- ========================================================================== -->
+      <!-- RIGHT PANEL: FLAW SUMMARY LIST -->
+      <!-- ========================================================================== -->
+      <rect class="section-bg" x="730" y="240" width="640" height="510"/>
+      <text class="section-label" font-size="10" x="742" y="258">FLAW REGISTRY — CLICK ANY MARKER OR ROW FOR DETAILS</text>
+
+      <!-- CRITICAL -->
+      <text font-size="9" fill="#ff4444" font-weight="700" x="742" y="280" font-family="monospace">━━ CRITICAL ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</text>
+      <g class="redline-marker" onclick="showFlaw('F01')">
+        <circle cx="752" cy="298" r="6" fill="#ff4444"/><text font-size="9" fill="var(--text)" x="764" y="302">F01  Single-Process Flask — no redundancy, crash = total DMX loss</text>
+      </g>
+      <g class="redline-marker" onclick="showFlaw('F02')">
+        <circle cx="752" cy="316" r="6" fill="#ff4444"/><text font-size="9" fill="var(--text)" x="764" y="320">F02  8,446-LOC God File — 1 syntax error kills entire system</text>
+      </g>
+      <g class="redline-marker" onclick="showFlaw('F03')">
+        <circle cx="752" cy="334" r="6" fill="#ff4444"/><text font-size="9" fill="var(--text)" x="764" y="338">F03  UDP Fire-and-Forget — blackout/panic can be silently dropped</text>
+      </g>
+      <g class="redline-marker" onclick="showFlaw('F04')">
+        <circle cx="752" cy="352" r="6" fill="#ff4444"/><text font-size="9" fill="var(--text)" x="764" y="356">F04  SQLite No Pooling — 35 threads, no context mgrs, "db locked"</text>
+      </g>
+      <g class="redline-marker" onclick="showFlaw('F05')">
+        <circle cx="752" cy="370" r="6" fill="#ff4444"/><text font-size="9" fill="var(--text)" x="764" y="374">F05  CORS origins="*" — any website can control your DMX</text>
+      </g>
+
+      <!-- HIGH -->
+      <text font-size="9" fill="#ff8800" font-weight="700" x="742" y="398" font-family="monospace">━━ HIGH ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</text>
+      <g class="redline-marker" onclick="showFlaw('F06')">
+        <circle cx="752" cy="416" r="6" fill="#ff8800"/><text font-size="9" fill="var(--text)" x="764" y="420">F06  5 Duplicate Playback Systems — interleaved writes, flickering</text>
+      </g>
+      <g class="redline-marker" onclick="showFlaw('F07')">
+        <circle cx="752" cy="434" r="6" fill="#ff8800"/><text font-size="9" fill="var(--text)" x="764" y="438">F07  Dual Fade Engine — SSOT + ESP32 both fading = stutter</text>
+      </g>
+      <g class="redline-marker" onclick="showFlaw('F08')">
+        <circle cx="752" cy="452" r="6" fill="#ff8800"/><text font-size="9" fill="var(--text)" x="764" y="456">F08  Arbitration TOCTOU Race — acquire() then write() not atomic</text>
+      </g>
+      <g class="redline-marker" onclick="showFlaw('F09')">
+        <circle cx="752" cy="470" r="6" fill="#ff8800"/><text font-size="9" fill="var(--text)" x="764" y="474">F09  In-Memory State Only — crash loses playback, arb, sessions</text>
+      </g>
+      <g class="redline-marker" onclick="showFlaw('F10')">
+        <circle cx="752" cy="488" r="6" fill="#ff8800"/><text font-size="9" fill="var(--text)" x="764" y="492">F10  Discovery No Auth — rogue device can hijack node identity</text>
+      </g>
+
+      <!-- MEDIUM -->
+      <text font-size="9" fill="#ddaa00" font-weight="700" x="742" y="516" font-family="monospace">━━ MEDIUM ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</text>
+      <g class="redline-marker" onclick="showFlaw('F11')">
+        <circle cx="752" cy="534" r="6" fill="#ddaa00"/><text font-size="9" fill="var(--text)" x="764" y="538">F11  API Routing Split — some bypass Express, breaks middleware</text>
+      </g>
+      <g class="redline-marker" onclick="showFlaw('F12')">
+        <circle cx="752" cy="552" r="6" fill="#ddaa00"/><text font-size="9" fill="var(--text)" x="764" y="556">F12  No Value Validation — ch values >255 accepted, no universe check</text>
+      </g>
+      <g class="redline-marker" onclick="showFlaw('F13')">
+        <circle cx="752" cy="570" r="6" fill="#ddaa00"/><text font-size="9" fill="var(--text)" x="764" y="574">F13  Unbounded Threads — Supabase spawns new thread per op, no pool</text>
+      </g>
+      <g class="redline-marker" onclick="showFlaw('F14')">
+        <circle cx="752" cy="588" r="6" fill="#ddaa00"/><text font-size="9" fill="var(--text)" x="764" y="592">F14  Custom Cron Parser — 60s granularity, no error handling</text>
+      </g>
+      <g class="redline-marker" onclick="showFlaw('F15')">
+        <circle cx="752" cy="606" r="6" fill="#ddaa00"/><text font-size="9" fill="var(--text)" x="764" y="610">F15  ShowEngine Drift — tempo math bug + time.time() vs monotonic</text>
+      </g>
+
+      <!-- LOW -->
+      <text font-size="9" fill="#888888" font-weight="700" x="742" y="634" font-family="monospace">━━ LOW ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</text>
+      <g class="redline-marker" onclick="showFlaw('F16')">
+        <circle cx="752" cy="652" r="6" fill="#888888"/><text font-size="9" fill="var(--text)" x="764" y="656">F16  No Persistent Audit Log — 50-entry in-memory cap, lost on restart</text>
+      </g>
+      <g class="redline-marker" onclick="showFlaw('F17')">
+        <circle cx="752" cy="670" r="6" fill="#888888"/><text font-size="9" fill="var(--text)" x="764" y="674">F17  FPS Mismatch — effects 30fps vs DMX 40fps = uneven frames</text>
+      </g>
+      <g class="redline-marker" onclick="showFlaw('F18')">
+        <circle cx="752" cy="688" r="6" fill="#888888"/><text font-size="9" fill="var(--text)" x="764" y="692">F18  Dead Frontend Code — 3 unused stores (569 LOC), 2 legacy overlap</text>
+      </g>
+      <g class="redline-marker" onclick="showFlaw('F19')">
+        <circle cx="752" cy="706" r="6" fill="#888888"/><text font-size="9" fill="var(--text)" x="764" y="710">F19  Supabase No Conflict Resolution — one-way push, no merge</text>
+      </g>
+      <g class="redline-marker" onclick="showFlaw('F20')">
+        <circle cx="752" cy="724" r="6" fill="#888888"/><text font-size="9" fill="var(--text)" x="764" y="728">F20  Stale Node No Escalation — marked stale but no alert, no pause</text>
+      </g>
+
+    </svg>
+    </div>
+
   </div>
 
+  <!-- ===================== SIDEBAR ===================== -->
   <div class="sidebar" id="sidebar">
     <div class="sidebar-header">
-      <h3 id="sidebar-title">Change Details</h3>
+      <h3 id="sidebar-title">Details</h3>
       <button class="sidebar-close" onclick="closeSidebar()">&times;</button>
     </div>
     <div class="sidebar-body" id="sidebar-body"></div>
@@ -332,232 +1142,286 @@
 </div>
 
 <script>
+/* ===== TAB SWITCHING ===== */
+function switchTab(id) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  event.target.classList.add('active');
+  document.getElementById('panel-' + id).classList.add('active');
+  closeSidebar();
+}
+
+/* ===== INFO PANELS (architecture nodes) ===== */
+const info = {
+  'views': {title:'26 React Views', content:'<b>Main views:</b> Dashboard, Looks, Chases, Scenes, Fixtures, Faders, Console, Shows, Effects, MyEffects, CueStacks, ChatPage, Library, PixelArrays, TimelineView, DevicesView, LiveView, ViewLive, LiveDMXMenu, DMXEffectsMenu, ZoneDetail, Schedules, SchedulesMenu, Timers, MoreMenu, MidiPad<br><br><b>Routing:</b> React Router with lazy loading<br><b>Layouts:</b> Desktop (>=1024px), Kiosk (800x480), Mobile (portrait)'},
+  'stores': {title:'23 Zustand Stores', content:'<b>Active:</b> dmxStore, lookStore, fixtureStore, fixtureLibraryStore, nodeStore, nodeGroupStore, rdmStore, unifiedPlaybackStore, cueStackStore, timelineStore, pixelArrayStore, aiStore, authStore, chatStore, groupStore, favoritesStore, toastStore, uiStore, backgroundStore, scheduleStore<br><br><b>Legacy:</b> sceneStore, chaseStore<br><b>Unused (0 imports):</b> intentContextStore'},
+  'ui-components': {title:'Key UI Components', content:'<b>PlaybackControlModal:</b> Post-apply effects stacking (14 effects in 4 categories), loop/crossfade/speed/master dimmer, Save As, AI Optimize<br><b>ApplyTargetModal:</b> Universe selection + fade time<br><b>VoiceMicButton:</b> Push-to-talk for STT<br><b>AIChatPanel:</b> AI conversation UI<br><b>RDMDeviceList:</b> Per-node RDM device management<br><b>NodeManagement:</b> Full node config UI'},
+  'layouts': {title:'3 Layout Modes', content:'<b>Desktop:</b> >= 1024px width, full sidebar nav<br><b>Kiosk:</b> Pi touchscreen (800x480 landscape), Chromium fullscreen via aether-kiosk.service<br><b>Mobile:</b> Phone portrait, bottom nav, swipe gestures<br><br>Detection via window width/height + touch heuristics in App.jsx'},
+  'socketio': {title:'SocketIO (10 Events)', content:'<b>Events received from Flask:</b><br>dmx_state (10fps throttle)<br>playback_update<br>nodes_update<br>scenes_update<br>chases_update<br>fixtures_update<br>rdm_update<br>preview_frame<br>settings_update<br>screen:context<br><br>Updates corresponding Zustand stores on receipt.'},
+  'api-client': {title:'API Client', content:'<b>Pattern:</b> axios/fetch calls via Express proxy on :3000<br><br><b>Exception:</b> lookStore.playLook() and sequence play call Flask :8891 directly via getAetherCore() — bypasses Express proxy for lower latency on playback control.'},
+  'ai-chat-ui': {title:'AI Chat + Voice', content:'<b>AIChatPanel:</b> Full chat UI in side panel or ChatPage view<br><b>VoiceMicButton:</b> Press-and-hold, records via MediaRecorder<br><b>useVoiceInput.js:</b> Sends audio FormData to POST /api/stt<br><b>STT:</b> faster-whisper (tiny model, CPU int8) on Flask :8891<br><br>HTTPS required for mic access in browser.'},
+  'kiosk': {title:'Chromium Kiosk', content:'<b>Service:</b> aether-kiosk.service<br><b>Resolution:</b> 800x480 (Pi 5 official touchscreen)<br><b>Mode:</b> Fullscreen Chromium, no URL bar<br><b>Target:</b> http://localhost:3000'},
+  'screensaver': {title:'Screensaver', content:'<b>File:</b> components/Screensaver.jsx<br><b>Features:</b> Floating logo, clock, scanlines, vignette<br><b>Sheen-wave:</b> Subtle diagonal light sweep — opacity 0.03/0.06, 3s animation, 8s interval<br><b>Background:</b> Both screensaver and Dashboard use /screensaver.png (unified Feb 2026)'},
+  'proxy-routes': {title:'Express Proxy Routes', content:'<b>proxy.js (15KB):</b> 70+ Flask endpoints proxied<br>Forwards to http://localhost:8891<br>Adds error handling + response normalization<br><br><b>Pattern:</b> Frontend -> Express :3000 -> Flask :8891 -> response'},
+  'ai-orchestrator': {title:'AIOrchestrator (1,378 LOC)', content:'<b>File:</b> backend/src/services/AIOrchestrator.js<br><b>Features:</b><br>- Claude API orchestration with tool use<br>- buildContextPrompt(): compact one-liner live state (~80% fewer tokens)<br>- getContext(): fetches from 7 Flask endpoints per message<br>- Session memory (24h TTL)<br>- Confirmation tiers (safe/low/medium/high)<br>- Streaming + non-streaming modes<br>- Max 5 recursive tool calls<br><br><b>ToolBridge (10 tools):</b> dmx_control, show, show_builder, effects, fixtures, groups, diagnostics, nodes, playback, system<br><br><b>System prompt:</b> 107 lines (was 643, 86% reduction Feb 2026)'},
+  'local-intent': {title:'LocalIntentService', content:'<b>File:</b> backend/src/services/LocalIntentService.js<br><b>Purpose:</b> Offline fallback when Claude API is unreachable<br><b>Parses:</b> Basic intents from user text (play, stop, blackout, etc.)<br><b>Triggers:</b> Corresponding Flask API calls directly'},
+  'express-routes': {title:'8 Express Route Files', content:'<b>proxy.js:</b> Main Flask proxy (70+ endpoints)<br><b>ai.js:</b> AI chat endpoints<br><b>dmx.js:</b> DMX routes (partially redundant)<br><b>chase.js:</b> Chase routes (partially redundant)<br><b>scene.js:</b> Scene routes (partially redundant)<br><b>groups.js:</b> Group management<br><b>nodes.js:</b> Node management<br><b>settings.js:</b> App settings'},
+  'stt': {title:'Speech-to-Text', content:'<b>Endpoint:</b> POST /api/stt (Flask :8891)<br><b>Engine:</b> faster-whisper, tiny model, CPU int8<br><b>Loading:</b> Lazy-loaded on first use<br><b>Frontend:</b> useVoiceInput.js hook + VoiceMicButton component<br><b>Note:</b> HTTPS required for browser mic access'},
+  'flask-api': {title:'Flask API (186+ routes)', content:'<b>File:</b> aether-core.py (8,446 LOC)<br><b>Port:</b> 8891<br><b>Key endpoints:</b><br>/api/dmx/set — SSOT channel write<br>/api/looks, /api/sequences — CRUD<br>/api/scenes, /api/chases — Legacy CRUD<br>/api/shows — Timeline shows<br>/api/effects/* — Dynamic effects<br>/api/fixtures — Fixture management<br>/api/nodes — Node management<br>/api/playback/* — Playback control<br>/api/cue-stacks — Cue management<br>/api/health — Health check<br>/api/stt — Speech-to-text<br>/api/cloud/* — Supabase sync<br>/api/rdm/* — RDM device management'},
+  'arbitration': {title:'ArbitrationManager', content:'<b>File:</b> aether-core.py:931<br><b>Priority ladder:</b><br>BLACKOUT=100, MANUAL=80, EFFECT=60,<br>LOOK=50, SEQUENCE=45, CHASE=40,<br>SCENE=20, IDLE=0<br><br><b>Methods:</b> acquire(), release(), can_write(), set_blackout(), get_status()<br><b>Diagnostics:</b> Tracks last 20 rejections, last 10 history entries, writes_per_service<br><br><span class="badge yellow">MITIGATED</span> Beta 1: added arb guards to RenderEngine + ChaseEngine fallback'},
+  'dmx-state': {title:'DMXStateManager', content:'<b>File:</b> aether-core.py:351<br><b>Purpose:</b> SSOT for all DMX channel values across all universes<br><b>Thread safety:</b> self.lock (threading.Lock)<br><b>Features:</b> Fade interpolation, master dimmer, per-universe state<br><b>Key methods:</b> set_channels(), get_output_values(), get_universe(), blackout()<br><br>Written to by ContentManager. Read by 40Hz refresh loop for UDP dispatch.'},
+  'content-mgr': {title:'ContentManager', content:'<b>File:</b> aether-core.py:3808<br><b>Purpose:</b> THE SSOT write point — all DMX changes flow through here<br><b>set_channels():</b><br>1. Updates DMXStateManager<br>2. Builds full 512-ch frame<br>3. Gets nodes from NodeManager<br>4. Sends UDPJSON to each node<br>5. Emits SocketIO event<br><br>Called by: all playback engines, faders, API, effects'},
+  'node-manager': {title:'NodeManager', content:'<b>File:</b> aether-core.py:1886<br><b>Purpose:</b> Node registry, UDPJSON dispatch, universe-to-node mapping<br><b>Discovery:</b> Listens on UDP 9999 for node heartbeats<br><b>Config:</b> Sends on UDP 8888<br><b>DMX:</b> Sends on UDP 6455<br><b>Stale detection:</b> 60s without heartbeat'},
+  'merge-layer': {title:'MergeLayer', content:'<b>File:</b> merge_layer.py (~500 LOC)<br><b>Purpose:</b> Combines multiple sources with priority-based merging<br><b>HTP (Highest Takes Precedence):</b> Used for dimmer channels<br><b>LTP (Latest Takes Precedence):</b> Used for color/position channels<br><b>ChannelClassifier:</b> Categorizes channels as dimmer vs non-dimmer'},
+  'unified-engine': {title:'UnifiedPlaybackEngine', content:'<b>File:</b> unified_playback.py (1,266 LOC)<br><b>Purpose:</b> Canonical playback authority — THE correct way to play content<br><b>Features:</b> Session-based, 30fps render loop, priority system<br><b>Types:</b> Look, Sequence, Chase, Scene, Effect<br><b>Output:</b> unified_output_callback() -> dmx_state.set_channels()'},
+  'render-engine': {title:'RenderEngine (TASK-0004)', content:'<b>File:</b> render_engine.py (1,145 LOC)<br><b>Purpose:</b> Modifier rendering at 30fps — HSV math, depth blend, frame interpolation<br><b>Contains:</b> ModifierRenderer (utility, keep) + RenderEngine (violation, retire Phase 2)<br><br><span class="badge yellow">MITIGATED</span> Beta 1: Added self._arbitration (L1309), set_arbitration() (L1317), can_write("look") guard (L1553)'},
+  'chase-engine': {title:'ChaseEngine (TASK-0006)', content:'<b>File:</b> aether-core.py:621<br><b>Purpose:</b> Chase playback in background threads with BPM timing<br><b>Pattern:</b> Spawns daemon thread per chase, routes through MergeLayer<br><b>Fallback:</b> Direct ContentManager write if MergeLayer unavailable<br><br><span class="badge yellow">MITIGATED</span> Beta 1: Added arbitration.can_write("chase") guard on fallback path (L914)'},
+  'effects-engine': {title:'EffectsEngine (TASK-0005)', content:'<b>File:</b> effects_engine.py (649 LOC)<br><b>Purpose:</b> Dynamic effects at 30fps — christmas, strobe, pulse, wave, twinkle, fire, smooth<br><b>Arbitration:</b> Already had can_write("effect") at line 104 BEFORE audit<br><br><span class="badge yellow">PRE-EXISTING</span> No changes needed — was already properly guarded'},
+  'show-engine': {title:'ShowEngine (TASK-0007)', content:'<b>File:</b> aether-core.py:1280<br><b>Purpose:</b> Timeline-based show playback<br><b>Pattern:</b> Loads show from SQLite, parses timeline JSON, registers as merge source with priority 45 (sequence), spawns daemon thread<br><b>Status:</b> Violation — should be consolidated into UnifiedPlayback in Phase 2'},
+  'playback-ctrl': {title:'PlaybackController (Legacy)', content:'<b>File:</b> playback_controller.py (799 LOC)<br><b>Purpose:</b> Legacy Look/Sequence controller<br><b>Status:</b> Active but duplicates unified_playback.py functionality<br><b>Action:</b> Deprecate and consolidate in Phase 2'},
+  'modifier-registry': {title:'ModifierRegistry', content:'<b>File:</b> modifier_registry.py (846 LOC)<br><b>6 modifier types:</b> pulse, strobe, flicker, wave, rainbow, twinkle<br><b>Features:</b> Validation, normalization, presets, BPM sync'},
+  'fixture-lib': {title:'FixtureLibrary', content:'<b>Files:</b> fixture_library.py (892), fixture_render.py (635)<br><b>Purpose:</b> Fixture profiles, channel mapping, manufacturer/model catalog<br><b>ChannelMapper:</b> Converts fixture-centric to channel-centric values'},
+  'looks-seq': {title:'Looks & Sequences', content:'<b>File:</b> looks_sequences.py (974 LOC)<br><b>Models:</b> Look, Sequence, SequenceStep, Modifier<br><b>Migration:</b> Converts legacy scenes/chases to looks/sequences<br><b>Tables:</b> looks, sequences, schema_versions, artifact_versions'},
+  'cue-stacks': {title:'Cue Stacks', content:'<b>File:</b> cue_stacks.py (632 LOC)<br><b>Purpose:</b> Theatrical cue stack management<br><b>Table:</b> cue_stacks<br><b>Status:</b> Active, usage unclear (audit question: keep/promote/deprecate?)'},
+  'pixel-mapper': {title:'Pixel Mapper', content:'<b>File:</b> pixel_mapper.py (1,173 LOC)<br><b>Purpose:</b> Pixel array control for LED strips/matrices<br><b>Store:</b> pixelArrayStore.js'},
+  'preview-svc': {title:'Preview Service', content:'<b>File:</b> preview_service.py (571 LOC)<br><b>Purpose:</b> Sandbox/preview mode — renders without affecting live output<br><b>Output:</b> SocketIO "preview_frame" events'},
+  'dist-modes': {title:'Distribution Modes', content:'<b>File:</b> distribution_modes.py (593 LOC)<br><b>Modes:</b> Unified (all fixtures same), Pixel (per-fixture control)<br><b>Used by:</b> ChaseEngine, EffectsEngine'},
+  'sqlite': {title:'SQLite Database', content:'<b>Path:</b> ~/aether-core.db<br><b>Tables (15+):</b> nodes, scenes, chases, groups, fixtures, schedules, timers, rdm_devices, rdm_personalities, node_groups, looks, sequences, schema_versions, artifact_versions, cue_stacks, fixture_profiles<br><br><span class="badge green">FIXED</span> Beta 1: Added check_database_health() — PRAGMA quick_check, disk space monitoring'},
+  'schedules': {title:'Scheduler + Timers', content:'<b>ScheduleRunner:</b> Cron-style schedule execution (aether-core.py:1039)<br><b>TimerRunner:</b> Countdown/interval timers (aether-core.py:1181)<br><b>Tables:</b> schedules, timers'},
+  'rdm': {title:'RDM (Stubbed)', content:'<b>Module:</b> core/rdm/ — manager.py, transport.py, types.py, discovery.py, auto_patch.py<br><b>Status:</b> Protocol layer stubbed, DB tracking works<br><b>Endpoints:</b> /api/nodes/&lt;id&gt;/rdm/discover, /api/rdm/devices, etc.<br><b>ESP32:</b> Firmware has RDM commands (discover, identify, set_address)'},
+  'ai-helpers': {title:'AI Helpers', content:'<b>ai_fixture_advisor.py (908 LOC):</b> AI-driven fixture suggestions<br><b>ai_ssot.py (~200 LOC):</b> AI context helpers<br><b>ai_ops_registry.py (~50 LOC):</b> AI operation registration'},
+  'refresh-loop': {title:'40Hz Refresh Loop', content:'<b>Location:</b> aether-core.py:2246<br><b>Rate:</b> 40Hz (matches DMX512 spec)<br><b>Process:</b> Reads dmx_state.get_output_values(universe) for each universe, builds UDPJSON v2 packet, sends via NodeManager.send_udpjson(ip, 6455, payload)<br><b>Protocol:</b> {"v":2,"type":"set","u":N,"seq":M,"ch":[[ch,val],...]}'},
+  'supabase-service': {title:'SupabaseService', content:'<b>File:</b> services/supabase_service.py (1,492 LOC)<br><b>Singleton, feature-gated:</b> ENABLE_SUPABASE env var<br><b>Behavior:</b> Non-blocking, fail-soft. Flask remains SSOT.<br><b>Sync tables:</b> 11 cloud tables<br><b>ID mapping:</b> Deterministic UUID v5<br><b>Queue:</b> PendingSyncQueue (disk-persisted JSON)<br><br><span class="badge green">FIXED</span> Beta 1: UUID-safe retry, permanent failure detection, _clear_stale_pending pruning'},
+  'pending-queue': {title:'PendingSyncQueue', content:'<b>File:</b> supabase_service.py:129<br><b>Storage:</b> ~/aether-pending-sync.json (disk-persisted)<br><b>Methods:</b> add(), get_pending(), mark_complete(), mark_failed(), clear(), count()<br><br><span class="badge green">FIXED</span> Beta 1: Permanent failure detection for Postgres error codes 23505/23503/23502/42P01'},
+  'id-mapping': {title:'ID Mapping System', content:'<b>File:</b> supabase_service.py:354-473<br><b>Purpose:</b> Converts local string IDs to Supabase UUIDs<br><b>Method:</b> Deterministic UUID v5 with namespace URL<br><b>Cache:</b> ~/aether-id-map.json<br><b>Reverse map:</b> Populated from cloud on startup'},
+  'sync-decorator': {title:'@sync_to_cloud', content:'<b>File:</b> supabase_service.py:1362-1410<br><b>Purpose:</b> Decorator that auto-syncs entity changes to Supabase after the decorated function runs<br><b>Usage:</b> Applied to CRUD functions in Flask routes'},
+  'ai-cloud-log': {title:'AI Cloud Logging', content:'<b>Conversations:</b> log_conversation() -> conversations + messages tables<br><b>Learnings:</b> log_learning() -> ai_learnings table<br><b>Feedback:</b> log_feedback() -> ai_feedback table<br><br><span class="badge green">FIXED</span> Beta 1: log_learning() changed from bare try/except to _sync_execute() for retry-on-failure'},
+  'udp-6455': {title:'UDP :6455 — UDPJSON v2', content:'<b>Direction:</b> Pi -> ESP32 nodes<br><b>Protocol:</b> UDPJSON v2.0<br><b>Format:</b> {"v":2,"type":"set","u":N,"seq":M,"ch":[[ch,val],...]}<br><b>Features:</b> Sequence numbers for duplicate detection, sparse channel updates, fill commands, fade commands, panic/blackout<br><b>No retry:</b> UDP fire-and-forget (by design)'},
+  'udp-9999': {title:'UDP :9999 — Discovery', content:'<b>Direction:</b> ESP32 nodes -> Pi<br><b>Purpose:</b> Node registration + heartbeats<br><b>Format:</b> {"type":"register","node_id":"pulse-XXXX","ip":"...","u":N}<br><b>Heartbeat interval:</b> 5-10 seconds<br><b>Stale timeout:</b> 60 seconds'},
+  'udp-8888': {title:'UDP :8888 — Node Config', content:'<b>Direction:</b> Pi -> ESP32 nodes<br><b>Purpose:</b> Configuration commands (universe assignment, firmware info, etc.)'},
+  'socketio-server': {title:'SocketIO Server', content:'<b>Source:</b> Flask (aether-core.py)<br><b>10 events:</b> dmx_state (10fps), playback_update, nodes_update, scenes_update, chases_update, fixtures_update, rdm_update, preview_frame, settings_update, screen:context<br><b>Throttle:</b> dmx_state limited to 10fps (30fps caused glitches)'},
+  'http-8891': {title:'HTTP :8891 — Flask API', content:'<b>Service:</b> aether-core.service<br><b>Routes:</b> 186+<br><b>Role:</b> SSOT for all DMX state, all playback, all CRUD'},
+  'http-3000': {title:'HTTP :3000 — Express', content:'<b>Service:</b> aether-portal.service<br><b>Serves:</b> React frontend (built by Vite)<br><b>Proxy:</b> API requests forwarded to Flask :8891<br><b>AI routes:</b> /api/ai/* handled by AIOrchestrator'},
+  'pi': {title:'Raspberry Pi 5', content:'<b>Hostname:</b> aether-portal.local<br><b>IP:</b> 192.168.50.1<br><b>WiFi AP:</b> AetherDMX (5GHz ch149)<br><b>User:</b> ramzt<br><b>Services:</b> aether-core (Flask), aether-portal (Express), aether-kiosk (Chromium)<br><b>Paths:</b> /srv/aether/core/, /srv/aether/portal-os/<br><b>DB:</b> ~/aether-core.db'},
+  'wifi-ap': {title:'WiFi AP — AetherDMX', content:'<b>Band:</b> 5GHz channel 149<br><b>SSID:</b> AetherDMX<br><b>IP range:</b> 192.168.50.x<br><br><span class="badge red">KNOWN LIMITATION</span> Single point of failure. If WiFi radio fails, all DMX output dies.<br><b>Mitigation:</b> Seance bridge provides secondary AP.<br><b>Post-beta:</b> Consider wired DMX fallback for critical fixtures.'},
+  'pulse-422c': {title:'PULSE-422C', content:'<b>Universe:</b> 2<br><b>IP:</b> 192.168.50.16<br><b>Network:</b> Direct (AetherDMX)<br><b>Firmware:</b> v4.1.0 bulletproof<br><b>RDM:</b> Supported'},
+  'pulse-76e4': {title:'PULSE-76E4', content:'<b>Universe:</b> 3<br><b>IP:</b> 192.168.50.28<br><b>Network:</b> Direct (AetherDMX)<br><b>Firmware:</b> v4.1.0 bulletproof<br><b>RDM:</b> Supported'},
+  'seance': {title:'Seance Bridge', content:'<b>Mode:</b> APSTA (simultaneous STA + AP)<br><b>STA:</b> Connects to AetherDMX (192.168.50.80)<br><b>AP:</b> Broadcasts AetherSeance-xxxx (192.168.60.1)<br><b>Function:</b> Relays UDPJSON packets between networks<br><b>Firmware:</b> aether-seance v1.0 (ESP32-S3)'},
+  'pulse-4690': {title:'PULSE-4690', content:'<b>Universe:</b> 4<br><b>Network:</b> Via Seance bridge (192.168.60.x)<br><b>Firmware:</b> v4.1.0 bulletproof<br><b>RDM:</b> Supported'},
+  'pulse-7394': {title:'PULSE-7394', content:'<b>Universe:</b> 5<br><b>IP:</b> 192.168.50.33<br><b>Firmware:</b> v4.1.0 bulletproof<br><b>RDM:</b> Supported'},
+};
+
+function showInfo(key) {
+  const d = info[key];
+  if (!d) return;
+  const sidebar = document.getElementById('sidebar');
+  document.getElementById('sidebar-title').textContent = d.title;
+  document.getElementById('sidebar-body').innerHTML = '<div class="field"><div class="field-value">' + d.content + '</div></div>';
+  sidebar.classList.add('open');
+}
+
+/* ===== CHANGELOG PANELS ===== */
 const changes = {
-  'supabase-service': {
-    title: 'Problem #1: UUID Double-Conversion Fix',
-    status: 'green',
-    statusLabel: 'FIXED',
-    date: '2026-02-16',
-    file: 'services/supabase_service.py',
-    lines: '1222-1310',
-    what: 'Fixed retry_pending() to skip UUID conversion when the PK field in queued data is already a valid UUID. Added _is_valid_uuid() helper. Changed _clear_stale_pending() to only prune ops exceeding 10 retries instead of nuking all pending ops on startup.',
-    why: 'When sync_fixture() (or any sync method) fails, it queues data that already has UUIDs in the PK fields. retry_pending() was calling _to_cloud_uuid() again unconditionally. While _to_cloud_uuid() has an "already valid UUID" check, the explicit guard prevents any edge-case corruption.',
-    before: `retry_pending():
-  data[conflict_col] = self._to_cloud_uuid(data[conflict_col])
-  # Always re-converts, fragile
-
-_clear_stale_pending():
-  self._pending_queue.clear()
-  # Nuked ALL pending ops on every restart`,
-    after: `retry_pending():
-  if not self._is_valid_uuid(data[conflict_col]):
-      data[conflict_col] = self._to_cloud_uuid(data[conflict_col])
-  # Only converts if not already a UUID
-
-_clear_stale_pending():
-  # Only prunes ops with retry_count > 10
-  # Preserves retryable operations across restarts`
-  },
-  'pending-queue': {
-    title: 'Problem #1: Permanent Failure Detection',
-    status: 'green',
-    statusLabel: 'FIXED',
-    date: '2026-02-16',
-    file: 'services/supabase_service.py',
-    lines: '1296-1312',
-    what: 'Added detection of permanent Postgres failures (unique constraint 23505, FK violation 23503, not-null 23502, undefined table 42P01) in retry_pending(). Permanently failing ops are removed from the queue instead of retried forever.',
-    why: '6 fixture_library ops were stuck in an infinite retry loop because of a (manufacturer, model) unique constraint in Supabase. These could never succeed regardless of retry count.',
-    before: `except Exception as e:
-    self._pending_queue.mark_failed(op["id"])
-    failed += 1
-# Retries forever, even for permanent failures`,
-    after: `except Exception as e:
-    permanent_codes = ['23505','23503','23502','42P01']
-    is_permanent = any(code in str(e) for code in permanent_codes)
-    if is_permanent:
-        completed.append(op["id"])  # Remove from queue
-    else:
-        self._pending_queue.mark_failed(op["id"])
-# Permanent failures auto-cleared, transient failures still retry`
-  },
-  'arbitration': {
-    title: 'Problem #2: Render Loop Arbitration Enforcement',
-    status: 'yellow',
-    statusLabel: 'MITIGATED',
-    date: '2026-02-16',
-    file: 'aether-core.py + render_engine.py',
-    lines: 'Multiple',
-    what: 'Added arbitration.can_write() guards to RenderEngine output path and ChaseEngine fallback write path. Wired RenderEngine to ArbitrationManager via set_arbitration() hook. This prevents frame-level interleaving when multiple engines are active.',
-    why: '4 independent render loops (UnifiedPlayback, RenderEngine, ChaseEngine, EffectsEngine) can write to dmx_state{} simultaneously. Full consolidation into UnifiedPlaybackEngine is too large for Beta 1 (2 weeks). This mitigation ensures priority-based blocking at the write level.',
-    before: `RenderEngine._render_frame():
-  self._send_callback(universe, final_channels)
-  # No arbitration check — writes regardless
-
-ChaseEngine._send_step() fallback:
-  content_manager.set_channels(universe, parsed)
-  # No arbitration check on direct path`,
-    after: `RenderEngine._render_frame():
-  if self._arbitration and not self._arbitration.can_write('look'):
-      return  # Skip if another engine owns DMX
-  self._send_callback(universe, final_channels)
-
-ChaseEngine._send_step() fallback:
-  if arbitration and not arbitration.can_write('chase'):
-      return  # Skip if higher-priority engine owns DMX
-  content_manager.set_channels(universe, parsed)`
-  },
-  'render-engine': {
-    title: 'Problem #2: RenderEngine Arbitration Guard',
-    status: 'yellow',
-    statusLabel: 'MITIGATED',
-    date: '2026-02-16',
-    file: 'render_engine.py',
-    lines: '1289-1316, 1548-1552',
-    what: 'Added _arbitration field and set_arbitration() method to RenderEngine. Added can_write("look") check before output in _render_frame(). Wired to ArbitrationManager in main module at line 4570.',
-    why: 'RenderEngine (TASK-0004) illegally owns a 30fps render loop. Until it is retired in Phase 2, this guard prevents it from writing DMX frames when a higher-priority engine (effect, manual, blackout) is active.',
-    before: `class RenderEngine:
-    def __init__(self):
-        # No arbitration awareness
-    def _render_frame(self):
-        # Always outputs, even if chase/effect is running`,
-    after: `class RenderEngine:
-    def __init__(self):
-        self._arbitration = None  # Set by main module
-    def set_arbitration(self, arbitration): ...
-    def _render_frame(self):
-        if self._arbitration and not self._arbitration.can_write('look'):
-            return  # Blocked by higher-priority engine`
-  },
-  'chase-engine': {
-    title: 'Problem #2: ChaseEngine Fallback Guard',
-    status: 'yellow',
-    statusLabel: 'MITIGATED',
-    date: '2026-02-16',
-    file: 'aether-core.py',
-    lines: '912-914',
-    what: 'Added arbitration.can_write("chase") check to ChaseEngine\'s fallback direct-write path (when merge layer is not available).',
-    why: 'ChaseEngine routes through merge layer for priority handling (line 899-910), but the fallback path at line 912 wrote directly to ContentManager without any priority check.',
-    before: `# Fallback: direct write if merge layer not available
-content_manager.set_channels(universe, parsed, fade_ms=fade_ms)`,
-    after: `# Fallback: direct write if merge layer not available
-if arbitration and not arbitration.can_write('chase'):
-    return  # Higher-priority engine active
-content_manager.set_channels(universe, parsed, fade_ms=fade_ms)`
-  },
-  'ai-cloud-log': {
-    title: 'Problem #3: AI Cloud Storage Reliability',
-    status: 'green',
-    statusLabel: 'FIXED',
-    date: '2026-02-16',
-    file: 'services/supabase_service.py + aether-core.py',
-    lines: 'supabase_service.py:1020-1051, aether-core.py:10463-10526',
-    what: 'Changed log_learning() from bare try/except (silent drop) to _sync_execute() which queues failures to PendingSyncQueue for retry. Added ai_learnings and ai_feedback to TABLE_PK_MAP. Updated Flask endpoint docstrings to document retry behavior.',
-    why: 'AI conversation data (log_conversation) already used _sync_execute() with retry, but log_learning() silently dropped failures. This meant AI learning patterns were lost whenever Supabase was temporarily unreachable.',
-    before: `log_learning():
-    try:
-        return insert()
-    except Exception as e:
-        print(f"Learning log failed: {e}")
-        return None
-    # Silently lost on ANY failure`,
-    after: `log_learning():
-    return self._sync_execute(
-        insert, "ai_learnings", record, record["learning_id"]
-    )
-    # Failures queued to PendingSyncQueue for retry`
-  },
-  'sqlite': {
-    title: 'Problem #5: SQLite Health Check',
-    status: 'green',
-    statusLabel: 'FIXED',
-    date: '2026-02-16',
-    file: 'aether-core.py',
-    lines: '4894-4920',
-    what: 'Added check_database_health() function that verifies: file exists, file size, PRAGMA quick_check(1) for corruption, disk free space. Integrated into /api/health endpoint. Returns degraded status if DB corrupt or disk < 50MB.',
-    why: 'Single SQLite file on SD card with no monitoring. The /api/health endpoint previously returned hardcoded database: true. Now it performs actual checks.',
-    before: `@app.route('/api/health')
-def health():
-    return jsonify({
-        'status': 'healthy',
-        'services': {'database': True, ...}  # Always True
-    })`,
-    after: `def check_database_health():
-    # Checks: file exists, size, quick_check(1), disk_free_mb
-    return {'healthy': bool, 'integrity': 'ok', ...}
-
-@app.route('/api/health')
-def health():
-    db_health = check_database_health()
-    return jsonify({
-        'status': 'healthy' if db_health['healthy'] else 'degraded',
-        'database': db_health,  # Full diagnostic info
-    })`
-  },
-  'wifi-ap': {
-    title: 'Problem #4: WiFi SPOF (Deferred)',
-    status: 'red',
-    statusLabel: 'KNOWN LIMITATION',
-    date: '2026-02-16',
-    file: 'N/A',
-    lines: 'N/A',
-    what: 'All Pulse nodes connect via Pi\'s WiFi AP (AetherDMX, 5GHz ch149). If the WiFi radio fails, all DMX output dies. No fix applied — documented as known limitation for Beta 1.',
-    why: 'Hardware-level redundancy (dual radios, wired fallback) is a post-beta architectural decision. The Seance bridge provides partial mitigation by extending the WiFi mesh.',
-    before: 'Single WiFi AP = single point of failure',
-    after: 'Unchanged for Beta 1. Documented as known limitation.\n\nMitigation: Seance bridge provides secondary AP.\nPost-beta: Consider wired DMX fallback for critical fixtures.'
-  }
+  'supabase-service': {title:'Problem #1: UUID Double-Conversion Fix', status:'green', statusLabel:'FIXED', date:'2026-02-16', file:'services/supabase_service.py', lines:'1236-1286', what:'Fixed retry_pending() to skip UUID conversion when PK is already valid. Added _is_valid_uuid() helper (L1236). Changed _clear_stale_pending() (L463) to prune >10 retries only.', why:'Queued data already has UUIDs in PK fields. Re-converting was fragile. Also stopped nuking all pending ops on restart.', before:'data[conflict_col] = self._to_cloud_uuid(data[conflict_col])\n# Always re-converts\n\n_clear_stale_pending():\n  self._pending_queue.clear()\n  # Nuked ALL pending ops', after:'if not self._is_valid_uuid(data[conflict_col]):\n    data[conflict_col] = self._to_cloud_uuid(data[conflict_col])\n# Only converts if needed\n\n_clear_stale_pending():\n  # Prunes ops with retry_count > 10 only'},
+  'pending-queue': {title:'Problem #1: Permanent Failure Detection', status:'green', statusLabel:'FIXED', date:'2026-02-16', file:'services/supabase_service.py', lines:'1303-1318', what:'Detects permanent Postgres failures (23505 unique, 23503 FK, 23502 not-null, 42P01 undefined table). Auto-removes from queue.', why:'6 fixture_library ops stuck in infinite retry due to (manufacturer, model) unique constraint.', before:'except Exception as e:\n    self._pending_queue.mark_failed(op["id"])\n# Retries forever', after:'permanent_codes = [\'23505\',\'23503\',\'23502\',\'42P01\']\nif any(code in str(e) for code in permanent_codes):\n    completed.append(op["id"])  # Remove\nelse:\n    self._pending_queue.mark_failed(op["id"])'},
+  'arbitration': {title:'Problem #2: Arbitration Enforcement', status:'yellow', statusLabel:'MITIGATED', date:'2026-02-16', file:'aether-core.py + render_engine.py', lines:'Multiple', what:'Added can_write() guards to RenderEngine (L1553) and ChaseEngine fallback (L914). Wired via set_arbitration() at L4570.', why:'4 engines writing to dmx_state{} simultaneously. Full consolidation deferred to Phase 2.', before:'RenderEngine: no arb check\nChaseEngine fallback: no arb check', after:'RenderEngine: if not can_write("look"): return\nChaseEngine: if not can_write("chase"): return'},
+  'render-engine': {title:'Problem #2: RenderEngine Guard', status:'yellow', statusLabel:'MITIGATED', date:'2026-02-16', file:'render_engine.py', lines:'1309, 1317-1319, 1553-1555', what:'Added self._arbitration=None (L1309), set_arbitration() (L1317), can_write("look") guard (L1553).', why:'RenderEngine (TASK-0004) owns illegal 30fps loop. Guard prevents writes when higher-priority engine active.', before:'def _render_frame(self):\n    self._send_callback(universe, channels)\n    # Always outputs', after:'def _render_frame(self):\n    if self._arbitration and not self._arbitration.can_write("look"):\n        return\n    self._send_callback(universe, channels)'},
+  'chase-engine': {title:'Problem #2: ChaseEngine Guard', status:'yellow', statusLabel:'MITIGATED', date:'2026-02-16', file:'aether-core.py', lines:'912-916', what:'Added can_write("chase") to fallback direct-write path.', why:'Fallback path at L912 wrote to ContentManager without priority check.', before:'# Fallback direct write\ncontent_manager.set_channels(universe, parsed)', after:'if arbitration and not arbitration.can_write("chase"):\n    return\ncontent_manager.set_channels(universe, parsed)'},
+  'effects-engine': {title:'EffectsEngine (No Change)', status:'yellow', statusLabel:'PRE-EXISTING', date:'Pre-existing', file:'effects_engine.py', lines:'104', what:'Already had can_write("effect") in _send_frame() at L104. No changes needed.', why:'Unlike RenderEngine/ChaseEngine, EffectsEngine was already properly guarded.', before:'if not self._arbitration.can_write("effect"): return\n# Already correct', after:'(unchanged)'},
+  'ai-cloud-log': {title:'Problem #3: AI Cloud Reliability', status:'green', statusLabel:'FIXED', date:'2026-02-16', file:'supabase_service.py + aether-core.py', lines:'1022-1051, 10463-10526', what:'Changed log_learning() to _sync_execute() for retry. Added ai_learnings/ai_feedback to TABLE_PK_MAP.', why:'log_learning() silently dropped failures. AI patterns lost when Supabase unreachable.', before:'log_learning():\n    try: return insert()\n    except: print("failed")\n    # Silently lost', after:'log_learning():\n    return self._sync_execute(\n        insert, "ai_learnings", record, id\n    )\n    # Queued for retry on failure'},
+  'sqlite': {title:'Problem #5: SQLite Health Check', status:'green', statusLabel:'FIXED', date:'2026-02-16', file:'aether-core.py', lines:'4894-4937', what:'Added check_database_health(): file exists, size, PRAGMA quick_check(1), disk free space. /api/health now uses real checks.', why:'/api/health returned hardcoded database:true. Single SQLite on SD card with no monitoring.', before:'"services": {"database": True}\n# Always True, no real check', after:'db_health = check_database_health()\n# integrity, disk_free_mb, healthy\n"status": "healthy" if ok else "degraded"'},
+  'wifi-ap': {title:'Problem #4: WiFi SPOF', status:'red', statusLabel:'DEFERRED', date:'2026-02-16', file:'N/A', lines:'N/A', what:'Single WiFi AP = single point of failure. No fix for Beta 1.', why:'Hardware redundancy is post-beta. Seance bridge provides partial mitigation.', before:'Single AP, no fallback', after:'Documented as known limitation.\nPost-beta: wired DMX fallback.'},
 };
 
 function showChange(key) {
   const c = changes[key];
   if (!c) return;
   const sidebar = document.getElementById('sidebar');
-  const title = document.getElementById('sidebar-title');
-  const body = document.getElementById('sidebar-body');
-
-  title.textContent = c.title;
-  body.innerHTML = `
-    <div class="field">
-      <div class="field-label">Status</div>
-      <div class="field-value"><span class="badge ${c.status}">${c.statusLabel}</span></div>
-    </div>
-    <div class="field">
-      <div class="field-label">Date</div>
-      <div class="field-value">${c.date}</div>
-    </div>
-    <div class="field">
-      <div class="field-label">File</div>
-      <div class="field-value" style="font-family:monospace;font-size:13px">${c.file}</div>
-    </div>
-    <div class="field">
-      <div class="field-label">Lines</div>
-      <div class="field-value" style="font-family:monospace;font-size:13px">${c.lines}</div>
-    </div>
-    <div class="field">
-      <div class="field-label">What Changed</div>
-      <div class="field-value">${c.what}</div>
-    </div>
-    <div class="field">
-      <div class="field-label">Why</div>
-      <div class="field-value">${c.why}</div>
-    </div>
-    <div class="field">
-      <div class="field-label">Before</div>
-      <pre>${c.before}</pre>
-    </div>
-    <div class="field">
-      <div class="field-label">After</div>
-      <pre>${c.after}</pre>
-    </div>
+  document.getElementById('sidebar-title').textContent = c.title;
+  document.getElementById('sidebar-body').innerHTML = `
+    <div class="field"><div class="field-label">Status</div><div class="field-value"><span class="badge ${c.status}">${c.statusLabel}</span></div></div>
+    <div class="field"><div class="field-label">Date</div><div class="field-value">${c.date}</div></div>
+    <div class="field"><div class="field-label">File</div><div class="field-value" style="font-family:monospace;font-size:12px">${c.file}</div></div>
+    <div class="field"><div class="field-label">Lines</div><div class="field-value" style="font-family:monospace;font-size:12px">${c.lines}</div></div>
+    <div class="field"><div class="field-label">What</div><div class="field-value">${c.what}</div></div>
+    <div class="field"><div class="field-label">Why</div><div class="field-value">${c.why}</div></div>
+    <div class="field"><div class="field-label">Before</div><pre>${c.before}</pre></div>
+    <div class="field"><div class="field-label">After</div><pre>${c.after}</pre></div>
   `;
   sidebar.classList.add('open');
 }
 
-function closeSidebar() {
-  document.getElementById('sidebar').classList.remove('open');
+/* ===== FLAW PANELS (redline tab) ===== */
+const flaws = {
+  'F01': {title:'F01 — Single-Process Flask (CRITICAL)', sev:'CRITICAL', sevColor:'#ff4444', component:'Flask app server (aether-core.py)', problem:'Entire DMX system runs as ONE Python process. Werkzeug dev server in production. No clustering, no hot standby, no watchdog beyond systemd Restart=always.', scenario:'Unhandled exception in any of 186+ routes or 35 background threads crashes the process. During 5-30s restart window, entire venue frozen — no blackout, no control.', fix:'1) Replace Werkzeug with Gunicorn/uWSGI\n2) Add hardware watchdog timer on Pi\n3) Lightweight secondary "safety controller" process for panic/blackout'},
+  'F02': {title:'F02 — 8,446-LOC Monolithic God File (CRITICAL)', sev:'CRITICAL', sevColor:'#ff4444', component:'aether-core.py', problem:'15+ classes, 186+ routes, 87 bare except clauses, 35 thread spawns, ~167 get_db() calls — ALL in one file. Single syntax error prevents entire system from starting.', scenario:'Developer introduces bug in a rarely-used route. File fails to parse at import time. Entire Flask app cannot start. All DMX offline.', fix:'Decompose into Flask Blueprints:\n  routes/, engines/, managers/, models/\nEach module testable independently.'},
+  'F03': {title:'F03 — UDP No Delivery Guarantee (CRITICAL)', sev:'CRITICAL', sevColor:'#ff4444', component:'NodeManager.send_udpjson() (L1948)', problem:'ALL DMX commands sent via UDP fire-and-forget. No ACK, no retry, no verification. WiFi packet loss 1-5% typical.', scenario:'Critical blackout/panic UDP packet dropped. Node continues outputting previous state. SSOT believes blackout was sent but physical output does not match. Safety failure.', fix:'1) Add ACK mode for critical commands (blackout, panic)\n2) Auto-retry with 25ms backoff for non-critical\n3) Track per-node delivery success rates'},
+  'F04': {title:'F04 — SQLite Concurrent Access (CRITICAL)', sev:'CRITICAL', sevColor:'#ff4444', component:'get_db() and all DB operations', problem:'New sqlite3.connect() on every call with check_same_thread=False. No pooling, no context managers. ~167 get_db()/close() pairs, many without try/finally. 35+ concurrent threads hitting SQLite.', scenario:'Concurrent writes cause "database is locked" timeout. Leaked connections from exception paths hold locks indefinitely. Progressive degradation until restart.', fix:'1) Connection pool or single-writer pattern\n2) Context manager: with get_db() as conn:\n3) Enable WAL mode (PRAGMA journal_mode=WAL)'},
+  'F05': {title:'F05 — CORS Wildcard (CRITICAL)', sev:'CRITICAL', sevColor:'#ff4444', component:'aether-core.py L305-332', problem:'Code computes ALLOWED_ORIGINS but then uses origins="*" on L331. SocketIO also uses cors_allowed_origins="*". ANY website can make API calls.', scenario:'User connects phone to AetherDMX WiFi. Compromised website on phone makes cross-origin request to /api/blackout. Unauthorized DMX control.', fix:'Replace origins="*" with origins=ALLOWED_ORIGINS\nSame for SocketIO cors_allowed_origins.\nThis is a 1-line fix.'},
+  'F06': {title:'F06 — Duplicate Playback Systems (HIGH)', sev:'HIGH', sevColor:'#ff8800', component:'ChaseEngine, ShowEngine, UnifiedPlayback, RenderEngine, PlaybackCtrl', problem:'5 separate playback systems with independent timing loops and thread management. Code has "AUTHORITY VIOLATION" warning comments. ChaseEngine and ShowEngine bypass UnifiedPlaybackEngine.', scenario:'Look + Chase on same universe. Both engines write to dmx_state within same 25ms frame. Interleaved channel values cause flickering.', fix:'Complete TASK-0006/0007 migration:\nRetire ChaseEngine/ShowEngine timing loops.\nExtract as pure functions called by UnifiedPlayback.'},
+  'F07': {title:'F07 — Dual Fade Engine (HIGH)', sev:'HIGH', sevColor:'#ff8800', component:'DMXStateManager.get_output_values() + ESP32 firmware', problem:'Two independent fade engines: Python Hermite smoothstep AND ESP32 local linear fade. Both active simultaneously when fade_ms > 0. AETHER_NOW.md calls this "undefined behavior."', scenario:'2-second fade requested. Python interpolates with smoothstep. 40Hz loop sends interpolated values to ESP32 which tries to fade each received value. Result: stutter-step jerky fades.', fix:'Choose ONE fade authority.\nRecommended: ESP32 handles all fades locally.\nSSOT sends target + fade_ms, removes own interpolation.'},
+  'F08': {title:'F08 — Arbitration TOCTOU Race (HIGH)', sev:'HIGH', sevColor:'#ff8800', component:'ArbitrationManager (L931)', problem:'TOCTOU race: engine calls acquire(), does work, then writes. Between acquire and write, another engine can acquire with higher priority, changing the owner. release() unconditionally resets to idle.', scenario:'Effect engine acquires (60). Chase force-acquires. Effect thread still running writes channels via content_manager — both engines writing, arbitration not preventing it.', fix:'1) Per-write arbitration tokens\n2) acquire() returns token, set_channels() requires it\n3) Revoke callback so engines stop when they lose ownership'},
+  'F09': {title:'F09 — No Crash Recovery (HIGH)', sev:'HIGH', sevColor:'#ff8800', component:'All global singletons', problem:'10+ module-level globals with all runtime state in memory. _save_state() has 1s debounce. Active playback type, arbitration owner, running threads, merge registrations — NEVER persisted.', scenario:'Pi loses power during 3-hour show. On restart: all channels zero, show not resumed, schedule runner reloads but in-progress show is lost. Operator must manually restart.', fix:'1) Persist playback state on every transition\n2) On startup, check for interrupted playback + offer resume\n3) Implement the last_session TODO documented in AETHER_NOW.md'},
+  'F10': {title:'F10 — Discovery No Authentication (HIGH)', sev:'HIGH', sevColor:'#ff8800', component:'discovery_listener() (L4850)', problem:'UDP discovery on port 9999 accepts any JSON from any IP. No auth, no signing, no allowlist. msg["ip"] = addr[0] overwrites. Rogue device can register with any node_id.', scenario:'Attacker on AetherDMX WiFi sends spoofed registration as "pulse-422C". NodeManager updates IP. DMX commands go to attacker instead of real node.', fix:'1) HMAC shared secret on registration packets\n2) Validate source IP matches registered IP\n3) Re-registration from different IP triggers alert\n4) Node allowlist'},
+  'F11': {title:'F11 — API Routing Inconsistency (MEDIUM)', sev:'MEDIUM', sevColor:'#ddaa00', component:'Frontend stores + Express proxy', problem:'Some calls go through Express proxy (port 3000), others bypass to Flask directly (port 8891). Look/Sequence playback calls Flask direct. Express middleware skipped for critical operations.', scenario:'Auth middleware added to Express. Playback control remains unprotected. Bug in Express proxy makes proxied requests fail, but direct calls work — intermittent failure.', fix:'Choose one routing strategy consistently.\nRecommend: everything through Express for auth/logging.'},
+  'F12': {title:'F12 — No Input Validation (MEDIUM)', sev:'MEDIUM', sevColor:'#ddaa00', component:'DMXStateManager.set_channels(), ContentManager, API routes', problem:'Channel range validated (1-512) but VALUES not validated. No clamp to 0-255. Negative values, >255, floats accepted. Universe numbers also not validated.', scenario:'Frontend bug sends value 300. Stored in SSOT. ESP32 wraps (300 & 0xFF = 44). Unexpected dimming. Or universe=-1 creates phantom entry.', fix:'1) Clamp values to 0-255 in set_channels()\n2) Validate universe range (1-64)\n3) Input validation middleware for API routes'},
+  'F13': {title:'F13 — Unbounded Thread Spawning (MEDIUM)', sev:'MEDIUM', sevColor:'#ddaa00', component:'ChaseEngine, Supabase sync, node cache refresh', problem:'35 threading.Thread spawns. Supabase spawns NEW thread per create/update — no pool, no limit. Node cache refresh leaks connections. Crashed chase threads never cleaned up.', scenario:'Rapid scene creation + slow Supabase = hundreds of threads. Each creates network connection + DB connection. Pi RAM exhausted. OOM kill.', fix:'1) ThreadPoolExecutor for Supabase sync\n2) Context managers for all SQLite connections\n3) Memory monitoring in health endpoint\n4) Max thread counts for engines'},
+  'F14': {title:'F14 — Custom Cron Parser (MEDIUM)', sev:'MEDIUM', sevColor:'#ddaa00', component:'ScheduleRunner (L1039)', problem:'Custom cron parser instead of APScheduler/croniter. 60-second check granularity. No error handling on DB read in update_schedules().', scenario:'Scheduled sunset look at 18:00. Cron parser has edge case bug. Schedule never fires. Or DB error empties schedule list silently.', fix:'1) Replace with APScheduler or croniter\n2) Add error handling around DB operations\n3) Log schedule fire/miss events'},
+  'F15': {title:'F15 — ShowEngine Timeline Drift (MEDIUM)', sev:'MEDIUM', sevColor:'#ddaa00', component:'ShowEngine._run_timeline() (L1428)', problem:'Wait loop subtracts 0.1s regardless of actual sleep duration. Tempo division applied to sleep but not to countdown. Uses time.time() instead of time.monotonic().', scenario:'Tempo 0.5x for slow dramatic show. Timing math causes cumulative drift. Over 30-min show, events minutes off. NTP sync mid-show causes timing jump.', fix:'1) time.monotonic() instead of time.time()\n2) Fix tempo math in both sleep + countdown\n3) Use absolute event times, not accumulated deltas'},
+  'F16': {title:'F16 — No Persistent Audit Log (LOW)', sev:'LOW', sevColor:'#888888', component:'ArbitrationManager.history', problem:'In-memory list capped at 50 entries. Rejected writes capped at 20. Lost on restart. Post-incident analysis impossible.', scenario:'Lighting "glitched" during live event. History overwritten by normal operations. No way to determine cause.', fix:'1) Structured logging with file rotation\n2) Persist audit trail to SQLite\n3) Timestamps + correlation IDs'},
+  'F17': {title:'F17 — FPS Mismatch 30 vs 40 (LOW)', sev:'LOW', sevColor:'#888888', component:'EffectsEngine (30fps) vs NodeManager refresh (40fps)', problem:'Effects render at 30fps, DMX refresh at 40fps. 25% of frames have no new data. Some effect frames held 25ms, others 50ms.', scenario:'Strobe at 30Hz appears subtly uneven — irregular frame timing from FPS mismatch.', fix:'Align all render loops to same FPS.\n40fps recommended (matches DMX512 spec).'},
+  'F18': {title:'F18 — Dead Frontend Code (LOW)', sev:'LOW', sevColor:'#888888', component:'intentContextStore (479 LOC), activeChannelStore (44), stageStore (46)', problem:'3 stores with zero imports = 569 LOC dead code. 2 legacy stores (sceneStore, chaseStore) overlap with newer stores. Cognitive load + bundle size.', scenario:'Developer modifies sceneStore thinking it is active path. Change works in testing, fails in production because code path goes through lookStore.', fix:'Execute AETHER_CLEANUP_PLAN Phase 1+2:\nDelete unused stores, migrate legacy stores.'},
+  'F19': {title:'F19 — Supabase No Conflict Resolution (LOW)', sev:'LOW', sevColor:'#888888', component:'supabase_service.py, initial_sync()', problem:'One-way push (local->cloud). No merge strategy. initial_sync() pushes all local data. Two installations or direct Supabase edits cause silent overwrites. No rate limiting on bulk operations.', scenario:'Operator renames look in Supabase dashboard. Pi restarts. Local data overwrites cloud change. Or 50-scene import spawns 50 simultaneous HTTP requests.', fix:'1) Last-modified timestamps + conflict detection\n2) Rate-limit Supabase API with queue\n3) Bidirectional sync with merge policy'},
+  'F20': {title:'F20 — Stale Node No Escalation (LOW)', sev:'LOW', sevColor:'#888888', component:'stale_checker() (L4886)', problem:'Marks nodes stale after 60s without heartbeat. No UI notification, no playback pause, DMX still sent to stale IP. If IP reassigned, wrong device gets commands.', scenario:'WiFi node loses connection. Marked stale. Chase engine keeps sending to dead IP. Other nodes work fine, masking the issue. Operator does not notice.', fix:'1) SocketIO alert to frontend on stale event\n2) Optionally pause playback for that universe\n3) Stop sending to confirmed-stale nodes\n4) Auto-reconnection probing (pings every 10s)'},
+};
+
+function showFlaw(key) {
+  const f = flaws[key];
+  if (!f) return;
+  const sidebar = document.getElementById('sidebar');
+  document.getElementById('sidebar-title').textContent = f.title;
+  document.getElementById('sidebar-body').innerHTML = `
+    <div class="field"><div class="field-label">Severity</div><div class="field-value"><span style="color:${f.sevColor};font-weight:700;font-size:13px">${f.sev}</span></div></div>
+    <div class="field"><div class="field-label">Component</div><div class="field-value" style="font-family:monospace;font-size:12px">${f.component}</div></div>
+    <div class="field"><div class="field-label">Problem</div><div class="field-value">${f.problem}</div></div>
+    <div class="field"><div class="field-label">Failure Scenario</div><div class="field-value" style="color:var(--red)">${f.scenario}</div></div>
+    <div class="field"><div class="field-label">Suggested Fix</div><pre>${f.fix}</pre></div>
+  `;
+  sidebar.classList.add('open');
 }
 
-// Close sidebar on Escape
+function closeSidebar() { document.getElementById('sidebar').classList.remove('open'); }
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSidebar(); });
+
+/* ===== LIVE STATUS PANEL ===== */
+const POLL_INTERVAL = 3000; // 3 seconds
+let liveCollapsed = false;
+
+function toggleLive() {
+  const panel = document.getElementById('live-panel');
+  liveCollapsed = !liveCollapsed;
+  panel.classList.toggle('collapsed', liveCollapsed);
+  document.querySelector('.live-toggle').textContent = liveCollapsed ? '▲ LIVE STATUS' : '▼ LIVE STATUS';
+  // Adjust main area height
+  document.querySelector('.main').style.height = liveCollapsed ? 'calc(100vh - 90px - 32px)' : 'calc(100vh - 90px - 172px)';
+}
+
+const sevMap = { F01:'crit',F02:'crit',F03:'crit',F04:'crit',F05:'crit', F06:'high',F07:'high',F08:'high',F09:'high',F10:'high', F11:'med',F12:'med',F13:'med',F14:'med',F15:'med', F16:'low',F17:'low',F18:'low',F19:'low',F20:'low' };
+
+function renderLive(data) {
+  // Current task
+  const task = data.current_task || {};
+  const isActive = data.session === 'active';
+  document.getElementById('live-dot').className = 'live-status-dot ' + (isActive ? 'active' : 'idle');
+  document.getElementById('live-session-label').textContent = isActive ? 'SESSION ACTIVE' : 'SESSION IDLE';
+  document.getElementById('live-task-title').textContent = task.title || 'No active task';
+  document.getElementById('live-task-flaw').textContent = task.flaw_id ? '[' + task.flaw_id + '] ' : '';
+  document.getElementById('live-task-component').textContent = task.component || '';
+  document.getElementById('live-task-notes').textContent = task.notes || '';
+  document.getElementById('live-task-status').textContent = task.status === 'in_progress' ? '⚡ Working' : task.status === 'done' ? '✅ Done' : '⏳ Pending';
+
+  // Sprint
+  const sprint = data.sprint || {};
+  document.getElementById('live-sprint-name').textContent = sprint.current || 'No sprint';
+  document.getElementById('live-sprint-progress').textContent = sprint.progress || '0/0';
+  const sprintList = document.getElementById('live-sprint-items');
+  sprintList.innerHTML = '';
+  (sprint.items || []).forEach(id => {
+    const status = data.flaws?.[id] || 'open';
+    const cls = status === 'fixed' ? 'done' : (data.current_task?.flaw_id === id ? 'active' : '');
+    const li = document.createElement('div');
+    li.className = 'live-sprint-item ' + cls;
+    li.textContent = (status === 'fixed' ? '✅ ' : data.current_task?.flaw_id === id ? '⚡ ' : '○ ') + id;
+    sprintList.appendChild(li);
+  });
+
+  // Flaw grid
+  const grid = document.getElementById('live-flaw-grid');
+  grid.innerHTML = '';
+  for (let i = 1; i <= 20; i++) {
+    const id = 'F' + String(i).padStart(2, '0');
+    const status = data.flaws?.[id] || 'open';
+    const sev = sevMap[id];
+    const cls = status === 'fixed' ? 'fixed' : (status === 'wip' ? 'wip' : 'open-' + sev);
+    const el = document.createElement('div');
+    el.className = 'live-flaw-row ' + cls;
+    el.textContent = i;
+    el.title = id + ': ' + status;
+    grid.appendChild(el);
+  }
+
+  // Session log
+  const logEl = document.getElementById('live-log');
+  logEl.innerHTML = '';
+  (data.session_log || []).forEach(entry => {
+    const div = document.createElement('div');
+    div.className = 'live-log-entry';
+    div.textContent = entry;
+    logEl.appendChild(div);
+  });
+
+  // Updated timestamp
+  if (data.updated) {
+    const d = new Date(data.updated);
+    document.getElementById('live-updated').textContent = 'Last update: ' + d.toLocaleTimeString();
+  }
+}
+
+async function pollStatus() {
+  try {
+    const resp = await fetch('/aether-status.json?t=' + Date.now());
+    if (resp.ok) {
+      const data = await resp.json();
+      renderLive(data);
+    }
+  } catch(e) { /* silent */ }
+  setTimeout(pollStatus, POLL_INTERVAL);
+}
+
+// Start polling on load
+pollStatus();
 </script>
+
+<!-- LIVE STATUS PANEL -->
+<div class="live-panel" id="live-panel">
+  <button class="live-toggle" onclick="toggleLive()">▼ LIVE STATUS</button>
+  <span class="live-updated" id="live-updated"></span>
+  <div class="live-bar">
+    <!-- Current Task -->
+    <div class="live-section current">
+      <div class="live-label"><span class="live-status-dot active" id="live-dot"></span><span id="live-session-label">SESSION ACTIVE</span></div>
+      <div class="live-title"><span id="live-task-flaw" style="color:var(--accent)"></span><span id="live-task-title">Loading...</span></div>
+      <div class="live-component" id="live-task-component"></div>
+      <div style="margin-top:4px;font-size:11px;font-weight:600" id="live-task-status"></div>
+      <div class="live-notes" id="live-task-notes"></div>
+    </div>
+    <!-- Sprint -->
+    <div class="live-section sprint">
+      <div class="live-label">CURRENT SPRINT</div>
+      <div style="font-size:12px;font-weight:600;color:var(--text)" id="live-sprint-name">—</div>
+      <div style="font-size:10px;color:var(--accent);margin-bottom:4px" id="live-sprint-progress"></div>
+      <div id="live-sprint-items"></div>
+    </div>
+    <!-- Flaw Grid -->
+    <div class="live-section flaws">
+      <div class="live-label">FLAW STATUS (F01–F20)</div>
+      <div id="live-flaw-grid" style="display:flex;flex-wrap:wrap;gap:2px;margin-top:4px"></div>
+      <div style="margin-top:6px;font-size:9px;color:var(--text-dim)">
+        <span style="color:#ff4444">■</span> CRIT
+        <span style="color:#ff8800;margin-left:4px">■</span> HIGH
+        <span style="color:#ddaa00;margin-left:4px">■</span> MED
+        <span style="color:#555;margin-left:4px">■</span> LOW
+        <span style="color:#3fb950;margin-left:4px">■</span> FIXED
+        <span style="color:var(--accent);margin-left:4px">■</span> WIP
+      </div>
+    </div>
+    <!-- Session Log -->
+    <div class="live-section log">
+      <div class="live-label">SESSION LOG</div>
+      <div id="live-log"></div>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>

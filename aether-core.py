@@ -328,8 +328,8 @@ def get_allowed_origins():
 ALLOWED_ORIGINS = get_allowed_origins()
 print(f"🔒 CORS allowed origins: {ALLOWED_ORIGINS}")
 
-CORS(app, resources={r"/api/*": {"origins": "*"}})
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+CORS(app, resources={r"/api/*": {"origins": ALLOWED_ORIGINS}})
+socketio = SocketIO(app, cors_allowed_origins=ALLOWED_ORIGINS, async_mode='threading')
 
 # ============================================================
 # Beta Debug Logging - Enable with AETHER_BETA_DEBUG=1
