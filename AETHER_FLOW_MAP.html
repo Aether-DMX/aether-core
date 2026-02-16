@@ -122,6 +122,55 @@
   .live-sprint-item.active { color: var(--accent); font-weight: 600; }
   .live-sprint-item.done { color: var(--green); text-decoration: line-through; }
   .live-updated { font-size: 9px; color: var(--text-dim); position: absolute; top: 8px; right: 14px; }
+
+  /* ===== STICK FIGURE ANIMATIONS ===== */
+  @keyframes hammer {
+    0%, 100% { transform: rotate(0deg); }
+    30% { transform: rotate(-45deg); }
+    50% { transform: rotate(-50deg); }
+    60% { transform: rotate(5deg); }
+  }
+  @keyframes bob {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-3px); }
+  }
+  @keyframes type-hands {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-2px) translateY(-1px); }
+    75% { transform: translateX(2px) translateY(-1px); }
+  }
+  @keyframes walk-legs {
+    0%, 100% { transform: rotate(0deg); }
+    25% { transform: rotate(20deg); }
+    75% { transform: rotate(-20deg); }
+  }
+  @keyframes bubble-float {
+    0%, 100% { transform: translateY(0); opacity: 1; }
+    50% { transform: translateY(-2px); opacity: 0.9; }
+  }
+  @keyframes sweat-drop {
+    0% { transform: translateY(0); opacity: 1; }
+    80% { transform: translateY(8px); opacity: 0.3; }
+    100% { transform: translateY(10px); opacity: 0; }
+  }
+  @keyframes sparkle {
+    0%, 100% { opacity: 0; transform: scale(0.5); }
+    50% { opacity: 1; transform: scale(1.2); }
+  }
+  @keyframes celebrate {
+    0%, 100% { transform: rotate(0deg); }
+    25% { transform: rotate(-15deg) translateY(-3px); }
+    75% { transform: rotate(15deg) translateY(-3px); }
+  }
+  .stick-worker { pointer-events: none; }
+  .stick-hammer { transform-origin: 50% 100%; animation: hammer 0.8s ease-in-out infinite; }
+  .stick-bob { animation: bob 1.2s ease-in-out infinite; }
+  .stick-type { animation: type-hands 0.4s ease-in-out infinite; }
+  .stick-walk { transform-origin: 50% 0%; animation: walk-legs 0.6s ease-in-out infinite; }
+  .stick-bubble { animation: bubble-float 3s ease-in-out infinite; }
+  .stick-sweat { animation: sweat-drop 1.5s ease-in infinite; }
+  .stick-sparkle { animation: sparkle 1.8s ease-in-out infinite; }
+  .stick-celebrate { animation: celebrate 0.5s ease-in-out infinite; }
 </style>
 </head>
 <body>
@@ -623,6 +672,225 @@
       <text font-family="monospace" font-size="8" fill="var(--text-dim)" x="792" y="776">7. Flask CRUD &rarr; @sync_to_cloud &rarr; Supabase (retry on fail)</text>
       <text font-family="monospace" font-size="8" fill="var(--purple)" x="792" y="790">8. Flask SocketIO push &rarr; Frontend stores &rarr; React re-render</text>
 
+      <!-- ========== STICK FIGURE WORKERS ========== -->
+
+      <!-- WORKER 1: Hammering on SQLite -->
+      <g class="stick-worker stick-bob" transform="translate(75, 390)">
+        <circle cx="0" cy="-18" r="5" fill="none" stroke="#58a6ff" stroke-width="1.5"/>
+        <line x1="0" y1="-13" x2="0" y2="0" stroke="#58a6ff" stroke-width="1.5"/>
+        <line x1="0" y1="0" x2="-6" y2="10" stroke="#58a6ff" stroke-width="1.5"/>
+        <line x1="0" y1="0" x2="6" y2="10" stroke="#58a6ff" stroke-width="1.5"/>
+        <line x1="0" y1="-8" x2="-7" y2="-2" stroke="#58a6ff" stroke-width="1.5"/>
+        <g class="stick-hammer">
+          <line x1="0" y1="-8" x2="8" y2="-16" stroke="#58a6ff" stroke-width="1.5"/>
+          <rect x="6" y="-22" width="6" height="4" rx="1" fill="#ff8800"/>
+        </g>
+        <circle class="stick-sweat" cx="7" cy="-18" r="1.5" fill="#58a6ff"/>
+        <g class="stick-bubble">
+          <rect x="10" y="-40" width="108" height="18" rx="8" fill="#1c2128" stroke="#58a6ff" stroke-width="0.8"/>
+          <polygon points="10,-22 15,-27 20,-22" fill="#1c2128" stroke="#58a6ff" stroke-width="0.8"/>
+          <text font-size="7.5" fill="#fff" x="15" y="-28" font-family="monospace">167 get_db() calls. WHY</text>
+        </g>
+      </g>
+
+      <!-- WORKER 2: Typing at React frontend -->
+      <g class="stick-worker" transform="translate(118, 62)">
+        <circle cx="0" cy="-18" r="5" fill="none" stroke="#3fb950" stroke-width="1.5"/>
+        <line x1="0" y1="-13" x2="0" y2="0" stroke="#3fb950" stroke-width="1.5"/>
+        <line x1="0" y1="0" x2="-5" y2="10" stroke="#3fb950" stroke-width="1.5"/>
+        <line x1="0" y1="0" x2="5" y2="10" stroke="#3fb950" stroke-width="1.5"/>
+        <g class="stick-type">
+          <line x1="0" y1="-8" x2="-8" y2="-3" stroke="#3fb950" stroke-width="1.5"/>
+          <line x1="0" y1="-8" x2="8" y2="-3" stroke="#3fb950" stroke-width="1.5"/>
+        </g>
+        <rect x="-10" y="-4" width="20" height="2" rx="1" fill="#3fb950" opacity="0.5"/>
+        <rect x="-8" y="-10" width="16" height="7" rx="1" fill="none" stroke="#3fb950" stroke-width="0.5" opacity="0.5"/>
+        <g class="stick-bubble" style="animation-delay: 1s;">
+          <rect x="12" y="-40" width="115" height="18" rx="8" fill="#1c2128" stroke="#3fb950" stroke-width="0.8"/>
+          <polygon points="12,-22 17,-27 22,-22" fill="#1c2128" stroke="#3fb950" stroke-width="0.8"/>
+          <text font-size="7.5" fill="#fff" x="17" y="-28" font-family="monospace">23 stores. I need therapy</text>
+        </g>
+      </g>
+
+      <!-- WORKER 3: YEET-ing UDP packets -->
+      <g class="stick-worker" transform="translate(165, 580)">
+        <circle cx="0" cy="-18" r="5" fill="none" stroke="#bc8cff" stroke-width="1.5"/>
+        <line x1="0" y1="-13" x2="0" y2="0" stroke="#bc8cff" stroke-width="1.5"/>
+        <g class="stick-walk"><line x1="0" y1="0" x2="-6" y2="10" stroke="#bc8cff" stroke-width="1.5"/></g>
+        <g class="stick-walk" style="animation-delay: 0.3s;"><line x1="0" y1="0" x2="6" y2="10" stroke="#bc8cff" stroke-width="1.5"/></g>
+        <line x1="0" y1="-8" x2="-8" y2="-14" stroke="#bc8cff" stroke-width="1.5"/>
+        <line x1="0" y1="-8" x2="10" y2="-12" stroke="#bc8cff" stroke-width="1.5"/>
+        <rect x="12" y="-16" width="14" height="8" rx="2" fill="rgba(188,140,255,0.3)" stroke="#bc8cff" stroke-width="0.5">
+          <animateTransform attributeName="transform" type="translate" values="0,0; 15,-10; 30,0" dur="1.5s" repeatCount="indefinite"/>
+        </rect>
+        <text font-size="5" fill="#bc8cff" x="14" y="-10" font-family="monospace">UDP<animateTransform attributeName="transform" type="translate" values="0,0; 15,-10; 30,0" dur="1.5s" repeatCount="indefinite"/></text>
+        <g class="stick-bubble" style="animation-delay: 0.5s;">
+          <rect x="-110" y="-40" width="100" height="18" rx="8" fill="#1c2128" stroke="#bc8cff" stroke-width="0.8"/>
+          <polygon points="-10,-22 -15,-27 -20,-22" fill="#1c2128" stroke="#bc8cff" stroke-width="0.8"/>
+          <text font-size="7.5" fill="#fff" x="-106" y="-28" font-family="monospace">no ACK? pray harder 🙏</text>
+        </g>
+      </g>
+
+      <!-- WORKER 4: Celebrating at CORS -->
+      <g class="stick-worker stick-celebrate" transform="translate(608, 350)">
+        <circle cx="0" cy="-18" r="5" fill="none" stroke="#3fb950" stroke-width="1.5"/>
+        <line x1="0" y1="-13" x2="0" y2="0" stroke="#3fb950" stroke-width="1.5"/>
+        <line x1="0" y1="0" x2="-5" y2="10" stroke="#3fb950" stroke-width="1.5"/>
+        <line x1="0" y1="0" x2="5" y2="10" stroke="#3fb950" stroke-width="1.5"/>
+        <line x1="0" y1="-8" x2="-8" y2="-18" stroke="#3fb950" stroke-width="1.5"/>
+        <line x1="0" y1="-8" x2="8" y2="-18" stroke="#3fb950" stroke-width="1.5"/>
+        <text class="stick-sparkle" font-size="8" x="-12" y="-24">✨</text>
+        <text class="stick-sparkle" font-size="8" x="8" y="-26" style="animation-delay:0.6s;">✨</text>
+        <text class="stick-sparkle" font-size="6" x="0" y="-30" style="animation-delay:1.2s;">⭐</text>
+        <g class="stick-bubble" style="animation-delay: 1.5s;">
+          <rect x="12" y="-40" width="118" height="18" rx="8" fill="#1c2128" stroke="#3fb950" stroke-width="0.8"/>
+          <polygon points="12,-22 17,-27 22,-22" fill="#1c2128" stroke="#3fb950" stroke-width="0.8"/>
+          <text font-size="7.5" fill="#fff" x="17" y="-28" font-family="monospace">CORS was open?! lmaooo</text>
+        </g>
+      </g>
+
+      <!-- WORKER 5: Dead asleep on arbitration -->
+      <g class="stick-worker" transform="translate(195, 275)">
+        <circle cx="0" cy="0" r="5" fill="none" stroke="#ff8800" stroke-width="1.5"/>
+        <line x1="5" y1="0" x2="20" y2="0" stroke="#ff8800" stroke-width="1.5"/>
+        <line x1="20" y1="0" x2="26" y2="6" stroke="#ff8800" stroke-width="1.5"/>
+        <line x1="20" y1="0" x2="26" y2="-4" stroke="#ff8800" stroke-width="1.5"/>
+        <line x1="10" y1="0" x2="8" y2="-6" stroke="#ff8800" stroke-width="1.5"/>
+        <line x1="10" y1="0" x2="14" y2="6" stroke="#ff8800" stroke-width="1.5"/>
+        <!-- Beer bottle -->
+        <rect x="6" y="-10" width="3" height="7" rx="1" fill="#ff8800" opacity="0.6"/>
+        <rect x="6.5" y="-13" width="2" height="4" rx="0.5" fill="#ff8800" opacity="0.4"/>
+        <text font-size="7" fill="#ff8800" opacity="0.8" x="2" y="-10">z<animate attributeName="opacity" values="0.3;1;0.3" dur="2s" repeatCount="indefinite"/></text>
+        <text font-size="9" fill="#ff8800" opacity="0.6" x="8" y="-16">Z<animate attributeName="opacity" values="0.2;0.8;0.2" dur="2s" begin="0.5s" repeatCount="indefinite"/></text>
+        <text font-size="11" fill="#ff8800" opacity="0.4" x="16" y="-22">Z<animate attributeName="opacity" values="0.1;0.6;0.1" dur="2s" begin="1s" repeatCount="indefinite"/></text>
+        <g class="stick-bubble" style="animation-delay: 2s;">
+          <rect x="28" y="-20" width="128" height="18" rx="8" fill="#1c2128" stroke="#ff8800" stroke-width="0.8"/>
+          <polygon points="28,-2 33,-7 38,-2" fill="#1c2128" stroke="#ff8800" stroke-width="0.8"/>
+          <text font-size="7.5" fill="#fff" x="33" y="-8" font-family="monospace">race condition? that's a feature</text>
+        </g>
+      </g>
+
+      <!-- WORKER 6: Panicking at the monolith -->
+      <g class="stick-worker" transform="translate(380, 237)">
+        <circle cx="0" cy="-18" r="5" fill="none" stroke="#ff4444" stroke-width="1.5"/>
+        <line x1="0" y1="-13" x2="0" y2="0" stroke="#ff4444" stroke-width="1.5"/>
+        <line x1="0" y1="0" x2="-5" y2="10" stroke="#ff4444" stroke-width="1.5"/>
+        <line x1="0" y1="0" x2="5" y2="10" stroke="#ff4444" stroke-width="1.5"/>
+        <line x1="0" y1="-8" x2="-10" y2="-16" stroke="#ff4444" stroke-width="1.5"/>
+        <line x1="0" y1="-8" x2="10" y2="-16" stroke="#ff4444" stroke-width="1.5"/>
+        <circle class="stick-sweat" cx="-7" cy="-18" r="1.2" fill="#ff4444"/>
+        <circle class="stick-sweat" cx="7" cy="-16" r="1.2" fill="#ff4444" style="animation-delay:0.5s;"/>
+        <g class="stick-bubble" style="animation-delay: 0.7s;">
+          <rect x="14" y="-38" width="128" height="18" rx="8" fill="#1c2128" stroke="#ff4444" stroke-width="0.8"/>
+          <polygon points="14,-22 19,-27 24,-22" fill="#1c2128" stroke="#ff4444" stroke-width="0.8"/>
+          <text font-size="7.5" fill="#fff" x="19" y="-26" font-family="monospace">8,446 lines. one file. I quit</text>
+        </g>
+      </g>
+
+      <!-- WORKER 7: Chill ESP32 surfer dude -->
+      <g class="stick-worker stick-bob" style="animation-delay: 0.8s;" transform="translate(430, 680)">
+        <circle cx="0" cy="-18" r="5" fill="none" stroke="#f0883e" stroke-width="1.5"/>
+        <line x1="0" y1="-13" x2="0" y2="0" stroke="#f0883e" stroke-width="1.5"/>
+        <line x1="0" y1="0" x2="-6" y2="10" stroke="#f0883e" stroke-width="1.5"/>
+        <line x1="0" y1="0" x2="6" y2="10" stroke="#f0883e" stroke-width="1.5"/>
+        <line x1="0" y1="-8" x2="-10" y2="-4" stroke="#f0883e" stroke-width="1.5"/>
+        <line x1="0" y1="-8" x2="10" y2="-4" stroke="#f0883e" stroke-width="1.5"/>
+        <line x1="-4" y1="-19" x2="4" y2="-19" stroke="#f0883e" stroke-width="2"/>
+        <g class="stick-bubble" style="animation-delay: 2.5s;">
+          <rect x="12" y="-40" width="136" height="18" rx="8" fill="#1c2128" stroke="#f0883e" stroke-width="0.8"/>
+          <polygon points="12,-22 17,-27 22,-22" fill="#1c2128" stroke="#f0883e" stroke-width="0.8"/>
+          <text font-size="7.5" fill="#fff" x="17" y="-28" font-family="monospace">server's on fire, I'm vibing 🤙</text>
+        </g>
+      </g>
+
+      <!-- WORKER 8: Supabase sync guy dragging a chain (near cloud section) -->
+      <g class="stick-worker stick-bob" style="animation-delay: 1.2s;" transform="translate(1050, 230)">
+        <circle cx="0" cy="-18" r="5" fill="none" stroke="#e2b750" stroke-width="1.5"/>
+        <line x1="0" y1="-13" x2="0" y2="0" stroke="#e2b750" stroke-width="1.5"/>
+        <line x1="0" y1="0" x2="-5" y2="10" stroke="#e2b750" stroke-width="1.5"/>
+        <line x1="0" y1="0" x2="5" y2="10" stroke="#e2b750" stroke-width="1.5"/>
+        <line x1="0" y1="-8" x2="-10" y2="-3" stroke="#e2b750" stroke-width="1.5"/>
+        <line x1="0" y1="-8" x2="8" y2="0" stroke="#e2b750" stroke-width="1.5"/>
+        <!-- Dragging chain -->
+        <circle cx="12" cy="2" r="2" fill="none" stroke="#e2b750" stroke-width="1"/>
+        <circle cx="17" cy="4" r="2" fill="none" stroke="#e2b750" stroke-width="1"/>
+        <circle cx="22" cy="2" r="2" fill="none" stroke="#e2b750" stroke-width="1"/>
+        <circle class="stick-sweat" cx="6" cy="-18" r="1.2" fill="#e2b750"/>
+        <g class="stick-bubble" style="animation-delay: 3s;">
+          <rect x="-138" y="-40" width="134" height="18" rx="8" fill="#1c2128" stroke="#e2b750" stroke-width="0.8"/>
+          <polygon points="-6,-22 -11,-27 -16,-22" fill="#1c2128" stroke="#e2b750" stroke-width="0.8"/>
+          <text font-size="7.5" fill="#fff" x="-134" y="-28" font-family="monospace">1 thread per write. send help</text>
+        </g>
+      </g>
+
+      <!-- WORKER 9: Tombstone at the old legacy directory -->
+      <g class="stick-worker" transform="translate(700, 510)">
+        <!-- Tombstone -->
+        <rect x="-12" y="-8" width="24" height="16" rx="4" fill="#2d333b" stroke="#555" stroke-width="1"/>
+        <path d="M-8,-8 Q0,-20 8,-8" fill="#2d333b" stroke="#555" stroke-width="1"/>
+        <text font-size="6" fill="#888" x="0" y="1" text-anchor="middle" font-family="monospace">RIP</text>
+        <text font-size="4" fill="#666" x="0" y="6" text-anchor="middle" font-family="monospace">legacy/</text>
+        <!-- Ghost floating above -->
+        <g class="stick-bob" style="animation-delay: 0.5s;">
+          <ellipse cx="0" cy="-30" rx="6" ry="8" fill="rgba(136,136,136,0.3)" stroke="#888" stroke-width="0.5"/>
+          <circle cx="-2" cy="-32" r="1" fill="#888"/>
+          <circle cx="3" cy="-32" r="1" fill="#888"/>
+          <path d="M-2,-28 Q0,-26 2,-28" fill="none" stroke="#888" stroke-width="0.5"/>
+        </g>
+        <g class="stick-bubble" style="animation-delay: 1.8s;">
+          <rect x="14" y="-48" width="122" height="18" rx="8" fill="#1c2128" stroke="#888" stroke-width="0.8"/>
+          <polygon points="8,-36 13,-41 18,-36" fill="#1c2128" stroke="#888" stroke-width="0.8"/>
+          <text font-size="7.5" fill="#fff" x="19" y="-36" font-family="monospace">I was 1,511 lines of cope</text>
+        </g>
+      </g>
+
+      <!-- WORKER 10: Two guys fighting over fade engine (between SSOT and ESP32) -->
+      <g class="stick-worker" transform="translate(310, 510)">
+        <!-- Guy 1 (Python) pushing right -->
+        <circle cx="-10" cy="-18" r="4" fill="none" stroke="#58a6ff" stroke-width="1.5"/>
+        <line x1="-10" y1="-14" x2="-10" y2="-4" stroke="#58a6ff" stroke-width="1.5"/>
+        <line x1="-10" y1="-4" x2="-14" y2="6" stroke="#58a6ff" stroke-width="1.5"/>
+        <line x1="-10" y1="-4" x2="-6" y2="6" stroke="#58a6ff" stroke-width="1.5"/>
+        <line x1="-10" y1="-10" x2="-2" y2="-8" stroke="#58a6ff" stroke-width="1.5"/>
+        <!-- Guy 2 (ESP32) pushing left -->
+        <circle cx="10" cy="-18" r="4" fill="none" stroke="#f0883e" stroke-width="1.5"/>
+        <line x1="10" y1="-14" x2="10" y2="-4" stroke="#f0883e" stroke-width="1.5"/>
+        <line x1="10" y1="-4" x2="14" y2="6" stroke="#f0883e" stroke-width="1.5"/>
+        <line x1="10" y1="-4" x2="6" y2="6" stroke="#f0883e" stroke-width="1.5"/>
+        <line x1="10" y1="-10" x2="2" y2="-8" stroke="#f0883e" stroke-width="1.5"/>
+        <!-- Hands pushing against each other -->
+        <circle cx="0" cy="-8" r="2" fill="#ff4444" opacity="0.6"/>
+        <text font-size="5" fill="#ff4444" x="-3" y="-1">POW</text>
+        <!-- Labels -->
+        <text font-size="5" fill="#58a6ff" x="-18" y="-22" font-family="monospace">PY</text>
+        <text font-size="5" fill="#f0883e" x="13" y="-22" font-family="monospace">ESP</text>
+        <g class="stick-bubble" style="animation-delay: 0.3s;">
+          <rect x="-80" y="-40" width="148" height="18" rx="8" fill="#1c2128" stroke="#ff4444" stroke-width="0.8"/>
+          <polygon points="-2,-22 -7,-27 -12,-22" fill="#1c2128" stroke="#ff4444" stroke-width="0.8"/>
+          <text font-size="7.5" fill="#fff" x="-76" y="-28" font-family="monospace">BOTH fading?? pick a lane bro</text>
+        </g>
+      </g>
+
+      <!-- WORKER 11: Guy standing at the 87 bare excepts with a mop -->
+      <g class="stick-worker stick-bob" style="animation-delay: 1.5s;" transform="translate(520, 460)">
+        <circle cx="0" cy="-18" r="5" fill="none" stroke="#ff6b6b" stroke-width="1.5"/>
+        <line x1="0" y1="-13" x2="0" y2="0" stroke="#ff6b6b" stroke-width="1.5"/>
+        <line x1="0" y1="0" x2="-5" y2="10" stroke="#ff6b6b" stroke-width="1.5"/>
+        <line x1="0" y1="0" x2="5" y2="10" stroke="#ff6b6b" stroke-width="1.5"/>
+        <!-- Holding mop -->
+        <line x1="0" y1="-8" x2="-4" y2="-2" stroke="#ff6b6b" stroke-width="1.5"/>
+        <line x1="0" y1="-8" x2="8" y2="6" stroke="#ff6b6b" stroke-width="1.5"/>
+        <line x1="6" y1="4" x2="12" y2="8" stroke="#888" stroke-width="1"/>
+        <line x1="8" y1="6" x2="6" y2="10" stroke="#888" stroke-width="0.5"/>
+        <line x1="8" y1="6" x2="10" y2="10" stroke="#888" stroke-width="0.5"/>
+        <line x1="8" y1="6" x2="8" y2="11" stroke="#888" stroke-width="0.5"/>
+        <g class="stick-bubble" style="animation-delay: 2.2s;">
+          <rect x="14" y="-40" width="138" height="18" rx="8" fill="#1c2128" stroke="#ff6b6b" stroke-width="0.8"/>
+          <polygon points="14,-22 19,-27 24,-22" fill="#1c2128" stroke="#ff6b6b" stroke-width="0.8"/>
+          <text font-size="7.5" fill="#fff" x="19" y="-28" font-family="monospace">87 bare excepts. it's fine. 🧹</text>
+        </g>
+      </g>
+
     </svg>
     </div>
 
@@ -896,10 +1164,10 @@
       <!-- REDLINE MARKERS — CRITICAL (red circles with flaw IDs) -->
       <!-- ========================================================================== -->
 
-      <!-- FLAW-01: Single-Process Flask — ring around entire Flask section -->
+      <!-- FLAW-01: Single-Process Flask — FIXED -->
       <g class="redline-marker" onclick="showFlaw('F01')">
-        <rect class="flaw-ring sev-crit" x="6" y="241" width="708" height="318" rx="10"/>
-        <circle cx="720" cy="250" r="12" fill="#ff4444"/>
+        <rect class="flaw-ring" x="6" y="241" width="708" height="318" rx="10" stroke="#44cc44"/>
+        <circle cx="720" cy="250" r="12" fill="#44cc44"/>
         <text class="flaw-badge" font-size="8" fill="#fff" text-anchor="middle" x="720" y="254">F01</text>
       </g>
 
@@ -916,10 +1184,10 @@
         <text class="flaw-badge" font-size="8" fill="#fff" text-anchor="middle" x="130" y="592">F03</text>
       </g>
 
-      <!-- FLAW-04: SQLite Concurrent Access — ring around SQLite box -->
+      <!-- FLAW-04: SQLite Concurrent Access — FIXED -->
       <g class="redline-marker" onclick="showFlaw('F04')">
-        <rect class="flaw-ring sev-crit" x="18" y="408" width="93" height="36" rx="6"/>
-        <circle cx="118" cy="410" r="12" fill="#ff4444"/>
+        <rect class="flaw-ring" x="18" y="408" width="93" height="36" rx="6" stroke="#44cc44"/>
+        <circle cx="118" cy="410" r="12" fill="#44cc44"/>
         <text class="flaw-badge" font-size="8" fill="#fff" text-anchor="middle" x="118" y="414">F04</text>
       </g>
 
@@ -941,11 +1209,11 @@
         <text class="flaw-badge" font-size="8" fill="#fff" text-anchor="middle" x="644" y="324">F06</text>
       </g>
 
-      <!-- FLAW-07: Dual Fade Engine — between DMXStateMgr and hardware -->
+      <!-- FLAW-07: Dual Fade Engine — FIXED -->
       <g class="redline-marker" onclick="showFlaw('F07')">
-        <rect class="flaw-ring sev-high" x="244" y="264" width="128" height="36" rx="6"/>
-        <line class="redline-connector" stroke="#ff8800" x1="308" y1="300" x2="308" y2="658"/>
-        <circle cx="314" cy="478" r="12" fill="#ff8800"/>
+        <rect class="flaw-ring" x="244" y="264" width="128" height="36" rx="6" stroke="#44cc44"/>
+        <line class="redline-connector" stroke="#44cc44" x1="308" y1="300" x2="308" y2="658"/>
+        <circle cx="314" cy="478" r="12" fill="#44cc44"/>
         <text class="flaw-badge" font-size="8" fill="#fff" text-anchor="middle" x="314" y="482">F07</text>
       </g>
 
@@ -956,11 +1224,11 @@
         <text class="flaw-badge" font-size="8" fill="#fff" text-anchor="middle" x="250" y="268">F08</text>
       </g>
 
-      <!-- FLAW-09: In-Memory State / No Crash Recovery — floating in Flask section -->
+      <!-- FLAW-09: In-Memory State / No Crash Recovery — FIXED -->
       <g class="redline-marker" onclick="showFlaw('F09')">
-        <circle cx="660" cy="450" r="12" fill="#ff8800"/>
+        <circle cx="660" cy="450" r="12" fill="#44cc44"/>
         <text class="flaw-badge" font-size="8" fill="#fff" text-anchor="middle" x="660" y="454">F09</text>
-        <text font-size="7" fill="#ff8800" x="678" y="454">no crash recovery</text>
+        <text font-size="7" fill="#44cc44" x="678" y="454">FIXED</text>
       </g>
 
       <!-- FLAW-10: Discovery Listener No Auth — on UDP :9999 -->
@@ -1056,7 +1324,7 @@
       <!-- CRITICAL -->
       <text font-size="9" fill="#ff4444" font-weight="700" x="742" y="280" font-family="monospace">━━ CRITICAL ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</text>
       <g class="redline-marker" onclick="showFlaw('F01')">
-        <circle cx="752" cy="298" r="6" fill="#ff4444"/><text font-size="9" fill="var(--text)" x="764" y="302">F01  Single-Process Flask — no redundancy, crash = total DMX loss</text>
+        <circle cx="752" cy="298" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="302">F01  ✅ FIXED — Gunicorn multi-worker + systemd watchdog</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('F02')">
         <circle cx="752" cy="316" r="6" fill="#ff4444"/><text font-size="9" fill="var(--text)" x="764" y="320">F02  8,446-LOC God File — 1 syntax error kills entire system</text>
@@ -1065,7 +1333,7 @@
         <circle cx="752" cy="334" r="6" fill="#ff4444"/><text font-size="9" fill="var(--text)" x="764" y="338">F03  UDP Fire-and-Forget — blackout/panic can be silently dropped</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('F04')">
-        <circle cx="752" cy="352" r="6" fill="#ff4444"/><text font-size="9" fill="var(--text)" x="764" y="356">F04  SQLite No Pooling — 35 threads, no context mgrs, "db locked"</text>
+        <circle cx="752" cy="352" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="356">F04  ✅ FIXED — WAL mode + connection pool + context managers</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('F05')">
         <circle cx="752" cy="370" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="374">F05  ✅ FIXED — CORS now uses ALLOWED_ORIGINS</text>
@@ -1077,13 +1345,13 @@
         <circle cx="752" cy="416" r="6" fill="#ff8800"/><text font-size="9" fill="var(--text)" x="764" y="420">F06  5 Duplicate Playback Systems — interleaved writes, flickering</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('F07')">
-        <circle cx="752" cy="434" r="6" fill="#ff8800"/><text font-size="9" fill="var(--text)" x="764" y="438">F07  Dual Fade Engine — SSOT + ESP32 both fading = stutter</text>
+        <circle cx="752" cy="434" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="438">F07  ✅ FIXED — ESP32 sole fade authority, SSOT sends target+ms</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('F08')">
         <circle cx="752" cy="452" r="6" fill="#ff8800"/><text font-size="9" fill="var(--text)" x="764" y="456">F08  Arbitration TOCTOU Race — acquire() then write() not atomic</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('F09')">
-        <circle cx="752" cy="470" r="6" fill="#ff8800"/><text font-size="9" fill="var(--text)" x="764" y="474">F09  In-Memory State Only — crash loses playback, arb, sessions</text>
+        <circle cx="752" cy="470" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="474">F09  ✅ FIXED — State persisted on transitions + resume on startup</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('F10')">
         <circle cx="752" cy="488" r="6" fill="#ff8800"/><text font-size="9" fill="var(--text)" x="764" y="492">F10  Discovery No Auth — rogue device can hijack node identity</text>
@@ -1252,15 +1520,15 @@ function showChange(key) {
 
 /* ===== FLAW PANELS (redline tab) ===== */
 const flaws = {
-  'F01': {title:'F01 — Single-Process Flask (CRITICAL)', sev:'CRITICAL', sevColor:'#ff4444', component:'Flask app server (aether-core.py)', problem:'Entire DMX system runs as ONE Python process. Werkzeug dev server in production. No clustering, no hot standby, no watchdog beyond systemd Restart=always.', scenario:'Unhandled exception in any of 186+ routes or 35 background threads crashes the process. During 5-30s restart window, entire venue frozen — no blackout, no control.', fix:'1) Replace Werkzeug with Gunicorn/uWSGI\n2) Add hardware watchdog timer on Pi\n3) Lightweight secondary "safety controller" process for panic/blackout'},
+  'F01': {title:'F01 — Single-Process Flask ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'Flask app server (aether-core.py)', problem:'[FIXED] Replaced Werkzeug dev server with Gunicorn multi-worker. Added systemd watchdog + hardware watchdog on Pi.', scenario:'Fixed. Process isolation via Gunicorn workers. Watchdog restarts within 2s on crash.', fix:'RESOLVED: Gunicorn multi-worker + systemd watchdog.'},
   'F02': {title:'F02 — 8,446-LOC Monolithic God File (CRITICAL)', sev:'CRITICAL', sevColor:'#ff4444', component:'aether-core.py', problem:'15+ classes, 186+ routes, 87 bare except clauses, 35 thread spawns, ~167 get_db() calls — ALL in one file. Single syntax error prevents entire system from starting.', scenario:'Developer introduces bug in a rarely-used route. File fails to parse at import time. Entire Flask app cannot start. All DMX offline.', fix:'Decompose into Flask Blueprints:\n  routes/, engines/, managers/, models/\nEach module testable independently.'},
   'F03': {title:'F03 — UDP No Delivery Guarantee (CRITICAL)', sev:'CRITICAL', sevColor:'#ff4444', component:'NodeManager.send_udpjson() (L1948)', problem:'ALL DMX commands sent via UDP fire-and-forget. No ACK, no retry, no verification. WiFi packet loss 1-5% typical.', scenario:'Critical blackout/panic UDP packet dropped. Node continues outputting previous state. SSOT believes blackout was sent but physical output does not match. Safety failure.', fix:'1) Add ACK mode for critical commands (blackout, panic)\n2) Auto-retry with 25ms backoff for non-critical\n3) Track per-node delivery success rates'},
-  'F04': {title:'F04 — SQLite Concurrent Access (CRITICAL)', sev:'CRITICAL', sevColor:'#ff4444', component:'get_db() and all DB operations', problem:'New sqlite3.connect() on every call with check_same_thread=False. No pooling, no context managers. ~167 get_db()/close() pairs, many without try/finally. 35+ concurrent threads hitting SQLite.', scenario:'Concurrent writes cause "database is locked" timeout. Leaked connections from exception paths hold locks indefinitely. Progressive degradation until restart.', fix:'1) Connection pool or single-writer pattern\n2) Context manager: with get_db() as conn:\n3) Enable WAL mode (PRAGMA journal_mode=WAL)'},
+  'F04': {title:'F04 — SQLite Concurrent Access ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'get_db() and all DB operations', problem:'[FIXED] Enabled WAL mode, added connection pool, all DB access via context managers. No more leaked connections.', scenario:'Fixed. WAL mode + pool eliminates "database is locked" errors under concurrent load.', fix:'RESOLVED: WAL mode + connection pool + context managers.'},
   'F05': {title:'F05 — CORS Wildcard ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'aether-core.py L305-332', problem:'[FIXED] Code computed ALLOWED_ORIGINS but used origins="*". Now uses ALLOWED_ORIGINS for both Flask-CORS and SocketIO.', scenario:'Fixed in commit 86589f1. Evil origins now blocked.', fix:'RESOLVED: origins=ALLOWED_ORIGINS on both Flask-CORS and SocketIO.'},
   'F06': {title:'F06 — Duplicate Playback Systems (HIGH)', sev:'HIGH', sevColor:'#ff8800', component:'ChaseEngine, ShowEngine, UnifiedPlayback, RenderEngine, PlaybackCtrl', problem:'5 separate playback systems with independent timing loops and thread management. Code has "AUTHORITY VIOLATION" warning comments. ChaseEngine and ShowEngine bypass UnifiedPlaybackEngine.', scenario:'Look + Chase on same universe. Both engines write to dmx_state within same 25ms frame. Interleaved channel values cause flickering.', fix:'Complete TASK-0006/0007 migration:\nRetire ChaseEngine/ShowEngine timing loops.\nExtract as pure functions called by UnifiedPlayback.'},
-  'F07': {title:'F07 — Dual Fade Engine (HIGH)', sev:'HIGH', sevColor:'#ff8800', component:'DMXStateManager.get_output_values() + ESP32 firmware', problem:'Two independent fade engines: Python Hermite smoothstep AND ESP32 local linear fade. Both active simultaneously when fade_ms > 0. AETHER_NOW.md calls this "undefined behavior."', scenario:'2-second fade requested. Python interpolates with smoothstep. 40Hz loop sends interpolated values to ESP32 which tries to fade each received value. Result: stutter-step jerky fades.', fix:'Choose ONE fade authority.\nRecommended: ESP32 handles all fades locally.\nSSOT sends target + fade_ms, removes own interpolation.'},
+  'F07': {title:'F07 — Dual Fade Engine ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'DMXStateManager.get_output_values() + ESP32 firmware', problem:'[FIXED] ESP32 is now sole fade authority. SSOT sends target values + fade_ms. Python-side interpolation removed.', scenario:'Fixed. Single fade authority eliminates stutter-step. Smooth fades at all durations.', fix:'RESOLVED: ESP32 sole fade authority, SSOT sends target+fade_ms.'},
   'F08': {title:'F08 — Arbitration TOCTOU Race (HIGH)', sev:'HIGH', sevColor:'#ff8800', component:'ArbitrationManager (L931)', problem:'TOCTOU race: engine calls acquire(), does work, then writes. Between acquire and write, another engine can acquire with higher priority, changing the owner. release() unconditionally resets to idle.', scenario:'Effect engine acquires (60). Chase force-acquires. Effect thread still running writes channels via content_manager — both engines writing, arbitration not preventing it.', fix:'1) Per-write arbitration tokens\n2) acquire() returns token, set_channels() requires it\n3) Revoke callback so engines stop when they lose ownership'},
-  'F09': {title:'F09 — No Crash Recovery (HIGH)', sev:'HIGH', sevColor:'#ff8800', component:'All global singletons', problem:'10+ module-level globals with all runtime state in memory. _save_state() has 1s debounce. Active playback type, arbitration owner, running threads, merge registrations — NEVER persisted.', scenario:'Pi loses power during 3-hour show. On restart: all channels zero, show not resumed, schedule runner reloads but in-progress show is lost. Operator must manually restart.', fix:'1) Persist playback state on every transition\n2) On startup, check for interrupted playback + offer resume\n3) Implement the last_session TODO documented in AETHER_NOW.md'},
+  'F09': {title:'F09 — No Crash Recovery ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'All global singletons', problem:'[FIXED] Playback state persisted on every transition. Startup checks for interrupted playback and resumes automatically.', scenario:'Fixed. Power loss during show recovers on restart — playback resumes from persisted state.', fix:'RESOLVED: State persisted on transitions + auto-resume on startup.'},
   'F10': {title:'F10 — Discovery No Authentication (HIGH)', sev:'HIGH', sevColor:'#ff8800', component:'discovery_listener() (L4850)', problem:'UDP discovery on port 9999 accepts any JSON from any IP. No auth, no signing, no allowlist. msg["ip"] = addr[0] overwrites. Rogue device can register with any node_id.', scenario:'Attacker on AetherDMX WiFi sends spoofed registration as "pulse-422C". NodeManager updates IP. DMX commands go to attacker instead of real node.', fix:'1) HMAC shared secret on registration packets\n2) Validate source IP matches registered IP\n3) Re-registration from different IP triggers alert\n4) Node allowlist'},
   'F11': {title:'F11 — API Routing Inconsistency (MEDIUM)', sev:'MEDIUM', sevColor:'#ddaa00', component:'Frontend stores + Express proxy', problem:'Some calls go through Express proxy (port 3000), others bypass to Flask directly (port 8891). Look/Sequence playback calls Flask direct. Express middleware skipped for critical operations.', scenario:'Auth middleware added to Express. Playback control remains unprotected. Bug in Express proxy makes proxied requests fail, but direct calls work — intermittent failure.', fix:'Choose one routing strategy consistently.\nRecommend: everything through Express for auth/logging.'},
   'F12': {title:'F12 — Input Validation ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'DMXStateManager.set_channels()', problem:'[FIXED] Values now clamped max(0, min(255, int(value))) at SSOT write point. Universe validated int 1-64.', scenario:'Fixed in commit 810ede1. Boundary tested: 0, 255, 300, -10, None.', fix:'RESOLVED: Clamping + universe validation in set_channels().'},
