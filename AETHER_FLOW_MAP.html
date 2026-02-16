@@ -162,6 +162,57 @@
     25% { transform: rotate(-15deg) translateY(-3px); }
     75% { transform: rotate(15deg) translateY(-3px); }
   }
+  @keyframes headbang {
+    0%, 100% { transform: rotate(0deg); }
+    25% { transform: rotate(15deg); }
+    50% { transform: rotate(-10deg); }
+    75% { transform: rotate(12deg); }
+  }
+  @keyframes jump {
+    0%, 100% { transform: translateY(0); }
+    40% { transform: translateY(-8px); }
+    60% { transform: translateY(-6px); }
+  }
+  @keyframes wave-arm {
+    0%, 100% { transform: rotate(-10deg); }
+    50% { transform: rotate(-60deg); }
+  }
+  @keyframes panic-shake {
+    0%, 100% { transform: translateX(0); }
+    20% { transform: translateX(-3px) rotate(-2deg); }
+    40% { transform: translateX(3px) rotate(2deg); }
+    60% { transform: translateX(-2px) rotate(-1deg); }
+    80% { transform: translateX(2px) rotate(1deg); }
+  }
+  @keyframes fight-push {
+    0%, 100% { transform: translateX(0); }
+    50% { transform: translateX(3px); }
+  }
+  @keyframes fight-push-left {
+    0%, 100% { transform: translateX(0); }
+    50% { transform: translateX(-3px); }
+  }
+  @keyframes mop-sweep {
+    0%, 100% { transform: rotate(0deg); }
+    25% { transform: rotate(15deg); }
+    75% { transform: rotate(-15deg); }
+  }
+  @keyframes float-ghost {
+    0%, 100% { transform: translateY(0) rotate(0deg); }
+    25% { transform: translateY(-5px) rotate(3deg); }
+    50% { transform: translateY(-2px) rotate(0deg); }
+    75% { transform: translateY(-6px) rotate(-3deg); }
+  }
+  @keyframes surf-sway {
+    0%, 100% { transform: rotate(0deg) translateY(0); }
+    25% { transform: rotate(-5deg) translateY(-2px); }
+    50% { transform: rotate(0deg) translateY(0); }
+    75% { transform: rotate(5deg) translateY(-2px); }
+  }
+  @keyframes chain-drag {
+    0%, 100% { transform: translateX(0); }
+    50% { transform: translateX(4px); }
+  }
   .stick-worker { pointer-events: none; }
   .stick-hammer { transform-origin: 50% 100%; animation: hammer 0.8s ease-in-out infinite; }
   .stick-bob { animation: bob 1.2s ease-in-out infinite; }
@@ -171,6 +222,16 @@
   .stick-sweat { animation: sweat-drop 1.5s ease-in infinite; }
   .stick-sparkle { animation: sparkle 1.8s ease-in-out infinite; }
   .stick-celebrate { animation: celebrate 0.5s ease-in-out infinite; }
+  .stick-headbang { animation: headbang 0.4s ease-in-out infinite; }
+  .stick-jump { animation: jump 0.8s ease-in-out infinite; }
+  .stick-wave-arm { transform-origin: 50% 0%; animation: wave-arm 1s ease-in-out infinite; }
+  .stick-panic { animation: panic-shake 0.3s ease-in-out infinite; }
+  .stick-fight-right { animation: fight-push 0.6s ease-in-out infinite; }
+  .stick-fight-left { animation: fight-push-left 0.6s ease-in-out infinite; }
+  .stick-mop { transform-origin: 50% 100%; animation: mop-sweep 1.2s ease-in-out infinite; }
+  .stick-ghost { animation: float-ghost 3s ease-in-out infinite; }
+  .stick-surf { animation: surf-sway 2s ease-in-out infinite; }
+  .stick-chain { animation: chain-drag 1.5s ease-in-out infinite; }
 </style>
 </head>
 <body>
@@ -750,7 +811,7 @@
       </g>
 
       <!-- WORKER 5: Dead asleep on arbitration -->
-      <g class="stick-worker" transform="translate(195, 275)">
+      <g class="stick-worker" style="animation: bob 3s ease-in-out infinite;" transform="translate(195, 275)">
         <circle cx="0" cy="0" r="5" fill="none" stroke="#ff8800" stroke-width="1.5"/>
         <line x1="5" y1="0" x2="20" y2="0" stroke="#ff8800" stroke-width="1.5"/>
         <line x1="20" y1="0" x2="26" y2="6" stroke="#ff8800" stroke-width="1.5"/>
@@ -771,7 +832,7 @@
       </g>
 
       <!-- WORKER 6: Panicking at the monolith -->
-      <g class="stick-worker" transform="translate(380, 237)">
+      <g class="stick-worker stick-panic" transform="translate(380, 237)">
         <circle cx="0" cy="-18" r="5" fill="none" stroke="#ff4444" stroke-width="1.5"/>
         <line x1="0" y1="-13" x2="0" y2="0" stroke="#ff4444" stroke-width="1.5"/>
         <line x1="0" y1="0" x2="-5" y2="10" stroke="#ff4444" stroke-width="1.5"/>
@@ -788,7 +849,7 @@
       </g>
 
       <!-- WORKER 7: Chill ESP32 surfer dude -->
-      <g class="stick-worker stick-bob" style="animation-delay: 0.8s;" transform="translate(430, 680)">
+      <g class="stick-worker stick-surf" transform="translate(430, 680)">
         <circle cx="0" cy="-18" r="5" fill="none" stroke="#f0883e" stroke-width="1.5"/>
         <line x1="0" y1="-13" x2="0" y2="0" stroke="#f0883e" stroke-width="1.5"/>
         <line x1="0" y1="0" x2="-6" y2="10" stroke="#f0883e" stroke-width="1.5"/>
@@ -804,7 +865,7 @@
       </g>
 
       <!-- WORKER 8: Supabase sync guy dragging a chain (near cloud section) -->
-      <g class="stick-worker stick-bob" style="animation-delay: 1.2s;" transform="translate(1050, 230)">
+      <g class="stick-worker stick-chain" transform="translate(1050, 230)">
         <circle cx="0" cy="-18" r="5" fill="none" stroke="#e2b750" stroke-width="1.5"/>
         <line x1="0" y1="-13" x2="0" y2="0" stroke="#e2b750" stroke-width="1.5"/>
         <line x1="0" y1="0" x2="-5" y2="10" stroke="#e2b750" stroke-width="1.5"/>
@@ -831,7 +892,7 @@
         <text font-size="6" fill="#888" x="0" y="1" text-anchor="middle" font-family="monospace">RIP</text>
         <text font-size="4" fill="#666" x="0" y="6" text-anchor="middle" font-family="monospace">legacy/</text>
         <!-- Ghost floating above -->
-        <g class="stick-bob" style="animation-delay: 0.5s;">
+        <g class="stick-ghost">
           <ellipse cx="0" cy="-30" rx="6" ry="8" fill="rgba(136,136,136,0.3)" stroke="#888" stroke-width="0.5"/>
           <circle cx="-2" cy="-32" r="1" fill="#888"/>
           <circle cx="3" cy="-32" r="1" fill="#888"/>
@@ -847,17 +908,21 @@
       <!-- WORKER 10: Two guys fighting over fade engine (between SSOT and ESP32) -->
       <g class="stick-worker" transform="translate(310, 510)">
         <!-- Guy 1 (Python) pushing right -->
+        <g class="stick-fight-right">
         <circle cx="-10" cy="-18" r="4" fill="none" stroke="#58a6ff" stroke-width="1.5"/>
         <line x1="-10" y1="-14" x2="-10" y2="-4" stroke="#58a6ff" stroke-width="1.5"/>
         <line x1="-10" y1="-4" x2="-14" y2="6" stroke="#58a6ff" stroke-width="1.5"/>
         <line x1="-10" y1="-4" x2="-6" y2="6" stroke="#58a6ff" stroke-width="1.5"/>
         <line x1="-10" y1="-10" x2="-2" y2="-8" stroke="#58a6ff" stroke-width="1.5"/>
+        </g>
         <!-- Guy 2 (ESP32) pushing left -->
+        <g class="stick-fight-left">
         <circle cx="10" cy="-18" r="4" fill="none" stroke="#f0883e" stroke-width="1.5"/>
         <line x1="10" y1="-14" x2="10" y2="-4" stroke="#f0883e" stroke-width="1.5"/>
         <line x1="10" y1="-4" x2="14" y2="6" stroke="#f0883e" stroke-width="1.5"/>
         <line x1="10" y1="-4" x2="6" y2="6" stroke="#f0883e" stroke-width="1.5"/>
         <line x1="10" y1="-10" x2="2" y2="-8" stroke="#f0883e" stroke-width="1.5"/>
+        </g>
         <!-- Hands pushing against each other -->
         <circle cx="0" cy="-8" r="2" fill="#ff4444" opacity="0.6"/>
         <text font-size="5" fill="#ff4444" x="-3" y="-1">POW</text>
@@ -887,7 +952,47 @@
         <g class="stick-bubble" style="animation-delay: 2.2s;">
           <rect x="14" y="-40" width="138" height="18" rx="8" fill="#1c2128" stroke="#ff6b6b" stroke-width="0.8"/>
           <polygon points="14,-22 19,-27 24,-22" fill="#1c2128" stroke="#ff6b6b" stroke-width="0.8"/>
-          <text font-size="7.5" fill="#fff" x="19" y="-28" font-family="monospace">87 bare excepts. it's fine. 🧹</text>
+          <text font-size="7.5" fill="#fff" x="19" y="-28" font-family="monospace">87 bare excepts. I mop tears 🧹</text>
+        </g>
+      </g>
+
+      <!-- WORKER 12: Watchdog guard dog (F01 celebration) -->
+      <g class="stick-worker stick-bob" style="animation-delay: 0.3s;" transform="translate(660, 390)">
+        <!-- Dog body -->
+        <circle cx="0" cy="-8" r="4" fill="none" stroke="#3fb950" stroke-width="1.5"/>
+        <line x1="0" y1="-4" x2="0" y2="4" stroke="#3fb950" stroke-width="1.5"/>
+        <line x1="0" y1="4" x2="-5" y2="10" stroke="#3fb950" stroke-width="1.5"/>
+        <line x1="0" y1="4" x2="5" y2="10" stroke="#3fb950" stroke-width="1.5"/>
+        <!-- Tail wagging -->
+        <g style="transform-origin: 0px 4px; animation: wave-arm 0.5s ease-in-out infinite;">
+          <line x1="0" y1="2" x2="-8" y2="-2" stroke="#3fb950" stroke-width="1.5"/>
+        </g>
+        <!-- Badge -->
+        <rect x="-16" y="-20" width="32" height="8" rx="3" fill="#3fb950" opacity="0.3"/>
+        <text font-size="5" fill="#3fb950" x="0" y="-14" text-anchor="middle" font-family="monospace">WATCHDOG</text>
+        <g class="stick-bubble" style="animation-delay: 2s;">
+          <rect x="10" y="-36" width="100" height="18" rx="8" fill="#1c2128" stroke="#3fb950" stroke-width="0.8"/>
+          <polygon points="8,-20 13,-25 18,-20" fill="#1c2128" stroke="#3fb950" stroke-width="0.8"/>
+          <text font-size="7.5" fill="#fff" x="15" y="-24" font-family="monospace">30s or I restart you</text>
+        </g>
+      </g>
+
+      <!-- WORKER 13: WAL mode celebration (F04 victory) -->
+      <g class="stick-worker stick-jump" transform="translate(48, 442)">
+        <circle cx="0" cy="-18" r="5" fill="none" stroke="#3fb950" stroke-width="1.5"/>
+        <line x1="0" y1="-13" x2="0" y2="0" stroke="#3fb950" stroke-width="1.5"/>
+        <line x1="0" y1="0" x2="-5" y2="10" stroke="#3fb950" stroke-width="1.5"/>
+        <line x1="0" y1="0" x2="5" y2="10" stroke="#3fb950" stroke-width="1.5"/>
+        <g class="stick-wave-arm">
+          <line x1="0" y1="-8" x2="-10" y2="-18" stroke="#3fb950" stroke-width="1.5"/>
+        </g>
+        <line x1="0" y1="-8" x2="8" y2="-2" stroke="#3fb950" stroke-width="1.5"/>
+        <text class="stick-sparkle" font-size="6" x="-14" y="-24">&#x1f389;</text>
+        <text class="stick-sparkle" font-size="6" x="6" y="-22" style="animation-delay:0.9s;">&#x2728;</text>
+        <g class="stick-bubble" style="animation-delay: 1.5s;">
+          <rect x="12" y="-40" width="120" height="18" rx="8" fill="#1c2128" stroke="#3fb950" stroke-width="0.8"/>
+          <polygon points="12,-22 17,-27 22,-22" fill="#1c2128" stroke="#3fb950" stroke-width="0.8"/>
+          <text font-size="7.5" fill="#fff" x="17" y="-28" font-family="monospace">WAL mode go brrrr &#x1f525;</text>
         </g>
       </g>
 
@@ -1324,7 +1429,7 @@
       <!-- CRITICAL -->
       <text font-size="9" fill="#ff4444" font-weight="700" x="742" y="280" font-family="monospace">━━ CRITICAL ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</text>
       <g class="redline-marker" onclick="showFlaw('F01')">
-        <circle cx="752" cy="298" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="302">F01  ✅ FIXED — Gunicorn multi-worker + systemd watchdog</text>
+        <circle cx="752" cy="298" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="302">F01  ✅ FIXED — systemd watchdog (30s) + graceful shutdown</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('F02')">
         <circle cx="752" cy="316" r="6" fill="#ff4444"/><text font-size="9" fill="var(--text)" x="764" y="320">F02  8,446-LOC God File — 1 syntax error kills entire system</text>
@@ -1333,7 +1438,7 @@
         <circle cx="752" cy="334" r="6" fill="#ff4444"/><text font-size="9" fill="var(--text)" x="764" y="338">F03  UDP Fire-and-Forget — blackout/panic can be silently dropped</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('F04')">
-        <circle cx="752" cy="352" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="356">F04  ✅ FIXED — WAL mode + connection pool + context managers</text>
+        <circle cx="752" cy="352" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="356">F04  ✅ FIXED — Thread-local pool + WAL mode + atomic writes</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('F05')">
         <circle cx="752" cy="370" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="374">F05  ✅ FIXED — CORS now uses ALLOWED_ORIGINS</text>
@@ -1351,7 +1456,7 @@
         <circle cx="752" cy="452" r="6" fill="#ff8800"/><text font-size="9" fill="var(--text)" x="764" y="456">F08  Arbitration TOCTOU Race — acquire() then write() not atomic</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('F09')">
-        <circle cx="752" cy="470" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="474">F09  ✅ FIXED — State persisted on transitions + resume on startup</text>
+        <circle cx="752" cy="470" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="474">F09  ✅ FIXED — save_state_now() + auto-resume on startup</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('F10')">
         <circle cx="752" cy="488" r="6" fill="#ff8800"/><text font-size="9" fill="var(--text)" x="764" y="492">F10  Discovery No Auth — rogue device can hijack node identity</text>
@@ -1520,15 +1625,15 @@ function showChange(key) {
 
 /* ===== FLAW PANELS (redline tab) ===== */
 const flaws = {
-  'F01': {title:'F01 — Single-Process Flask ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'Flask app server (aether-core.py)', problem:'[FIXED] Replaced Werkzeug dev server with Gunicorn multi-worker. Added systemd watchdog + hardware watchdog on Pi.', scenario:'Fixed. Process isolation via Gunicorn workers. Watchdog restarts within 2s on crash.', fix:'RESOLVED: Gunicorn multi-worker + systemd watchdog.'},
+  'F01': {title:'F01 — Systemd Watchdog ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'Flask app server (aether-core.py)', problem:'[FIXED] Added systemd Type=notify watchdog (WatchdogSec=30). App sends READY=1 on startup + WATCHDOG=1 pings every 10s. Graceful shutdown handler catches SIGTERM. Health endpoint enhanced with uptime tracking.', scenario:'Fixed. Watchdog auto-restarts within 30s if app hangs. Graceful shutdown saves state on SIGTERM. Commit 4e3deca.', fix:'RESOLVED: systemd watchdog + graceful shutdown + health endpoint improvements.'},
   'F02': {title:'F02 — 8,446-LOC Monolithic God File (CRITICAL)', sev:'CRITICAL', sevColor:'#ff4444', component:'aether-core.py', problem:'15+ classes, 186+ routes, 87 bare except clauses, 35 thread spawns, ~167 get_db() calls — ALL in one file. Single syntax error prevents entire system from starting.', scenario:'Developer introduces bug in a rarely-used route. File fails to parse at import time. Entire Flask app cannot start. All DMX offline.', fix:'Decompose into Flask Blueprints:\n  routes/, engines/, managers/, models/\nEach module testable independently.'},
   'F03': {title:'F03 — UDP No Delivery Guarantee (CRITICAL)', sev:'CRITICAL', sevColor:'#ff4444', component:'NodeManager.send_udpjson() (L1948)', problem:'ALL DMX commands sent via UDP fire-and-forget. No ACK, no retry, no verification. WiFi packet loss 1-5% typical.', scenario:'Critical blackout/panic UDP packet dropped. Node continues outputting previous state. SSOT believes blackout was sent but physical output does not match. Safety failure.', fix:'1) Add ACK mode for critical commands (blackout, panic)\n2) Auto-retry with 25ms backoff for non-critical\n3) Track per-node delivery success rates'},
-  'F04': {title:'F04 — SQLite Concurrent Access ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'get_db() and all DB operations', problem:'[FIXED] Enabled WAL mode, added connection pool, all DB access via context managers. No more leaked connections.', scenario:'Fixed. WAL mode + pool eliminates "database is locked" errors under concurrent load.', fix:'RESOLVED: WAL mode + connection pool + context managers.'},
+  'F04': {title:'F04 — SQLite Concurrent Access ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'get_db() and all DB operations', problem:'[FIXED] Thread-local connection pool via threading.local(). WAL journal mode for concurrent reads. _ThreadLocalConnection wrapper makes .close() a no-op. Atomic single-UPDATE for node cache refresh with 5-attempt retry.', scenario:'Fixed. "database is locked" errors eliminated. WAL allows concurrent readers + single writer. Commit chain: 5fc2a3b → 83a6bad → 1359eb1.', fix:'RESOLVED: Thread-local pool + WAL mode + atomic node cache refresh.'},
   'F05': {title:'F05 — CORS Wildcard ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'aether-core.py L305-332', problem:'[FIXED] Code computed ALLOWED_ORIGINS but used origins="*". Now uses ALLOWED_ORIGINS for both Flask-CORS and SocketIO.', scenario:'Fixed in commit 86589f1. Evil origins now blocked.', fix:'RESOLVED: origins=ALLOWED_ORIGINS on both Flask-CORS and SocketIO.'},
   'F06': {title:'F06 — Duplicate Playback Systems (HIGH)', sev:'HIGH', sevColor:'#ff8800', component:'ChaseEngine, ShowEngine, UnifiedPlayback, RenderEngine, PlaybackCtrl', problem:'5 separate playback systems with independent timing loops and thread management. Code has "AUTHORITY VIOLATION" warning comments. ChaseEngine and ShowEngine bypass UnifiedPlaybackEngine.', scenario:'Look + Chase on same universe. Both engines write to dmx_state within same 25ms frame. Interleaved channel values cause flickering.', fix:'Complete TASK-0006/0007 migration:\nRetire ChaseEngine/ShowEngine timing loops.\nExtract as pure functions called by UnifiedPlayback.'},
   'F07': {title:'F07 — Dual Fade Engine ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'DMXStateManager.get_output_values() + ESP32 firmware', problem:'[FIXED] ESP32 is now sole fade authority. SSOT sends target values + fade_ms. Python-side interpolation removed.', scenario:'Fixed. Single fade authority eliminates stutter-step. Smooth fades at all durations.', fix:'RESOLVED: ESP32 sole fade authority, SSOT sends target+fade_ms.'},
   'F08': {title:'F08 — Arbitration TOCTOU Race (HIGH)', sev:'HIGH', sevColor:'#ff8800', component:'ArbitrationManager (L931)', problem:'TOCTOU race: engine calls acquire(), does work, then writes. Between acquire and write, another engine can acquire with higher priority, changing the owner. release() unconditionally resets to idle.', scenario:'Effect engine acquires (60). Chase force-acquires. Effect thread still running writes channels via content_manager — both engines writing, arbitration not preventing it.', fix:'1) Per-write arbitration tokens\n2) acquire() returns token, set_channels() requires it\n3) Revoke callback so engines stop when they lose ownership'},
-  'F09': {title:'F09 — No Crash Recovery ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'All global singletons', problem:'[FIXED] Playback state persisted on every transition. Startup checks for interrupted playback and resumes automatically.', scenario:'Fixed. Power loss during show recovers on restart — playback resumes from persisted state.', fix:'RESOLVED: State persisted on transitions + auto-resume on startup.'},
+  'F09': {title:'F09 — No Crash Recovery ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'All global singletons', problem:'[FIXED] save_state_now() bypasses debounce for critical transitions. _save_state() persists active_look/chase/scene/effect with full metadata. _load_state() resumes playback on startup if interrupted.', scenario:'Fixed. Power loss during show → auto-resume on restart. State saved on every playback transition. Commit 06f4b30.', fix:'RESOLVED: Immediate state persistence + auto-resume on startup.'},
   'F10': {title:'F10 — Discovery No Authentication (HIGH)', sev:'HIGH', sevColor:'#ff8800', component:'discovery_listener() (L4850)', problem:'UDP discovery on port 9999 accepts any JSON from any IP. No auth, no signing, no allowlist. msg["ip"] = addr[0] overwrites. Rogue device can register with any node_id.', scenario:'Attacker on AetherDMX WiFi sends spoofed registration as "pulse-422C". NodeManager updates IP. DMX commands go to attacker instead of real node.', fix:'1) HMAC shared secret on registration packets\n2) Validate source IP matches registered IP\n3) Re-registration from different IP triggers alert\n4) Node allowlist'},
   'F11': {title:'F11 — API Routing Inconsistency (MEDIUM)', sev:'MEDIUM', sevColor:'#ddaa00', component:'Frontend stores + Express proxy', problem:'Some calls go through Express proxy (port 3000), others bypass to Flask directly (port 8891). Look/Sequence playback calls Flask direct. Express middleware skipped for critical operations.', scenario:'Auth middleware added to Express. Playback control remains unprotected. Bug in Express proxy makes proxied requests fail, but direct calls work — intermittent failure.', fix:'Choose one routing strategy consistently.\nRecommend: everything through Express for auth/logging.'},
   'F12': {title:'F12 — Input Validation ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'DMXStateManager.set_channels()', problem:'[FIXED] Values now clamped max(0, min(255, int(value))) at SSOT write point. Universe validated int 1-64.', scenario:'Fixed in commit 810ede1. Boundary tested: 0, 255, 300, -10, None.', fix:'RESOLVED: Clamping + universe validation in set_channels().'},
