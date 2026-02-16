@@ -369,54 +369,91 @@ class DMXStateManager:
         self._load_state()
 
     def _load_state(self):
-        """On startup: channels start at 0, but we remember what was playing"""
-        # Don't restore channel values - start fresh
+        """[F09] On startup: channels start at 0, but remember what was playing.
+        Loads previous session info for resume prompt. Multiple sessions supported.
+        """
+        # Don't restore channel values - start fresh (safe for DMX)
         # But save active playback info for resume prompt
         try:
             if os.path.exists(DMX_STATE_FILE):
                 with open(DMX_STATE_FILE, 'r') as f:
                     saved = json.load(f)
-                    # Store what was playing for resume prompt (but don't apply)
+                    # [F09] Store all sessions for resume prompt
+                    self.last_sessions = saved.get('active_sessions', [])
+                    # Legacy compat: single session
                     self.last_session = saved.get('active_playback', None)
+                    if not self.last_session and self.last_sessions:
+                        self.last_session = self.last_sessions[0]
+                    self._last_saved_at = saved.get('saved_at', None)
                     if self.last_session:
                         print(f"💾 Previous session had active playback: {self.last_session}")
+                        if self._last_saved_at:
+                            print(f"   Last saved: {self._last_saved_at}")
                     else:
                         print("✓ DMX starting fresh (no previous playback)")
+            else:
+                self.last_session = None
+                self.last_sessions = []
+                self._last_saved_at = None
         except Exception as e:
             print(f"⚠️ Could not check previous session: {e}")
             self.last_session = None
+            self.last_sessions = []
+            self._last_saved_at = None
 
     def _save_state(self):
-        """Save DMX state and active playback info to disk"""
+        """[F09] Save DMX state and active playback info to disk.
+        Called on debounce (1s) for channel changes, and immediately
+        on playback transitions (play/stop/pause) via save_state_now().
+        """
         try:
             with self.lock:
-                # Get active playback from playback_manager
-                active_playback = None
+                # Get ALL active playback sessions for recovery
+                active_sessions = []
                 try:
                     status = playback_manager.get_status()
                     if status:
-                        # Find any active scene or chase
                         for univ, info in status.items():
                             if info and info.get('type'):
-                                active_playback = {
+                                active_sessions.append({
                                     'universe': univ,
                                     'type': info.get('type'),
                                     'id': info.get('id'),
                                     'name': info.get('name')
-                                }
-                                break
+                                })
                 except Exception:
                     pass  # Playback status not critical for state save
-                
+
+                # [F09] Also capture arbitration state for recovery context
+                arb_owner = None
+                try:
+                    arb_owner = arbitration.current_owner
+                except Exception:
+                    pass
+
+                # Legacy field: first active session (backward compat)
+                active_playback = active_sessions[0] if active_sessions else None
+
                 data = {
                     'universes': {str(k): v for k, v in self.universes.items()},
                     'active_playback': active_playback,
+                    'active_sessions': active_sessions,
+                    'arbitration_owner': arb_owner,
                     'saved_at': datetime.now().isoformat()
                 }
             with open(DMX_STATE_FILE, 'w') as f:
                 json.dump(data, f)
         except Exception as e:
             print(f"⚠️ Could not save DMX state: {e}")
+
+    def save_state_now(self):
+        """[F09] Immediately persist state (called on playback transitions).
+        Bypasses the 1-second debounce for critical state changes.
+        """
+        if self._save_timer:
+            self._save_timer.cancel()
+            self._save_timer = None
+        self._save_state()
     def _schedule_save(self):
         """Debounce saves to avoid excessive disk writes"""
         if self._save_timer:
@@ -4252,6 +4289,7 @@ class ContentManager:
         conn.commit()
         conn.close()
 
+        dmx_state.save_state_now()  # [F09] Persist immediately on playback start
         return {'success': True, 'universes': universes_with_nodes, 'fade_ms': fade, 'session_id': session.session_id}
 
     def delete_scene(self, scene_id):
@@ -4427,6 +4465,7 @@ class ContentManager:
         unified_engine.play(session)
         print(f"▶️ Chase '{chase['name']}' started via unified engine: {session.session_id}", flush=True)
 
+        dmx_state.save_state_now()  # [F09] Persist immediately on playback start
         return {'success': True, 'universes': universes_with_nodes, 'fade_ms': effective_fade_ms, 'session_id': session.session_id}
 
     def stop_playback(self, universe=None):
@@ -4434,6 +4473,7 @@ class ContentManager:
         chase_engine.stop_all()  # Stop chase engine
         playback_manager.stop(universe)
         node_results = node_manager.stop_playback_on_nodes(universe)
+        dmx_state.save_state_now()  # [F09] Persist immediately on playback stop
         return {'success': True, 'results': node_results}
 
     def delete_chase(self, chase_id):
@@ -4815,6 +4855,7 @@ def stop_all_playback(blackout=False, fade_ms=1000, universe=None):
     except Exception as e:
         print(f"  ⚠️ WebSocket broadcast error: {e}", flush=True)
 
+    dmx_state.save_state_now()  # [F09] Persist immediately on stop-all
     print(f"🛑 SSOT: stop_all_playback complete: {results}", flush=True)
     return {'success': True, 'results': results}
 
@@ -5079,10 +5120,17 @@ def version():
 
 @app.route('/api/session/resume', methods=['GET'])
 def get_resume_session():
-    """Check if there's a previous session to resume"""
+    """[F09] Check if there's a previous session to resume"""
     last_session = getattr(dmx_state, 'last_session', None)
+    last_sessions = getattr(dmx_state, 'last_sessions', [])
+    saved_at = getattr(dmx_state, '_last_saved_at', None)
     if last_session:
-        return jsonify({'has_session': True, 'playback': last_session})
+        return jsonify({
+            'has_session': True,
+            'playback': last_session,
+            'all_sessions': last_sessions,
+            'saved_at': saved_at
+        })
     return jsonify({'has_session': False, 'playback': None})
 
 @app.route('/api/session/resume', methods=['POST'])
@@ -11276,11 +11324,18 @@ if __name__ == '__main__':
     def _graceful_shutdown(signum, frame):
         print("\n⏹️ SIGTERM received — graceful shutdown...", flush=True)
         try:
+            dmx_state.save_state_now()  # [F09] Persist state before shutdown
+            print("  ✓ State saved", flush=True)
+        except Exception:
+            pass
+        try:
             node_manager.stop_dmx_refresh()
+            print("  ✓ DMX refresh stopped", flush=True)
         except Exception:
             pass
         try:
             close_db()
+            print("  ✓ Database closed", flush=True)
         except Exception:
             pass
         print("✓ Shutdown complete", flush=True)
