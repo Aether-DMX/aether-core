@@ -2285,7 +2285,7 @@ class NodeManager:
 
                 # [F04] Single atomic UPDATE — replaces row-by-row loop that held write lock
                 # Calculates channel_ceiling = min(512, max(1, max_fixture_channel + 16))
-                for attempt in range(3):
+                for attempt in range(5):
                     try:
                         c.execute("""
                             UPDATE nodes SET channel_ceiling = MIN(512, MAX(1,
@@ -2299,10 +2299,10 @@ class NodeManager:
                         conn.commit()
                         break
                     except sqlite3.OperationalError as e:
-                        if 'locked' in str(e) and attempt < 2:
-                            time.sleep(0.1 * (attempt + 1))  # 100ms, 200ms backoff
+                        if 'locked' in str(e) and attempt < 4:
+                            time.sleep(0.2 * (attempt + 1))  # 200ms, 400ms, 600ms, 800ms backoff
                         else:
-                            raise
+                            raise  # Give up after 5 attempts (2s total backoff)
 
                 # Now fetch node cache with channel_ceiling (read-only, no lock contention)
                 c.execute("""
@@ -2326,7 +2326,7 @@ class NodeManager:
                 self._node_cache = new_cache
             except Exception as ex:
                 print(f"⚠️ Node cache refresh error: {ex}")
-            time.sleep(2.0)
+            time.sleep(5.0)  # [F04] Reduced from 2s — less write contention
 
     def _dmx_refresh_loop(self):
         """Background thread that sends DMX data to nodes via UDPJSON.
