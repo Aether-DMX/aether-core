@@ -30,6 +30,7 @@ import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Dict, Optional
+from croniter import croniter
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit
@@ -1086,34 +1087,18 @@ class ScheduleRunner:
         print(f"📅 Loaded {len(self.schedules)} active schedules")
     
     def _parse_cron(self, cron_str):
-        """Parse cron string and check if it matches current time"""
+        """Check if cron expression matches the current minute.
+
+        [F14] Uses croniter library instead of fragile hand-rolled parser.
+        Supports full cron syntax: ranges (1-5), lists (1,3,5), steps (*/5),
+        combined expressions (1-5,10,15), day-of-week names, and more.
+        """
         try:
-            parts = cron_str.split()
-            if len(parts) != 5:
-                return False
-            minute, hour, day, month, dow = parts
             now = datetime.now()
-            
-            def match(val, current, max_val):
-                if val == '*':
-                    return True
-                if '/' in val:
-                    _, step = val.split('/')
-                    return current % int(step) == 0
-                if '-' in val:
-                    start, end = val.split('-')
-                    return int(start) <= current <= int(end)
-                if ',' in val:
-                    return current in [int(x) for x in val.split(',')]
-                return current == int(val)
-            
-            return (match(minute, now.minute, 59) and
-                    match(hour, now.hour, 23) and
-                    match(day, now.day, 31) and
-                    match(month, now.month, 12) and
-                    match(dow, now.weekday(), 6))
-        except Exception as e:
-            print(f"⚠️ Cron parse error: {e}")
+            # croniter.match() returns True if 'now' matches the cron schedule
+            return croniter.match(cron_str, now)
+        except (ValueError, KeyError, TypeError) as e:
+            print(f"⚠️ Cron parse error for '{cron_str}': {e}")
             return False
     
     def _run_loop(self):
