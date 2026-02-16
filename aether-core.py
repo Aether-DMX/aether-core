@@ -1676,15 +1676,105 @@ app_settings = load_settings()
 
 # ============================================================
 # Database Setup
+# [F04] Thread-local connection pool with WAL mode.
+# Each thread gets ONE reusable connection instead of creating
+# a new connection on every call (was ~87 connect/close cycles).
+# WAL mode enables concurrent readers + single writer without
+# "database is locked" errors from 35+ threads.
 # ============================================================
+_db_local = threading.local()
+
+class _ThreadLocalConnection:
+    """[F04] Wrapper that makes .close() a no-op so existing call sites
+    don't kill the thread-local cached connection. The real connection
+    is only closed by close_db() during thread/request teardown.
+    All other sqlite3.Connection methods are proxied transparently.
+    """
+    __slots__ = ('_conn',)
+
+    def __init__(self, conn):
+        object.__setattr__(self, '_conn', conn)
+
+    def close(self):
+        pass  # No-op — lifecycle managed by close_db()
+
+    def cursor(self):
+        return self._conn.cursor()
+
+    def commit(self):
+        return self._conn.commit()
+
+    def rollback(self):
+        return self._conn.rollback()
+
+    def execute(self, *args, **kwargs):
+        return self._conn.execute(*args, **kwargs)
+
+    def executemany(self, *args, **kwargs):
+        return self._conn.executemany(*args, **kwargs)
+
+    @property
+    def row_factory(self):
+        return self._conn.row_factory
+
+    @row_factory.setter
+    def row_factory(self, value):
+        self._conn.row_factory = value
+
+    @property
+    def total_changes(self):
+        return self._conn.total_changes
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        pass  # No-op — don't close on context manager exit
+
 def get_db():
-    conn = sqlite3.connect(DATABASE, check_same_thread=False)
+    """Get a thread-local SQLite connection (reused within same thread).
+    [F04] Connections are cached per-thread to avoid the overhead and
+    leak risk of creating a new connection on every call.
+    Returns a wrapper that makes .close() a no-op for backward compat.
+    """
+    conn = getattr(_db_local, 'connection', None)
+    if conn is not None:
+        try:
+            conn.execute('SELECT 1')  # Verify connection is still alive
+            return _ThreadLocalConnection(conn)
+        except (sqlite3.ProgrammingError, sqlite3.OperationalError):
+            # Connection was closed or broken — create a new one
+            _db_local.connection = None
+    conn = sqlite3.connect(DATABASE, check_same_thread=False, timeout=10)
     conn.row_factory = sqlite3.Row
-    return conn
+    conn.execute('PRAGMA journal_mode=WAL')       # [F04] WAL for concurrent access
+    conn.execute('PRAGMA busy_timeout=5000')       # [F04] Wait up to 5s instead of failing
+    conn.execute('PRAGMA synchronous=NORMAL')      # [F04] Safe with WAL, faster than FULL
+    conn.execute('PRAGMA cache_size=-8000')         # [F04] 8MB cache per connection
+    _db_local.connection = conn
+    return _ThreadLocalConnection(conn)
+
+def close_db(e=None):
+    """Close the thread-local connection (for real).
+    [F04] Called by Flask teardown_appcontext and can be called
+    manually for non-Flask threads. This is the ONLY place
+    connections actually close.
+    """
+    conn = getattr(_db_local, 'connection', None)
+    if conn is not None:
+        try:
+            conn.close()
+        except Exception:
+            pass
+        _db_local.connection = None
 
 def init_database():
     conn = get_db()
     c = conn.cursor()
+
+    # [F04] Verify WAL mode is active
+    wal_mode = c.execute('PRAGMA journal_mode').fetchone()[0]
+    print(f"🗄️  SQLite journal mode: {wal_mode.upper()}")
 
     c.execute('''CREATE TABLE IF NOT EXISTS nodes (
         node_id TEXT PRIMARY KEY, name TEXT, hostname TEXT, mac TEXT, ip TEXT,
@@ -1884,7 +1974,7 @@ def init_database():
 
     # NOTE: Universe 1 built-in node removed - all nodes are WiFi ESP32 via UDPJSON
 
-    print("✓ Database initialized")
+    print("✓ Database initialized [F04: thread-local pool + WAL mode]")
     conn.close()
 
 # ============================================================
@@ -10866,6 +10956,7 @@ if __name__ == '__main__':
     ssot_startup_verify()
 
     init_database()
+    app.teardown_appcontext(close_db)  # [F04] Clean up thread-local DB connections after each request
     pass  # ai_ssot removed
 
     # Supabase cloud sync (async, non-blocking)
