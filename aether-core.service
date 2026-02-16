@@ -1,0 +1,27 @@
+[Unit]
+Description=AETHER Core - Unified Control System
+After=network.target
+
+[Service]
+# [F01] Type=notify enables systemd watchdog integration.
+# The app sends READY=1 on startup and WATCHDOG=1 pings during operation.
+# If no ping arrives within WatchdogSec, systemd kills and restarts.
+Type=notify
+User=ramzt
+WorkingDirectory=/srv/aether/core
+EnvironmentFile=/srv/aether/core/.env
+ExecStart=/usr/bin/python3 /srv/aether/core/aether-core.py
+Restart=always
+RestartSec=3
+# [F01] Watchdog: if no heartbeat in 30s, assume hung → restart
+WatchdogSec=30
+# Allow 5 restarts within 120s before giving up
+StartLimitIntervalSec=120
+StartLimitBurst=5
+# Give 10s for graceful shutdown before SIGKILL
+TimeoutStopSec=10
+# Environment
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

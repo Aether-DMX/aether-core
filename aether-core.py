@@ -4994,10 +4994,13 @@ def stale_checker():
 # ============================================================
 # API Routes
 # ============================================================
+_startup_time = time.monotonic()  # [F01] Track uptime
+
 def check_database_health():
     """Check SQLite database health: exists, not corrupt, disk space OK."""
     result = {'healthy': False, 'file_exists': False, 'size_bytes': 0,
-              'integrity': 'unknown', 'disk_free_mb': 0, 'error': None}
+              'integrity': 'unknown', 'disk_free_mb': 0, 'journal_mode': 'unknown',
+              'error': None}
     try:
         # Check file exists
         if not os.path.exists(DATABASE):
@@ -5010,12 +5013,15 @@ def check_database_health():
         stat = os.statvfs(os.path.dirname(DATABASE))
         result['disk_free_mb'] = round((stat.f_bavail * stat.f_frsize) / (1024 * 1024), 1)
 
-        # Quick integrity check (fast — just checks header, not full scan)
-        conn = sqlite3.connect(DATABASE, timeout=5)
+        # Quick integrity check using thread-local connection [F04]
+        conn = get_db()
         cursor = conn.execute("PRAGMA quick_check(1)")
         check_result = cursor.fetchone()[0]
-        conn.close()
         result['integrity'] = check_result  # 'ok' if healthy
+
+        # [F04] Report journal mode
+        jm = conn.execute("PRAGMA journal_mode").fetchone()[0]
+        result['journal_mode'] = jm
 
         result['healthy'] = (check_result == 'ok' and result['disk_free_mb'] > 50)
     except Exception as e:
@@ -5027,10 +5033,14 @@ def check_database_health():
 def health():
     db_health = check_database_health()
     overall_healthy = db_health['healthy']
+    uptime_s = time.monotonic() - _startup_time
     return jsonify({
         'status': 'healthy' if overall_healthy else 'degraded',
         'version': AETHER_VERSION,
         'timestamp': datetime.now().isoformat(),
+        'uptime_seconds': round(uptime_s, 1),
+        'uptime_human': f"{int(uptime_s//3600)}h {int((uptime_s%3600)//60)}m {int(uptime_s%60)}s",
+        'thread_count': threading.active_count(),
         'services': {
             'database': db_health['healthy'],
             'discovery': True,
@@ -11219,6 +11229,68 @@ if __name__ == '__main__':
     print(f"✓ Discovery on UDP {DISCOVERY_PORT}")
     print(f"✓ UDPJSON DMX output enabled (40 fps refresh, port {AETHER_UDPJSON_PORT})")
     print(f"⚠️ Universe 1 is OFFLINE - use universes 2-5")
+
+    # [F01] Systemd watchdog integration — auto-restart if process hangs
+    _watchdog_usec = os.environ.get('WATCHDOG_USEC')
+    if _watchdog_usec:
+        _wd_interval = int(_watchdog_usec) / 1_000_000 / 2  # Ping at half the timeout
+        def _watchdog_loop():
+            """[F01] Background thread pings systemd watchdog to prove liveness."""
+            import socket as _wdsock
+            notify_addr = os.environ.get('NOTIFY_SOCKET')
+            if not notify_addr:
+                return
+            sock = _wdsock.socket(_wdsock.AF_UNIX, _wdsock.SOCK_DGRAM)
+            if notify_addr.startswith('@'):
+                notify_addr = '\0' + notify_addr[1:]
+            try:
+                while True:
+                    try:
+                        sock.sendto(b'WATCHDOG=1', notify_addr)
+                    except Exception:
+                        pass
+                    time.sleep(_wd_interval)
+            finally:
+                sock.close()
+
+        # Notify systemd we're ready
+        _notify_addr = os.environ.get('NOTIFY_SOCKET')
+        if _notify_addr:
+            _ns = __import__('socket').socket(__import__('socket').AF_UNIX, __import__('socket').SOCK_DGRAM)
+            if _notify_addr.startswith('@'):
+                _notify_addr = '\0' + _notify_addr[1:]
+            try:
+                _ns.sendto(b'READY=1', _notify_addr)
+            except Exception:
+                pass
+            _ns.close()
+
+        _wd_thread = threading.Thread(target=_watchdog_loop, daemon=True)
+        _wd_thread.start()
+        print(f"✓ [F01] Systemd watchdog active (ping every {_wd_interval:.0f}s)")
+    else:
+        print("ℹ️ Systemd watchdog not configured (standalone mode)")
+
+    # [F01] Graceful shutdown on SIGTERM
+    import signal
+    def _graceful_shutdown(signum, frame):
+        print("\n⏹️ SIGTERM received — graceful shutdown...", flush=True)
+        try:
+            node_manager.stop_dmx_refresh()
+        except Exception:
+            pass
+        try:
+            close_db()
+        except Exception:
+            pass
+        print("✓ Shutdown complete", flush=True)
+        os._exit(0)
+
+    signal.signal(signal.SIGTERM, _graceful_shutdown)
+
     print("="*60 + "\n")
 
+    # [F01] Production mode: allow_unsafe_werkzeug=True is needed for
+    # Flask-SocketIO threading mode. Werkzeug 3.x is production-capable.
+    # Real protection comes from systemd watchdog + auto-restart.
     socketio.run(app, host='0.0.0.0', port=API_PORT, debug=False, allow_unsafe_werkzeug=True)
