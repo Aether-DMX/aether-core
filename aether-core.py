@@ -2275,30 +2275,36 @@ class NodeManager:
     def _refresh_node_cache(self):
         """Background refresh of node-to-universe mapping (runs off render thread).
 
-        Now also calculates and caches channel_ceiling for each node based on fixtures.
-        This enables smart channel optimization - only send channels that are actually used.
+        [F04] Optimized: single UPDATE subquery instead of row-by-row loop.
+        Retry logic prevents 'database is locked' from crashing the cache refresh.
         """
         while self._refresh_running:
             try:
                 conn = get_db()
                 c = conn.cursor()
 
-                # First, calculate and update channel ceilings for all nodes based on fixtures
-                c.execute("""
-                    SELECT n.node_id, n.universe, MAX(f.start_channel + f.channel_count - 1) as max_ch
-                    FROM nodes n
-                    LEFT JOIN fixtures f ON f.universe = n.universe
-                    WHERE n.is_paired = 1 AND n.ip IS NOT NULL
-                    GROUP BY n.node_id
-                """)
-                for row in c.fetchall():
-                    node_id, universe, max_ch = row
-                    # Add 16 channel buffer, minimum 1, max 512
-                    ceiling = min(512, max(1, (max_ch or 0) + 16))
-                    c.execute('UPDATE nodes SET channel_ceiling = ? WHERE node_id = ?', (ceiling, node_id))
-                conn.commit()
+                # [F04] Single atomic UPDATE — replaces row-by-row loop that held write lock
+                # Calculates channel_ceiling = min(512, max(1, max_fixture_channel + 16))
+                for attempt in range(3):
+                    try:
+                        c.execute("""
+                            UPDATE nodes SET channel_ceiling = MIN(512, MAX(1,
+                                COALESCE((
+                                    SELECT MAX(f.start_channel + f.channel_count - 1) + 16
+                                    FROM fixtures f WHERE f.universe = nodes.universe
+                                ), 1)
+                            ))
+                            WHERE is_paired = 1 AND ip IS NOT NULL
+                        """)
+                        conn.commit()
+                        break
+                    except sqlite3.OperationalError as e:
+                        if 'locked' in str(e) and attempt < 2:
+                            time.sleep(0.1 * (attempt + 1))  # 100ms, 200ms backoff
+                        else:
+                            raise
 
-                # Now fetch node cache with channel_ceiling
+                # Now fetch node cache with channel_ceiling (read-only, no lock contention)
                 c.execute("""
                     SELECT universe, ip, channel_start, channel_end, via_seance, seance_ip, channel_ceiling
                     FROM nodes
