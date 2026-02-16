@@ -74,6 +74,8 @@ TABLE_PK_MAP = {
     "usage_events": "event_id",
     "schedules": "schedule_id",
     "groups": "group_id",
+    "ai_learnings": "learning_id",
+    "ai_feedback": "feedback_id",
 }
 
 
@@ -460,17 +462,31 @@ class SupabaseService:
 
     def _clear_stale_pending(self) -> int:
         """
-        Remove pending operations that have exceeded max retries or contain
-        stale data (raw string IDs that predate the UUID fix).
+        Remove pending operations that have exceeded max retries.
         Called once at startup.
+
+        Note: Previously this cleared ALL pending ops because retry_pending()
+        had a double-UUID-conversion bug. Now that retry is safe (skips
+        conversion for already-valid UUIDs), we only prune ops with too
+        many retries (> 10).
         """
-        count = self._pending_queue.count()
-        if count > 0:
-            # Clear all existing pending ops — they contain raw string IDs
-            # in their data payloads and cannot be retried successfully
-            self._pending_queue.clear()
-            print(f"🧹 Cleared {count} stale pending sync operations")
-        return count
+        MAX_RETRIES = 10
+        pruned = 0
+        with self._pending_queue.lock:
+            before = len(self._pending_queue._queue)
+            self._pending_queue._queue = [
+                op for op in self._pending_queue._queue
+                if op.get("retry_count", 0) <= MAX_RETRIES
+            ]
+            pruned = before - len(self._pending_queue._queue)
+            if pruned > 0:
+                self._pending_queue._save()
+        if pruned > 0:
+            print(f"🧹 Cleared {pruned} stale pending sync operations (exceeded {MAX_RETRIES} retries)")
+        remaining = self._pending_queue.count()
+        if remaining > 0:
+            print(f"📋 {remaining} pending sync operations will be retried")
+        return pruned
 
     # ---- Core Sync Methods ----
 
@@ -1007,6 +1023,8 @@ class SupabaseService:
         """
         Log an AI learning event to Supabase ai_learnings table.
 
+        Uses _sync_execute for retry-on-failure (queued to PendingSyncQueue).
+
         Args:
             learning_data: {
                 category: str,        # Tool category (e.g., "scene", "chase")
@@ -1030,11 +1048,7 @@ class SupabaseService:
         def insert():
             return self._client.table("ai_learnings").insert(record).execute()
 
-        try:
-            return insert()
-        except Exception as e:
-            print(f"⚠️ Learning log failed: {e}")
-            return None
+        return self._sync_execute(insert, "ai_learnings", record, record["learning_id"])
 
     def log_feedback(self, feedback_data: Dict[str, Any]) -> Optional[Dict]:
         """
@@ -1219,11 +1233,25 @@ class SupabaseService:
 
     # ---- Retry Pending Operations ----
 
+    def _is_valid_uuid(self, value: str) -> bool:
+        """Check if a string is already a valid UUID."""
+        try:
+            uuid.UUID(value)
+            return True
+        except (ValueError, AttributeError, TypeError):
+            return False
+
     def retry_pending(self) -> Dict[str, int]:
         """
         Retry pending sync operations.
 
         Called periodically or when connection is restored.
+
+        IMPORTANT: The data dict stored in pending ops already has PK fields
+        converted to UUIDs (by sync_fixture/sync_node/etc before queuing).
+        We must NOT re-convert them — _to_cloud_uuid on an already-valid UUID
+        should be idempotent, but we skip it explicitly for safety.
+        Only convert record_id for delete ops (stored as raw local ID).
         """
         if not self._enabled or not self._client:
             return {"error": "Supabase not enabled"}
@@ -1247,9 +1275,15 @@ class SupabaseService:
 
                     if op["operation"] == "upsert":
                         data = op["data"]
-                        # Convert PK field to UUID if it's a raw string ID
+                        # FIX: Skip UUID conversion if PK is already a valid UUID.
+                        # The sync methods (sync_fixture, sync_node, etc.) convert
+                        # IDs before building the data dict, so by the time data
+                        # reaches the pending queue the PK is already a UUID.
+                        # Re-converting would be a no-op for valid UUIDs but we
+                        # skip it explicitly to prevent any edge-case corruption.
                         if conflict_col in data and data[conflict_col]:
-                            data[conflict_col] = self._to_cloud_uuid(data[conflict_col])
+                            if not self._is_valid_uuid(data[conflict_col]):
+                                data[conflict_col] = self._to_cloud_uuid(data[conflict_col])
 
                         result = self._client.table(table).upsert(
                             data,
@@ -1267,8 +1301,20 @@ class SupabaseService:
                         if result:
                             completed.append(op["id"])
                 except Exception as e:
+                    error_str = str(e)
                     print(f"⚠️ Retry failed for {op['table']}: {e}")
-                    self._pending_queue.mark_failed(op["id"])
+                    # Detect permanent failures that will never succeed on retry:
+                    # - 23505: unique constraint violation (data conflict)
+                    # - 23503: foreign key violation (missing parent)
+                    # - 23502: not-null violation (missing required field)
+                    # - 42P01: undefined table
+                    permanent_codes = ['23505', '23503', '23502', '42P01']
+                    is_permanent = any(code in error_str for code in permanent_codes)
+                    if is_permanent:
+                        print(f"🗑️ Removing permanently failed op for {op['table']} (constraint violation)")
+                        completed.append(op["id"])  # Remove from queue
+                    else:
+                        self._pending_queue.mark_failed(op["id"])
                     failed += 1
 
             if completed:

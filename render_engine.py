@@ -1284,6 +1284,7 @@ class RenderEngine:
     - Modifier state management
     - Composition of multiple modifiers
     - SSOT output integration
+    - Arbitration guard (Beta 1 mitigation)
     """
 
     def __init__(self, target_fps: int = 30):
@@ -1304,11 +1305,18 @@ class RenderEngine:
         # Output callback
         self._send_callback: Optional[Callable] = None
 
+        # Arbitration hook (set by main module for Beta 1 race condition mitigation)
+        self._arbitration = None
+
         # Stats
         self._frame_count = 0
         self._start_time = 0.0
         self._last_frame_time = 0.0
         self._actual_fps = 0.0
+
+    def set_arbitration(self, arbitration):
+        """Set arbitration manager reference for write-guard checks."""
+        self._arbitration = arbitration
 
     def set_output_callback(self, callback: Callable[[int, Dict[int, int]], None]):
         """Set callback for sending rendered frames: callback(universe, channels)"""
@@ -1541,6 +1549,10 @@ class RenderEngine:
             ch: max(0, min(255, int(val)))
             for ch, val in result_channels.items()
         }
+
+        # Arbitration guard: skip output if another engine owns DMX
+        if self._arbitration and not self._arbitration.can_write('look'):
+            return
 
         # Output to all target universes
         if self._send_callback:

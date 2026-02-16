@@ -910,6 +910,9 @@ class ChaseEngine:
                 return
 
         # Fallback: direct write if merge layer not available (legacy behavior)
+        # Arbitration guard: skip if another higher-priority engine owns DMX
+        if arbitration and not arbitration.can_write('chase'):
+            return
         content_manager.set_channels(universe, parsed, fade_ms=fade_ms)
 
 
@@ -4564,6 +4567,7 @@ def render_engine_output(universe: int, channels: dict):
     content_manager.set_channels(universe, {str(k): v for k, v in channels.items()}, fade_ms=0)
 
 render_engine.set_output_callback(render_engine_output)
+render_engine.set_arbitration(arbitration)
 
 # ============================================================
 # Merge Layer Integration (Phase 5)
@@ -4887,11 +4891,49 @@ def stale_checker():
 # ============================================================
 # API Routes
 # ============================================================
+def check_database_health():
+    """Check SQLite database health: exists, not corrupt, disk space OK."""
+    result = {'healthy': False, 'file_exists': False, 'size_bytes': 0,
+              'integrity': 'unknown', 'disk_free_mb': 0, 'error': None}
+    try:
+        # Check file exists
+        if not os.path.exists(DATABASE):
+            result['error'] = 'Database file not found'
+            return result
+        result['file_exists'] = True
+        result['size_bytes'] = os.path.getsize(DATABASE)
+
+        # Check disk space
+        stat = os.statvfs(os.path.dirname(DATABASE))
+        result['disk_free_mb'] = round((stat.f_bavail * stat.f_frsize) / (1024 * 1024), 1)
+
+        # Quick integrity check (fast — just checks header, not full scan)
+        conn = sqlite3.connect(DATABASE, timeout=5)
+        cursor = conn.execute("PRAGMA quick_check(1)")
+        check_result = cursor.fetchone()[0]
+        conn.close()
+        result['integrity'] = check_result  # 'ok' if healthy
+
+        result['healthy'] = (check_result == 'ok' and result['disk_free_mb'] > 50)
+    except Exception as e:
+        result['error'] = str(e)
+    return result
+
+
 @app.route('/api/health', methods=['GET'])
 def health():
+    db_health = check_database_health()
+    overall_healthy = db_health['healthy']
     return jsonify({
-        'status': 'healthy', 'version': AETHER_VERSION, 'timestamp': datetime.now().isoformat(),
-        'services': {'database': True, 'discovery': True, 'udpjson': True}
+        'status': 'healthy' if overall_healthy else 'degraded',
+        'version': AETHER_VERSION,
+        'timestamp': datetime.now().isoformat(),
+        'services': {
+            'database': db_health['healthy'],
+            'discovery': True,
+            'udpjson': True,
+        },
+        'database': db_health,
     })
 
 @app.route('/api/arbitration', methods=['GET'])
@@ -10462,7 +10504,12 @@ def retry_pending_sync():
 
 @app.route('/api/cloud/log-conversation', methods=['POST'])
 def log_cloud_conversation():
-    """Log an AI conversation to Supabase"""
+    """Log an AI conversation to Supabase.
+
+    Uses supabase_service.log_conversation() which routes through
+    _sync_execute() — if the Supabase upsert fails, the conversation
+    is automatically queued in PendingSyncQueue for later retry.
+    """
     if not SUPABASE_AVAILABLE:
         return jsonify({'success': False, 'error': 'Supabase not available'}), 503
     supabase = get_supabase_service()
@@ -10478,7 +10525,7 @@ def log_cloud_conversation():
         try:
             supabase.log_conversation(session_id, messages, metadata)
         except Exception as e:
-            print(f"Conversation logging failed: {e}")
+            print(f"⚠️ Conversation logging failed (will retry via queue): {e}")
     threading.Thread(target=_log, daemon=True).start()
     return jsonify({'success': True, 'queued': True})
 
@@ -10510,7 +10557,11 @@ def log_cloud_message():
 
 @app.route('/api/cloud/log-learning', methods=['POST'])
 def log_cloud_learning():
-    """Log an AI learning event to Supabase"""
+    """Log an AI learning event to Supabase.
+
+    Uses supabase_service.log_learning() which routes through
+    _sync_execute() — failures are queued in PendingSyncQueue for retry.
+    """
     if not SUPABASE_AVAILABLE:
         return jsonify({'success': False, 'error': 'Supabase not available'}), 503
     supabase = get_supabase_service()
@@ -10521,7 +10572,7 @@ def log_cloud_learning():
         try:
             supabase.log_learning(data)
         except Exception as e:
-            print(f"Cloud learning log failed: {e}")
+            print(f"⚠️ Cloud learning log failed (will retry via queue): {e}")
     threading.Thread(target=_log, daemon=True).start()
     return jsonify({'success': True, 'queued': True})
 
