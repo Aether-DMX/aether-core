@@ -453,7 +453,17 @@ class DMXStateManager:
 
         If fade_ms == 0:
           - Immediate snap to new values
+
+        [F12] Values clamped to 0-255, universe validated 1-64.
         """
+        # [F12] Validate universe
+        try:
+            universe = int(universe)
+        except (TypeError, ValueError):
+            return
+        if universe < 1 or universe > 64:
+            return
+
         with self.lock:
             if universe not in self.universes:
                 self.universes[universe] = [0] * 512
@@ -468,7 +478,7 @@ class DMXStateManager:
                 for ch_str, value in channels_dict.items():
                     ch = int(ch_str)
                     if 1 <= ch <= 512:
-                        self.targets[universe][ch - 1] = int(value)
+                        self.targets[universe][ch - 1] = max(0, min(255, int(value)))  # [F12] clamp
 
                 self.fade_info[universe] = {
                     'start_time': time.monotonic(),
@@ -480,8 +490,9 @@ class DMXStateManager:
                 for ch_str, value in channels_dict.items():
                     ch = int(ch_str)
                     if 1 <= ch <= 512:
-                        self.universes[universe][ch - 1] = int(value)
-                        self.targets[universe][ch - 1] = int(value)
+                        clamped = max(0, min(255, int(value)))  # [F12] clamp
+                        self.universes[universe][ch - 1] = clamped
+                        self.targets[universe][ch - 1] = clamped
                 # Clear any fade in progress
                 self.fade_info.pop(universe, None)
 
