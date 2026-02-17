@@ -1741,7 +1741,7 @@ function renderLive(data) {
 
 async function pollStatus() {
   try {
-    const resp = await fetch('/aether-status.json?t=' + Date.now());
+    const resp = await fetch('/api/flow-status?t=' + Date.now());
     if (resp.ok) {
       const data = await resp.json();
       renderLive(data);
