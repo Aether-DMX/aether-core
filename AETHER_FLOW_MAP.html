@@ -213,25 +213,26 @@
     0%, 100% { transform: translateX(0); }
     50% { transform: translateX(4px); }
   }
-  .stick-worker { pointer-events: none; }
-  .stick-hammer { transform-origin: 50% 100%; animation: hammer 0.8s ease-in-out infinite; }
-  .stick-bob { animation: bob 1.2s ease-in-out infinite; }
-  .stick-type { animation: type-hands 0.4s ease-in-out infinite; }
-  .stick-walk { transform-origin: 50% 0%; animation: walk-legs 0.6s ease-in-out infinite; }
-  .stick-bubble { animation: bubble-float 3s ease-in-out infinite; }
-  .stick-sweat { animation: sweat-drop 1.5s ease-in infinite; }
-  .stick-sparkle { animation: sparkle 1.8s ease-in-out infinite; }
-  .stick-celebrate { animation: celebrate 0.5s ease-in-out infinite; }
-  .stick-headbang { animation: headbang 0.4s ease-in-out infinite; }
-  .stick-jump { animation: jump 0.8s ease-in-out infinite; }
-  .stick-wave-arm { transform-origin: 50% 0%; animation: wave-arm 1s ease-in-out infinite; }
-  .stick-panic { animation: panic-shake 0.3s ease-in-out infinite; }
-  .stick-fight-right { animation: fight-push 0.6s ease-in-out infinite; }
-  .stick-fight-left { animation: fight-push-left 0.6s ease-in-out infinite; }
-  .stick-mop { transform-origin: 50% 100%; animation: mop-sweep 1.2s ease-in-out infinite; }
-  .stick-ghost { animation: float-ghost 3s ease-in-out infinite; }
-  .stick-surf { animation: surf-sway 2s ease-in-out infinite; }
-  .stick-chain { animation: chain-drag 1.5s ease-in-out infinite; }
+  .stick-worker { pointer-events: none; opacity: 0.45; }
+  .stick-worker:hover { opacity: 0.9; }
+  .stick-hammer { transform-origin: 50% 100%; }
+  .stick-bob { }
+  .stick-type { }
+  .stick-walk { transform-origin: 50% 0%; }
+  .stick-bubble { animation: bubble-float 6s ease-in-out infinite; }
+  .stick-sweat { opacity: 0; }
+  .stick-sparkle { animation: sparkle 4s ease-in-out infinite; }
+  .stick-celebrate { }
+  .stick-headbang { }
+  .stick-jump { }
+  .stick-wave-arm { transform-origin: 50% 0%; }
+  .stick-panic { }
+  .stick-fight-right { }
+  .stick-fight-left { }
+  .stick-mop { transform-origin: 50% 100%; }
+  .stick-ghost { animation: float-ghost 6s ease-in-out infinite; }
+  .stick-surf { }
+  .stick-chain { }
 </style>
 </head>
 <body>
@@ -242,7 +243,7 @@
 <div class="tab-bar">
   <button class="tab active" onclick="switchTab('arch')">Full Architecture</button>
   <button class="tab" onclick="switchTab('changelog')">Changelog (5 Fixes)</button>
-  <button class="tab" onclick="switchTab('redline')" style="color:var(--green)">&#10003; Redlines (20/20 FIXED)</button>
+  <button class="tab" onclick="switchTab('redline')" style="color:var(--yellow)">&#9888; Redlines (20 Fixed + 22 New)</button>
 </div>
 <div class="legend">
   <div class="legend-item"><div class="legend-dot green"></div> Fixed</div>
@@ -1108,15 +1109,15 @@
 
     <!-- ===================== TAB 3: REDLINES ===================== -->
     <div class="tab-panel" id="panel-redline">
-    <svg viewBox="0 0 1380 1080" xmlns="http://www.w3.org/2000/svg" style="min-width:1100px">
+    <svg viewBox="0 0 1380 1500" xmlns="http://www.w3.org/2000/svg" style="min-width:1100px">
       <defs>
         <marker id="ra" markerWidth="6" markerHeight="5" refX="6" refY="2.5" orient="auto"><polygon points="0 0,6 2.5,0 5" fill="#2d333b"/></marker>
         <marker id="rr" markerWidth="6" markerHeight="5" refX="6" refY="2.5" orient="auto"><polygon points="0 0,6 2.5,0 5" fill="#ff4444"/></marker>
       </defs>
 
       <!-- Title -->
-      <text font-family="-apple-system,'Segoe UI',sans-serif" font-size="14" fill="var(--green)" font-weight="700" x="20" y="24">ARCHITECTURE REDLINES — 20/20 FLAWS RESOLVED ✅</text>
-      <text font-family="-apple-system,'Segoe UI',sans-serif" font-size="10" fill="var(--text-dim)" x="20" y="40">All flaws fixed across 4 sprints. Click any marker for details.</text>
+      <text font-family="-apple-system,'Segoe UI',sans-serif" font-size="14" fill="var(--yellow)" font-weight="700" x="20" y="24">ARCHITECTURE REDLINES — 20 FIXED ✅ + 22 NEW ISSUES FOUND</text>
+      <text font-family="-apple-system,'Segoe UI',sans-serif" font-size="10" fill="var(--text-dim)" x="20" y="40">Original 20 flaws fixed. Re-analysis found 22 new issues (2 CRIT, 6 HIGH, 8 MED, 6 LOW).</text>
 
       <!-- Severity Legend -->
       <rect x="700" y="8" width="360" height="36" fill="rgba(22,27,34,0.7)" rx="6" stroke="var(--border)" stroke-width="0.5"/>
@@ -1421,7 +1422,7 @@
       <!-- ========================================================================== -->
       <!-- RIGHT PANEL: FLAW SUMMARY LIST -->
       <!-- ========================================================================== -->
-      <rect class="section-bg" x="730" y="240" width="640" height="510"/>
+      <rect class="section-bg" x="730" y="240" width="640" height="960"/>
       <text class="section-label" font-size="10" x="742" y="258">FLAW REGISTRY — CLICK ANY MARKER OR ROW FOR DETAILS</text>
 
       <!-- CRITICAL -->
@@ -1494,6 +1495,90 @@
       </g>
       <g class="redline-marker" onclick="showFlaw('F20')">
         <circle cx="752" cy="724" r="6" fill="#44cc44"/><text font-size="9" fill="var(--text)" x="764" y="728">F20  Stale Node Escalation ✅ — SocketIO alert + DMX skip + auto probe</text>
+      </g>
+
+      <!-- ========================================================================== -->
+      <!-- NEW ISSUES (N01-N22) — Found during Feb 17 re-analysis                    -->
+      <!-- ========================================================================== -->
+      <text font-size="12" fill="var(--yellow)" font-weight="700" x="742" y="764" font-family="-apple-system,'Segoe UI',sans-serif">NEW ISSUES — Feb 17 2026 Re-Analysis</text>
+      <line x1="742" y1="770" x2="1350" y2="770" stroke="var(--yellow)" stroke-width="0.5" opacity="0.4"/>
+
+      <!-- CRITICAL -->
+      <text font-size="9" fill="#ff4444" font-weight="700" x="742" y="792" font-family="monospace">━━ CRITICAL (2) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</text>
+      <g class="redline-marker" onclick="showFlaw('N01')">
+        <circle cx="752" cy="810" r="6" fill="#ff4444"/><text font-size="9" fill="#ff4444" x="764" y="814">N01  broadcast_ws() called but NEVER DEFINED — runtime crash</text>
+      </g>
+      <g class="redline-marker" onclick="showFlaw('N02')">
+        <circle cx="752" cy="828" r="6" fill="#ff4444"/><text font-size="9" fill="#ff4444" x="764" y="832">N02  shows table missing from init_database() — show ops crash</text>
+      </g>
+
+      <!-- HIGH -->
+      <text font-size="9" fill="#ff8800" font-weight="700" x="742" y="856" font-family="monospace">━━ HIGH (6) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</text>
+      <g class="redline-marker" onclick="showFlaw('N03')">
+        <circle cx="752" cy="874" r="6" fill="#ff8800"/><text font-size="9" fill="var(--text)" x="764" y="878">N03  ChaseEngine direct ContentManager write bypasses UnifiedPlayback</text>
+      </g>
+      <g class="redline-marker" onclick="showFlaw('N04')">
+        <circle cx="752" cy="892" r="6" fill="#ff8800"/><text font-size="9" fill="var(--text)" x="764" y="896">N04  EffectsEngine guarded flag can be bypassed (TASK-0005 incomplete)</text>
+      </g>
+      <g class="redline-marker" onclick="showFlaw('N05')">
+        <circle cx="752" cy="910" r="6" fill="#ff8800"/><text font-size="9" fill="var(--text)" x="764" y="914">N05  Thread-local DB connections never explicitly closed</text>
+      </g>
+      <g class="redline-marker" onclick="showFlaw('N06')">
+        <circle cx="752" cy="928" r="6" fill="#ff8800"/><text font-size="9" fill="var(--text)" x="764" y="932">N06  SocketIO emit() in background threads — not thread-safe</text>
+      </g>
+      <g class="redline-marker" onclick="showFlaw('N07')">
+        <circle cx="752" cy="946" r="6" fill="#ff8800"/><text font-size="9" fill="var(--text)" x="764" y="950">N07  No graceful shutdown for playback threads on SIGTERM</text>
+      </g>
+      <g class="redline-marker" onclick="showFlaw('N08')">
+        <circle cx="752" cy="964" r="6" fill="#ff8800"/><text font-size="9" fill="var(--text)" x="764" y="968">N08  Supabase sync has no offline queue — data lost if cloud down</text>
+      </g>
+
+      <!-- MEDIUM -->
+      <text font-size="9" fill="#ddaa00" font-weight="700" x="742" y="996" font-family="monospace">━━ MEDIUM (8) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</text>
+      <g class="redline-marker" onclick="showFlaw('N09')">
+        <circle cx="752" cy="1014" r="6" fill="#ddaa00"/><text font-size="9" fill="var(--text)" x="764" y="1018">N09  MergeLayer HTP/LTP channel classification may be stale</text>
+      </g>
+      <g class="redline-marker" onclick="showFlaw('N10')">
+        <circle cx="752" cy="1032" r="6" fill="#ddaa00"/><text font-size="9" fill="var(--text)" x="764" y="1036">N10  RDM discovery scan blocks main thread during fixture ID</text>
+      </g>
+      <g class="redline-marker" onclick="showFlaw('N11')">
+        <circle cx="752" cy="1050" r="6" fill="#ddaa00"/><text font-size="9" fill="var(--text)" x="764" y="1054">N11  CueStack crossfade math uses wall clock instead of monotonic</text>
+      </g>
+      <g class="redline-marker" onclick="showFlaw('N12')">
+        <circle cx="752" cy="1068" r="6" fill="#ddaa00"/><text font-size="9" fill="var(--text)" x="764" y="1072">N12  Blueprint imports use wildcard — namespace collisions possible</text>
+      </g>
+      <g class="redline-marker" onclick="showFlaw('N13')">
+        <circle cx="752" cy="1086" r="6" fill="#ddaa00"/><text font-size="9" fill="var(--text)" x="764" y="1090">N13  Express proxy has no request timeout — hung Flask = hung proxy</text>
+      </g>
+      <g class="redline-marker" onclick="showFlaw('N14')">
+        <circle cx="752" cy="1104" r="6" fill="#ddaa00"/><text font-size="9" fill="var(--text)" x="764" y="1108">N14  FixtureLibrary loaded into memory on every import (no cache)</text>
+      </g>
+      <g class="redline-marker" onclick="showFlaw('N15')">
+        <circle cx="752" cy="1122" r="6" fill="#ddaa00"/><text font-size="9" fill="var(--text)" x="764" y="1126">N15  Preview frame emits full 512ch per universe at 10fps (bandwidth)</text>
+      </g>
+      <g class="redline-marker" onclick="showFlaw('N16')">
+        <circle cx="752" cy="1140" r="6" fill="#ddaa00"/><text font-size="9" fill="var(--text)" x="764" y="1144">N16  AI context fetch (7 endpoints) has no parallel/batch mode</text>
+      </g>
+
+      <!-- LOW -->
+      <text font-size="9" fill="#888888" font-weight="700" x="742" y="1172" font-family="monospace">━━ LOW (6) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</text>
+      <g class="redline-marker" onclick="showFlaw('N17')">
+        <circle cx="752" cy="1190" r="6" fill="#888888"/><text font-size="9" fill="var(--text-dim)" x="764" y="1194">N17  Scheduler cron jobs lack error recovery — silent fail on exception</text>
+      </g>
+      <g class="redline-marker" onclick="showFlaw('N18')">
+        <circle cx="752" cy="1208" r="6" fill="#888888"/><text font-size="9" fill="var(--text-dim)" x="764" y="1212">N18  RDM stub proto has no real implementation — dead code</text>
+      </g>
+      <g class="redline-marker" onclick="showFlaw('N19')">
+        <circle cx="752" cy="1226" r="6" fill="#888888"/><text font-size="9" fill="var(--text-dim)" x="764" y="1230">N19  Hardcoded 512 ch limit — no support for extended universes</text>
+      </g>
+      <g class="redline-marker" onclick="showFlaw('N20')">
+        <circle cx="752" cy="1244" r="6" fill="#888888"/><text font-size="9" fill="var(--text-dim)" x="764" y="1248">N20  Frontend toast notifications have no queue — can stack overflow</text>
+      </g>
+      <g class="redline-marker" onclick="showFlaw('N21')">
+        <circle cx="752" cy="1262" r="6" fill="#888888"/><text font-size="9" fill="var(--text-dim)" x="764" y="1266">N21  No health endpoint for Express portal (only Flask has /api/health)</text>
+      </g>
+      <g class="redline-marker" onclick="showFlaw('N22')">
+        <circle cx="752" cy="1280" r="6" fill="#888888"/><text font-size="9" fill="var(--text-dim)" x="764" y="1284">N22  Screensaver idle timeout is hardcoded (no user config)</text>
       </g>
 
     </svg>
