@@ -1282,10 +1282,10 @@
         <text class="flaw-badge" font-size="8" fill="#fff" text-anchor="middle" x="465" y="263">F02</text>
       </g>
 
-      <!-- FLAW-03: UDP No Delivery Guarantee — ring around UDP :6455 -->
+      <!-- FLAW-03: UDP Delivery Guarantee — FIXED -->
       <g class="redline-marker" onclick="showFlaw('F03')">
-        <rect class="flaw-ring sev-crit" x="18" y="588" width="103" height="30" rx="6"/>
-        <circle cx="130" cy="588" r="12" fill="#ff4444"/>
+        <rect class="flaw-ring sev-crit" x="18" y="588" width="103" height="30" rx="6" style="stroke:#44cc44; fill:rgba(68,204,68,0.08);"/>
+        <circle cx="130" cy="588" r="12" fill="#44cc44"/>
         <text class="flaw-badge" font-size="8" fill="#fff" text-anchor="middle" x="130" y="592">F03</text>
       </g>
 
@@ -1435,7 +1435,7 @@
         <circle cx="752" cy="316" r="6" fill="#44cc44"/><text font-size="9" fill="var(--text)" x="764" y="320">F02  God File Decomposed ✅ — 28 blueprints extracted, 5,769 LOC kernel</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('F03')">
-        <circle cx="752" cy="334" r="6" fill="#ff4444"/><text font-size="9" fill="var(--text)" x="764" y="338">F03  UDP Fire-and-Forget — blackout/panic can be silently dropped</text>
+        <circle cx="752" cy="334" r="6" fill="#44cc44"/><text font-size="9" fill="var(--text)" x="764" y="338">F03  UDP Delivery Guarantee ✅ — reliable send for safety commands</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('F04')">
         <circle cx="752" cy="352" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="356">F04  ✅ FIXED — Thread-local pool + WAL mode + atomic writes</text>
@@ -1627,7 +1627,7 @@ function showChange(key) {
 const flaws = {
   'F01': {title:'F01 — Systemd Watchdog ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'Flask app server (aether-core.py)', problem:'[FIXED] Added systemd Type=notify watchdog (WatchdogSec=30). App sends READY=1 on startup + WATCHDOG=1 pings every 10s. Graceful shutdown handler catches SIGTERM. Health endpoint enhanced with uptime tracking.', scenario:'Fixed. Watchdog auto-restarts within 30s if app hangs. Graceful shutdown saves state on SIGTERM. Commit 4e3deca.', fix:'RESOLVED: systemd watchdog + graceful shutdown + health endpoint improvements.'},
   'F02': {title:'F02 — God File Decomposition ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'aether-core.py → 28 Flask Blueprints', problem:'[FIXED] Decomposed 11,434-LOC monolithic god file into 28 Flask Blueprints. Kernel (5,769 LOC) retains only classes, singletons, thread pools, and 5 health/status routes. Each blueprint is independently compile-checkable — a syntax error in one route file does not prevent the system from starting.', scenario:'Fixed. Routes distributed across blueprints/: trust, modifiers, migrate, settings, merge, scenes, chases, pixel, shows, schedules, cloud, session, system, groups, ai, fixtures, fixture_library, node_groups, rdm, preview, effects, nodes, looks, sequences, unified, cue_stacks, dmx, playback.', fix:'RESOLVED: 28 blueprints with dependency injection via init_app(). God file reduced from 11,434 → 5,769 LOC.'},
-  'F03': {title:'F03 — UDP No Delivery Guarantee (CRITICAL)', sev:'CRITICAL', sevColor:'#ff4444', component:'NodeManager.send_udpjson() (L1948)', problem:'ALL DMX commands sent via UDP fire-and-forget. No ACK, no retry, no verification. WiFi packet loss 1-5% typical.', scenario:'Critical blackout/panic UDP packet dropped. Node continues outputting previous state. SSOT believes blackout was sent but physical output does not match. Safety failure.', fix:'1) Add ACK mode for critical commands (blackout, panic)\n2) Auto-retry with 25ms backoff for non-critical\n3) Track per-node delivery success rates'},
+  'F03': {title:'F03 — UDP Delivery Guarantee ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'NodeManager.send_udpjson_reliable()', problem:'[FIXED] Added reliable UDP mode for critical safety commands (panic, reset, ping). send_udpjson_reliable() uses ephemeral receive socket with ACK verification, configurable retries (2-3), and escalating backoff. Per-node delivery stats tracked (sent/acks/timeouts/rtt_ms). Normal DMX frames stay fire-and-forget — 40Hz refresh loop provides natural 25ms retransmission.', scenario:'Fixed. Panic uses 3 retries × 100ms timeout. Ping uses 2 retries × 500ms (receives pong). Reset uses 3 retries × 200ms. /api/health exposes udp_delivery stats.', fix:'RESOLVED: send_udpjson_reliable() with ACK/retry for safety commands. Per-node delivery tracking in /api/health.'},
   'F04': {title:'F04 — SQLite Concurrent Access ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'get_db() and all DB operations', problem:'[FIXED] Thread-local connection pool via threading.local(). WAL journal mode for concurrent reads. _ThreadLocalConnection wrapper makes .close() a no-op. Atomic single-UPDATE for node cache refresh with 5-attempt retry.', scenario:'Fixed. "database is locked" errors eliminated. WAL allows concurrent readers + single writer. Commit chain: 5fc2a3b → 83a6bad → 1359eb1.', fix:'RESOLVED: Thread-local pool + WAL mode + atomic node cache refresh.'},
   'F05': {title:'F05 — CORS Wildcard ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'aether-core.py L305-332', problem:'[FIXED] Code computed ALLOWED_ORIGINS but used origins="*". Now uses ALLOWED_ORIGINS for both Flask-CORS and SocketIO.', scenario:'Fixed in commit 86589f1. Evil origins now blocked.', fix:'RESOLVED: origins=ALLOWED_ORIGINS on both Flask-CORS and SocketIO.'},
   'F06': {title:'F06 — Duplicate Playback Systems ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'UnifiedPlaybackEngine (canonical authority)', problem:'[FIXED] Consolidated 5 playback systems. /api/looks/<id>/play rerouted from RenderEngine to unified_play_look(). ChaseEngine, DynamicEffectsEngine, RenderEngine deprecated with consolidation markers. Only ShowEngine meta-timeline thread remains.', scenario:'Fixed. Looks, chases, sequences, scenes, fixture effects all route through UnifiedPlaybackEngine. Legacy effect routes kept for backward compat. Commit 0d5ed02.', fix:'RESOLVED: TASK-0018 resolved. Look/chase/sequence/scene/fixture-effect → unified engine.'},

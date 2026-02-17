@@ -157,13 +157,20 @@ def ping_node(node_id):
 
     try:
         result = _ssot.send_udpjson_ping(node_ip)
-        success = result is not None
-        return jsonify({
+        # [F03] result is now a dict: {success, attempts, rtt_ms, response}
+        success = result.get('success', False) if isinstance(result, dict) else result is not None
+        response = {
             'success': success,
             'node_id': node_id,
             'ip': node_ip,
             'action': 'ping'
-        })
+        }
+        if isinstance(result, dict):
+            response['attempts'] = result.get('attempts')
+            response['rtt_ms'] = result.get('rtt_ms')
+            if result.get('response'):
+                response['pong'] = result['response']
+        return jsonify(response)
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -182,13 +189,18 @@ def reset_node(node_id):
 
     try:
         result = _ssot.send_udpjson_reset(node_ip)
-        success = result is not None
-        return jsonify({
+        # [F03] result is now a dict: {success, attempts, rtt_ms, response}
+        success = result.get('success', False) if isinstance(result, dict) else result is not None
+        response = {
             'success': success,
             'node_id': node_id,
             'ip': node_ip,
             'action': 'reset'
-        })
+        }
+        if isinstance(result, dict):
+            response['attempts'] = result.get('attempts')
+            response['rtt_ms'] = result.get('rtt_ms')
+        return jsonify(response)
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -282,8 +294,12 @@ def ping_all_nodes():
 
         try:
             result = _ssot.send_udpjson_ping(node_ip)
-            success = result is not None
-            results['nodes'].append({'node_id': node_id, 'ip': node_ip, 'success': success})
+            # [F03] result is now a dict: {success, attempts, rtt_ms, response}
+            success = result.get('success', False) if isinstance(result, dict) else result is not None
+            node_result = {'node_id': node_id, 'ip': node_ip, 'success': success}
+            if isinstance(result, dict) and result.get('rtt_ms'):
+                node_result['rtt_ms'] = result['rtt_ms']
+            results['nodes'].append(node_result)
             if success:
                 results['responded'] += 1
         except Exception as e:

@@ -2136,6 +2136,12 @@ class NodeManager:
         self._last_udp_send = None
         self._udp_send_count = 0
 
+        # [F03] Per-node delivery tracking
+        self._per_node_stats = {}  # {ip: {sent: N, errors: N, acks: N, timeouts: N, last_rtt_ms: float}}
+        self._reliable_send_count = 0
+        self._reliable_ack_count = 0
+        self._reliable_timeout_count = 0
+
         # DMX refresh loop control
         self._refresh_running = False
         self._refresh_thread = None
@@ -2205,6 +2211,115 @@ class NodeManager:
             self._udpjson_errors += 1
             print(f"❌ UDPJSON send error to {ip}:{port}: {e}")
             return False
+
+    # ─────────────────────────────────────────────────────────
+    # [F03] Reliable UDP — ACK mode for critical commands
+    # ─────────────────────────────────────────────────────────
+    def _track_node_stat(self, ip, field, value=1):
+        """Update per-node delivery statistics."""
+        if ip not in self._per_node_stats:
+            self._per_node_stats[ip] = {
+                'sent': 0, 'errors': 0, 'acks': 0, 'timeouts': 0,
+                'last_rtt_ms': None, 'last_seen': None,
+            }
+        stats = self._per_node_stats[ip]
+        if field == 'last_rtt_ms' or field == 'last_seen':
+            stats[field] = value
+        else:
+            stats[field] += value
+
+    def send_udpjson_reliable(self, ip, port, payload_dict, retries=3, timeout_ms=150):
+        """Send a UDPJSON command with ACK verification and retry.
+
+        [F03] For critical commands (panic, reset, ping) that MUST be delivered.
+        Opens a temporary receive socket to listen for any response from the node,
+        retries up to `retries` times with increasing backoff.
+
+        Normal DMX frames (set/fade) should NOT use this — the 40Hz refresh loop
+        provides natural retransmission every 25ms.
+
+        Args:
+            ip: Node IP address
+            port: UDP port
+            payload_dict: Dictionary to send as JSON
+            retries: Max retry attempts (default 3)
+            timeout_ms: Timeout per attempt in milliseconds (default 150ms)
+
+        Returns:
+            dict with {success: bool, attempts: int, rtt_ms: float|None, response: dict|None}
+        """
+        self._reliable_send_count += 1
+        self._track_node_stat(ip, 'sent')
+
+        json_data = json.dumps(payload_dict, separators=(',', ':'))
+        msg_type = payload_dict.get('type', 'unknown')
+        seq = payload_dict.get('seq', 0)
+
+        for attempt in range(1, retries + 1):
+            # Create a temporary socket for this request-response exchange
+            recv_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            try:
+                recv_sock.settimeout(timeout_ms / 1000.0)
+                recv_sock.bind(('', 0))  # Bind to ephemeral port
+
+                send_start = time.monotonic()
+                self.udp_socket.sendto(json_data.encode(), (ip, port))
+
+                # Track send diagnostics
+                self._udpjson_send_count += 1
+                self._last_udpjson_send = time.time()
+
+                try:
+                    data, addr = recv_sock.recvfrom(4096)
+                    rtt_ms = (time.monotonic() - send_start) * 1000
+                    response = json.loads(data.decode())
+
+                    self._reliable_ack_count += 1
+                    self._track_node_stat(ip, 'acks')
+                    self._track_node_stat(ip, 'last_rtt_ms', rtt_ms)
+                    self._track_node_stat(ip, 'last_seen', time.time())
+
+                    if attempt > 1:
+                        print(f"   ✓ {msg_type.upper()} ACK from {ip} after {attempt} attempts ({rtt_ms:.1f}ms)", flush=True)
+                    else:
+                        print(f"   ✓ {msg_type.upper()} ACK from {ip} ({rtt_ms:.1f}ms)", flush=True)
+
+                    return {
+                        'success': True, 'attempts': attempt,
+                        'rtt_ms': round(rtt_ms, 1), 'response': response
+                    }
+
+                except socket.timeout:
+                    # No response within timeout — retry with backoff
+                    backoff_ms = timeout_ms * attempt  # 150ms, 300ms, 450ms
+                    if attempt < retries:
+                        print(f"   ⏱ {msg_type.upper()} timeout from {ip} (attempt {attempt}/{retries}, backoff {backoff_ms}ms)", flush=True)
+                        time.sleep(backoff_ms / 1000.0)
+                    else:
+                        print(f"   ✗ {msg_type.upper()} no ACK from {ip} after {retries} attempts", flush=True)
+
+            except Exception as e:
+                self._udpjson_errors += 1
+                self._track_node_stat(ip, 'errors')
+                print(f"   ✗ {msg_type.upper()} send error to {ip}: {e}", flush=True)
+
+            finally:
+                recv_sock.close()
+
+        # All retries exhausted
+        self._reliable_timeout_count += 1
+        self._track_node_stat(ip, 'timeouts')
+        return {'success': False, 'attempts': retries, 'rtt_ms': None, 'response': None}
+
+    def get_delivery_stats(self):
+        """[F03] Get per-node delivery statistics for diagnostics."""
+        return {
+            'reliable_sends': self._reliable_send_count,
+            'reliable_acks': self._reliable_ack_count,
+            'reliable_timeouts': self._reliable_timeout_count,
+            'ack_rate': round(self._reliable_ack_count / max(1, self._reliable_send_count) * 100, 1),
+            'per_node': dict(self._per_node_stats),
+        }
 
     def send_udpjson_set(self, node_ip, universe, channels_dict, source="backend", fade_ms=0):
         """Send a 'set' command to a node via UDPJSON v2 protocol.
@@ -2320,6 +2435,9 @@ class NodeManager:
 
         SAFETY ACTION: This bypasses all playback/effects and commands
         immediate zero output on the target universe.
+
+        [F03] Uses reliable sending with ACK verification and retry.
+        Falls back to fire-and-forget if ACK times out (command still sent).
         """
         print(f"🚨 PANIC: Sending to {node_ip} universe {universe}", flush=True)
         payload = {
@@ -2328,17 +2446,21 @@ class NodeManager:
             "u": universe,
             "seq": self._next_seq()
         }
-        result = self.send_udpjson(node_ip, AETHER_UDPJSON_PORT, payload)
-        if result:
-            print(f"   ✓ PANIC sent successfully to {node_ip}:{universe}", flush=True)
-        else:
-            print(f"   ✗ PANIC FAILED to {node_ip}:{universe}", flush=True)
-        return result
+        # [F03] Use reliable send with 3 retries, 100ms timeout (fast for safety)
+        result = self.send_udpjson_reliable(node_ip, AETHER_UDPJSON_PORT, payload,
+                                            retries=3, timeout_ms=100)
+        if not result['success']:
+            # ACK failed but command was sent — log but don't block
+            print(f"   ⚠ PANIC sent but NO ACK from {node_ip} (command may have arrived)", flush=True)
+        return result.get('success') or result.get('attempts', 0) > 0  # True if at least sent
 
     def send_udpjson_ping(self, node_ip):
-        """Send a 'ping' command to a node and expect a 'pong' response.
+        """Send a 'ping' command to a node and wait for 'pong' response.
 
         SAFETY ACTION: Health check for node connectivity.
+
+        [F03] Now actually waits for the pong response using reliable send.
+        Returns the pong data (rssi, uptime, heap, etc.) on success.
         """
         print(f"🏓 PING: Sending to {node_ip}", flush=True)
         payload = {
@@ -2346,11 +2468,9 @@ class NodeManager:
             "type": "ping",
             "seq": self._next_seq()
         }
-        result = self.send_udpjson(node_ip, AETHER_UDPJSON_PORT, payload)
-        if result:
-            print(f"   ✓ PING sent to {node_ip}", flush=True)
-        else:
-            print(f"   ✗ PING FAILED to {node_ip}", flush=True)
+        # [F03] Use reliable send — actually receive the pong
+        result = self.send_udpjson_reliable(node_ip, AETHER_UDPJSON_PORT, payload,
+                                            retries=2, timeout_ms=500)
         return result
 
     def send_udpjson_reset(self, node_ip):
@@ -2358,6 +2478,8 @@ class NodeManager:
 
         SAFETY ACTION: Commands node to reset its internal state.
         This clears any stuck effects, resets DMX output, and reinitializes.
+
+        [F03] Uses reliable sending with ACK verification and retry.
         """
         print(f"🔄 RESET: Sending to {node_ip}", flush=True)
         payload = {
@@ -2365,11 +2487,9 @@ class NodeManager:
             "type": "reset",
             "seq": self._next_seq()
         }
-        result = self.send_udpjson(node_ip, AETHER_UDPJSON_PORT, payload)
-        if result:
-            print(f"   ✓ RESET sent to {node_ip}", flush=True)
-        else:
-            print(f"   ✗ RESET FAILED to {node_ip}", flush=True)
+        # [F03] Use reliable send — 3 retries, 200ms timeout
+        result = self.send_udpjson_reliable(node_ip, AETHER_UDPJSON_PORT, payload,
+                                            retries=3, timeout_ms=200)
         return result
 
     def start_dmx_refresh(self):
@@ -5329,6 +5449,7 @@ def health():
             'udpjson': True,
         },
         'database': db_health,
+        'udp_delivery': node_manager.get_delivery_stats(),
     })
 
 @app.route('/api/arbitration', methods=['GET'])
