@@ -185,7 +185,7 @@ def play_look(look_id):
     universes = data.get('universes')
     if not universes:
         universes = list(set(
-            n.get('universe', 1) for n in _node_manager.get_nodes()
+            n.get('universe', 1) for n in _node_manager.get_all_nodes(include_offline=False)
             if n.get('is_paired') and n.get('status') == 'online'
         ))
         if not universes:

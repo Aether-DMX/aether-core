@@ -145,7 +145,7 @@ def cue_stack_go(stack_id):
         # If no explicit universes, use all online nodes
         if not universes:
             universes = list(set(
-                n.get('universe', 1) for n in _node_manager.get_nodes()
+                n.get('universe', 1) for n in _node_manager.get_all_nodes(include_offline=False)
                 if n.get('is_paired') and n.get('status') == 'online'
             ))
             if not universes:
@@ -216,7 +216,7 @@ def cue_stack_back(stack_id):
 
         if not universes:
             universes = list(set(
-                n.get('universe', 1) for n in _node_manager.get_nodes()
+                n.get('universe', 1) for n in _node_manager.get_all_nodes(include_offline=False)
                 if n.get('is_paired') and n.get('status') == 'online'
             ))
             if not universes:
@@ -291,7 +291,7 @@ def cue_stack_goto(stack_id, cue_number):
 
         if not universes:
             universes = list(set(
-                n.get('universe', 1) for n in _node_manager.get_nodes()
+                n.get('universe', 1) for n in _node_manager.get_all_nodes(include_offline=False)
                 if n.get('is_paired') and n.get('status') == 'online'
             ))
             if not universes:
