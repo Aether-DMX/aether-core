@@ -1279,15 +1279,20 @@ class ScheduleRunner:
         """Background loop checking schedules every minute"""
         last_check_minute = -1
         while self.running:
-            now = datetime.now()
-            # Only check once per minute
-            if now.minute != last_check_minute:
-                last_check_minute = now.minute
-                for sched in self.schedules:
-                    if self._parse_cron(sched['cron']):
-                        print(f"⏰ Triggering schedule: {sched['name']}")
-                        self.run_schedule(sched['schedule_id'])
-            time.sleep(5)  # Check every 5 seconds for minute change
+            try:
+                now = datetime.now()
+                # Only check once per minute
+                if now.minute != last_check_minute:
+                    last_check_minute = now.minute
+                    for sched in self.schedules:
+                        if self._parse_cron(sched['cron']):
+                            print(f"⏰ Triggering schedule: {sched['name']}")
+                            self.run_schedule(sched['schedule_id'])
+                time.sleep(5)  # Check every 5 seconds for minute change
+            except Exception as e:
+                # [N17 fix] Outer guard prevents thread death on unexpected errors
+                logging.error(f"❌ Schedule runner loop error: {e}")
+                time.sleep(10)  # Back off before retrying
     
     def run_schedule(self, schedule_id):
         """Execute a schedule's action.

@@ -243,7 +243,7 @@
 <div class="tab-bar">
   <button class="tab active" onclick="switchTab('arch')">Full Architecture</button>
   <button class="tab" onclick="switchTab('changelog')">Changelog (5 Fixes)</button>
-  <button class="tab" onclick="switchTab('redline')" style="color:var(--yellow)">&#9888; Redlines (20 Fixed + 22 New)</button>
+  <button class="tab" onclick="switchTab('redline')" style="color:var(--green)">&#10003; Redlines (28 Fixed · 9 FP · 4 Deferred · 1 Mitigated)</button>
 </div>
 <div class="legend">
   <div class="legend-item"><div class="legend-dot green"></div> Fixed</div>
@@ -1563,22 +1563,22 @@
       <!-- LOW -->
       <text font-size="9" fill="#888888" font-weight="700" x="742" y="1172" font-family="monospace">━━ LOW (6) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</text>
       <g class="redline-marker" onclick="showFlaw('N17')">
-        <circle cx="752" cy="1190" r="6" fill="#888888"/><text font-size="9" fill="var(--text-dim)" x="764" y="1194">N17  Scheduler cron jobs lack error recovery — silent fail on exception</text>
+        <circle cx="752" cy="1190" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="1194">N17  ✅ FIXED — _run_loop outer try/except guard + 10s backoff recovery</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('N18')">
-        <circle cx="752" cy="1208" r="6" fill="#888888"/><text font-size="9" fill="var(--text-dim)" x="764" y="1212">N18  RDM stub proto has no real implementation — dead code</text>
+        <circle cx="752" cy="1208" r="6" fill="#555"/><text font-size="9" fill="var(--text-dim)" x="764" y="1212">N18  ✗ FALSE POSITIVE — RDM has 710+ lines of real implementation, 14 API routes, full UI</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('N19')">
-        <circle cx="752" cy="1226" r="6" fill="#888888"/><text font-size="9" fill="var(--text-dim)" x="764" y="1230">N19  Hardcoded 512 ch limit — no support for extended universes</text>
+        <circle cx="752" cy="1226" r="6" fill="#555"/><text font-size="9" fill="var(--text-dim)" x="764" y="1230">N19  ✗ FALSE POSITIVE — 512 is DMX512 spec; multi-universe up to 63999 supported</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('N20')">
-        <circle cx="752" cy="1244" r="6" fill="#888888"/><text font-size="9" fill="var(--text-dim)" x="764" y="1248">N20  Frontend toast notifications have no queue — can stack overflow</text>
+        <circle cx="752" cy="1244" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="1248">N20  ✅ FIXED — Toast store capped at 5 max, oldest auto-evicted</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('N21')">
-        <circle cx="752" cy="1262" r="6" fill="#888888"/><text font-size="9" fill="var(--text-dim)" x="764" y="1266">N21  No health endpoint for Express portal (only Flask has /api/health)</text>
+        <circle cx="752" cy="1262" r="6" fill="#555"/><text font-size="9" fill="var(--text-dim)" x="764" y="1266">N21  ✗ FALSE POSITIVE — Express has /health AND /api/health endpoints</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('N22')">
-        <circle cx="752" cy="1280" r="6" fill="#888888"/><text font-size="9" fill="var(--text-dim)" x="764" y="1284">N22  Screensaver idle timeout is hardcoded (no user config)</text>
+        <circle cx="752" cy="1280" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="1284">N22  ✅ FIXED — Screensaver timeout now in uiStore, configurable + server-persisted</text>
       </g>
 
     </svg>
