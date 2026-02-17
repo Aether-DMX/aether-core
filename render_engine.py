@@ -1,48 +1,23 @@
 """
-Render Engine - Real-time modifier composition for Looks and Sequences
+Render Engine — DEPRECATED as playback driver (F06 consolidation)
 
-# ============================================================================
-# ⚠️  AUTHORITY VIOLATION WARNING (TASK-0004)
-# ============================================================================
-#
-# This module contains RenderEngine, which ILLEGALLY owns a render loop.
-#
-# Per AETHER Hard Rule 1.1:
-#   "Flask UnifiedPlaybackEngine is the ONLY authority allowed to generate
-#    final DMX output. No other system may run an independent render loop."
-#
-# CURRENT VIOLATION:
-#   - RenderEngine.start() spawns its own thread
-#   - RenderEngine._render_loop() runs at 30 FPS independently
-#   - /api/looks/{id}/play calls RenderEngine directly, bypassing
-#     UnifiedPlaybackEngine (see TASK-0018)
-#
-# ALLOWED USAGE:
-#   - ModifierRenderer class may be used as a UTILITY by UnifiedPlaybackEngine
-#   - TimeContext, MergeMode, ModifierState are safe data classes
-#
-# PROHIBITED USAGE:
-#   - RenderEngine.start() - DO NOT CALL INDEPENDENTLY
-#   - RenderEngine._render_loop() - MUST NOT OWN TIMING
-#
-# This will be fixed in Phase 2. Until then, any use of RenderEngine.start()
-# should log a warning. See TASK_LEDGER.md for full details.
-#
-# TODO: TASK-0004 - Retire RenderEngine loop, keep ModifierRenderer as utility
-# ============================================================================
+✅ TASK-0018 RESOLVED: /api/looks/<id>/play now routes through
+UnifiedPlaybackEngine via unified_play_look(). RenderEngine.start()
+is no longer called from production code paths.
 
-This module provides:
-- ModifierRenderer: Computes modifier effects on base channels (SAFE - utility)
-- RenderEngine: Single scheduler loop for rendering at target FPS (VIOLATION)
-- Deterministic output with seeded random for reproducibility
-- Composition rules for stacking multiple modifiers
+SAFE TO USE (utility classes):
+- ModifierRenderer: Computes modifier effects on base channels
+- TimeContext, MergeMode, ModifierState: Data classes
+- render_look_frame(): Stateless single-frame utility
 
-Architecture:
-- Input: base channels + list of modifiers + time context
-- Output: final DMX channel values (0-255)
-- All rendering is deterministic given same seed + time
+DEPRECATED (no longer called):
+- RenderEngine.start() / _render_loop(): Independent timing loop
+- RenderEngine.render_look(): Use unified_play_look() instead
 
-Version: 1.0.0
+The ModifierRenderer class is still imported by UnifiedPlaybackEngine
+for modifier composition. Do not delete this module.
+
+Version: 1.0.1 (F06 deprecation)
 """
 
 import math

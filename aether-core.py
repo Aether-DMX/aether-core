@@ -702,27 +702,14 @@ class PlaybackManager:
 playback_manager = PlaybackManager()
 
 # ============================================================
-# Chase Playback Engine (streams steps via UDPJSON)
+# Chase Playback Engine (DEPRECATED — F06 consolidation)
 # ============================================================
-# ⚠️  AUTHORITY VIOLATION WARNING (TASK-0006)
-# ============================================================================
-#
-# ChaseEngine ILLEGALLY owns timing loops.
-#
-# Per AETHER Hard Rule 1.1:
-#   "Flask UnifiedPlaybackEngine is the ONLY authority allowed to generate
-#    final DMX output. No other system may run an independent render loop."
-#
-# CURRENT VIOLATION:
-#   - ChaseEngine.start_chase() spawns threads in self.running_chases
-#   - _run_chase() runs its own timing loop per chase
-#   - Bypasses UnifiedPlaybackEngine's render authority
-#
-# ALLOWED USAGE:
-#   - Chase step computation may be extracted as UTILITIES
-#   - Called BY UnifiedPlaybackEngine, not independently
-#
-# TODO: TASK-0006 - Retire ChaseEngine loops, extract chase step logic
+# STATUS: ChaseEngine is no longer called from any API route.
+# content_manager.play_chase() routes through UnifiedPlaybackEngine.
+# This class is retained for backward compatibility with:
+#   - show_engine._execute_event() 'chase' type → calls content_manager.play_chase()
+#   - content_manager.stop_playback() → calls chase_engine.stop_all()
+# Once ShowEngine is fully retired, this can be removed entirely.
 # ============================================================================
 class ChaseEngine:
     """Runs chases by streaming each step via UDPJSON to all universes.
@@ -1347,25 +1334,17 @@ timer_runner = TimerRunner()
 # ============================================================
 # Show Engine (Timeline Playback)
 # ============================================================
-# ⚠️  AUTHORITY VIOLATION WARNING (TASK-0007)
-# ============================================================================
-#
-# ShowEngine ILLEGALLY owns timing loops.
-#
-# Per AETHER Hard Rule 1.1:
-#   "Flask UnifiedPlaybackEngine is the ONLY authority allowed to generate
-#    final DMX output. No other system may run an independent render loop."
-#
-# CURRENT VIOLATION:
-#   - ShowEngine.play_show() spawns self.thread for timeline playback
-#   - _timeline_loop() runs its own timing independently
-#   - Bypasses UnifiedPlaybackEngine's render authority
-#
-# ALLOWED USAGE:
-#   - Timeline event scheduling may be extracted as UTILITIES
-#   - Called BY UnifiedPlaybackEngine, not independently
-#
-# TODO: TASK-0007 - Retire ShowEngine loops, extract timeline event logic
+# ============================================================
+# Show Timeline Engine (F06 — last remaining timing violator)
+# ============================================================
+# STATUS: ShowEngine still owns its timeline thread (TASK-0007).
+# Unlike ChaseEngine/RenderEngine/EffectsEngine which now route through
+# UnifiedPlaybackEngine, shows have no unified equivalent yet.
+# The _execute_event() dispatcher delegates to unified_play_look(),
+# unified_play_sequence(), and content_manager.play_scene/chase()
+# so individual event playback IS consolidated — only the meta-timeline
+# scheduling thread remains as a violation.
+# TODO: Port timeline scheduling into UnifiedPlaybackEngine session type.
 # ============================================================================
 class ShowEngine:
     """Plays back timeline-based shows with timed events.
@@ -7311,44 +7290,24 @@ def revert_look_version(look_id, version_id):
     return jsonify({'success': True, 'look': result})
 
 # ============================================================================
-# ⚠️  SMOKING GUN VIOLATION (TASK-0018)
+# ✅  TASK-0018 RESOLVED (F06 consolidation)
 # ============================================================================
-# This endpoint uses RenderEngine DIRECTLY instead of UnifiedPlaybackEngine.
-# This is the primary example of the authority violation in production code.
-#
-# VIOLATION: render_engine.start() + render_engine.render_look()
-# SHOULD BE: unified_playback_engine.play_look()
-#
-# Per AETHER Hard Rule 1.1: UnifiedPlaybackEngine is the ONLY authority.
-# This endpoint must be refactored in Phase 2/3 to route through the
-# canonical playback system.
-#
-# See TASK_LEDGER.md TASK-0018 for full details.
+# Previously used RenderEngine directly — now routes through
+# UnifiedPlaybackEngine via unified_play_look() for all look types.
 # ============================================================================
 @app.route('/api/looks/<look_id>/play', methods=['POST'])
 def play_look(look_id):
     """
     Play a Look with real-time modifier rendering.
 
-    # ⚠️ AUTHORITY VIOLATION (TASK-0018) ⚠️
-    # This endpoint uses RenderEngine directly instead of UnifiedPlaybackEngine.
-    # This MUST be refactored to route through canonical playback.
-    # See TASK_LEDGER.md
+    Routes through UnifiedPlaybackEngine (canonical authority per Hard Rule 1.1).
 
     POST body:
     {
         "universes": [1, 2],       // Target universes (default: all online)
         "fade_ms": 500,            // Initial fade time (optional)
-        "seed": 12345              // Random seed for determinism (optional)
     }
     """
-    # PHASE 1 GUARD: Log violation when this endpoint is hit
-    logging.warning(
-        "⚠️ AUTHORITY VIOLATION: /api/looks/{id}/play uses RenderEngine directly "
-        "instead of UnifiedPlaybackEngine. This violates AETHER Hard Rule 1.1. "
-        "See TASK-0018 in TASK_LEDGER.md"
-    )
-
     data = request.get_json() or {}
 
     # Get the look
@@ -7364,13 +7323,12 @@ def play_look(look_id):
             'current_owner': arbitration.current_owner
         }), 409
 
-    # Stop any existing renders
+    # Stop any legacy render engine jobs (migration safety net)
     render_engine.stop_rendering()
 
     # Determine target universes
     universes = data.get('universes')
     if not universes:
-        # Default to all online paired nodes
         universes = list(set(
             n.get('universe', 1) for n in node_manager.get_nodes()
             if n.get('is_paired') and n.get('status') == 'online'
@@ -7378,63 +7336,35 @@ def play_look(look_id):
         if not universes:
             universes = [1]
 
-    # Check if look has modifiers
+    fade_ms = data.get('fade_ms', look.fade_ms or 0)
     has_modifiers = len(look.modifiers) > 0 and any(m.enabled for m in look.modifiers)
 
-    if has_modifiers:
-        # Start render engine for continuous modifier rendering
-        if not render_engine._running:
-            render_engine.start()
+    # Route through UnifiedPlaybackEngine (canonical authority)
+    look_data = look.to_dict()
+    session_id = unified_play_look(
+        look_id,
+        look_data,
+        universes=universes,
+        fade_ms=fade_ms,
+    )
 
-        # Start rendering this look
-        render_engine.render_look(
-            look_id=look_id,
-            channels=look.channels,
-            modifiers=[m.to_dict() for m in look.modifiers],
-            universes=universes,
-            seed=data.get('seed'),
-        )
-
-        return jsonify({
-            'success': True,
-            'look_id': look_id,
-            'name': look.name,
-            'universes': universes,
-            'rendering': True,
-            'modifier_count': len([m for m in look.modifiers if m.enabled]),
-            'fps': render_engine.target_fps,
-        })
-    else:
-        # No modifiers - just set static channels (like a scene)
-        fade_ms = data.get('fade_ms', look.fade_ms or 0)
-
-        # Parse universe:channel format
-        for universe in universes:
-            parsed = {}
-            for k, v in look.channels.items():
-                ks = str(k)
-                if ':' in ks:
-                    u, ch = ks.split(':',1)
-                    if int(u) == universe:
-                        parsed[str(ch)] = v
-                else:
-                    parsed[ks] = v
-            if parsed:
-                content_manager.set_channels(universe, parsed, fade_ms=fade_ms)
-
-        return jsonify({
-            'success': True,
-            'look_id': look_id,
-            'name': look.name,
-            'universes': universes,
-            'rendering': False,
-            'fade_ms': fade_ms,
-        })
+    return jsonify({
+        'success': True,
+        'look_id': look_id,
+        'name': look.name,
+        'universes': universes,
+        'rendering': has_modifiers,
+        'modifier_count': len([m for m in look.modifiers if m.enabled]) if has_modifiers else 0,
+        'session_id': session_id,
+        'engine': 'unified',
+    })
 
 @app.route('/api/looks/<look_id>/stop', methods=['POST'])
 def stop_look(look_id):
     """Stop playing a Look"""
-    # Stop render engine
+    # Stop unified engine look sessions
+    unified_engine.stop_type(PlaybackType.LOOK)
+    # Stop legacy render engine (migration safety net)
     render_engine.stop_rendering()
 
     # Release arbitration if we own it
@@ -9038,7 +8968,12 @@ def migrate_all_route():
     return jsonify({'success': True, 'report': report})
 
 # ─────────────────────────────────────────────────────────
-# Dynamic Effects Routes (smooth fades, staggered patterns)
+# Dynamic Effects Routes (DEPRECATED — use /api/effects/fixture instead)
+# ─────────────────────────────────────────────────────────
+# ⚠️ F06 DEPRECATION: These legacy routes call DynamicEffectsEngine
+# which owns independent timing threads (TASK-0005 violation).
+# New code should use /api/effects/fixture which routes through
+# UnifiedPlaybackEngine. These routes are kept for backward compat.
 # ─────────────────────────────────────────────────────────
 @app.route('/api/effects/christmas', methods=['POST'])
 def start_christmas_effect():

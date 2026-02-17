@@ -1,35 +1,17 @@
 """
-Dynamic Effects Engine - AI-guided patterns with smooth frame-by-frame fades
-Routes ALL output through SSOT for consistent state management.
+Dynamic Effects Engine — DEPRECATED (F06 consolidation)
 
-# ============================================================================
-# ⚠️  AUTHORITY VIOLATION WARNING (TASK-0005)
-# ============================================================================
-#
-# This module contains DynamicEffectsEngine, which ILLEGALLY owns timing loops.
-#
-# Per AETHER Hard Rule 1.1:
-#   "Flask UnifiedPlaybackEngine is the ONLY authority allowed to generate
-#    final DMX output. No other system may run an independent render loop."
-#
-# CURRENT VIOLATION:
-#   - DynamicEffectsEngine spawns threads per effect
-#   - Each effect (christmas_stagger, etc.) runs its own timing loop at 30 FPS
-#   - Effects bypass UnifiedPlaybackEngine's render authority
-#
-# ALLOWED USAGE:
-#   - Effect computation logic may be extracted as UTILITIES
-#   - Called BY UnifiedPlaybackEngine, not independently
-#
-# PROHIBITED USAGE:
-#   - Spawning independent effect threads
-#   - Owning frame timing
-#
-# This will be fixed in Phase 2. Until then, effect starts should log warnings.
-# See TASK_LEDGER.md for full details.
-#
-# TODO: TASK-0005 - Retire DynamicEffectsEngine loops, extract utilities
-# ============================================================================
+New effects should use /api/effects/fixture which routes through
+UnifiedPlaybackEngine. This module is retained for backward compatibility
+with the legacy /api/effects/* routes (christmas, twinkle, smooth, wave,
+strobe, pulse, fade, fire). These legacy routes will be removed once the
+frontend fully migrates to fixture-aware effects.
+
+The effect computation LOGIC (frame interpolation, timing curves, etc.)
+is preserved as reference — UnifiedPlaybackEngine reimplements these
+patterns natively in its own render loop.
+
+See F06 in AETHER architecture remediation plan.
 """
 import logging
 import threading
