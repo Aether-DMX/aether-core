@@ -759,8 +759,9 @@ class ChaseEngine:
 
         chase_id = chase['chase_id']
 
-        # ARBITRATION: Acquire chase ownership
-        if not arbitration.acquire('chase', chase_id):
+        # ARBITRATION: Acquire chase ownership — returns token for TOCTOU safety [F08]
+        arb_token = arbitration.acquire('chase', chase_id)
+        if not arb_token:
             print(f"⚠️ Cannot start chase - arbitration denied (owner: {arbitration.current_owner})", flush=True)
             return False
 
@@ -779,10 +780,10 @@ class ChaseEngine:
         stop_flag = threading.Event()
         self.stop_flags[chase_id] = stop_flag
 
-        # Start chase thread with fade override
+        # Start chase thread with fade override and arbitration token [F08]
         thread = threading.Thread(
             target=self._run_chase,
-            args=(chase, universes, stop_flag, fade_ms_override),
+            args=(chase, universes, stop_flag, fade_ms_override, arb_token),
             daemon=True
         )
         self.running_chases[chase_id] = thread
@@ -837,7 +838,7 @@ class ChaseEngine:
         """Stop all running chases"""
         self.stop_chase(None)
 
-    def _run_chase(self, chase, universes, stop_flag, fade_ms_override=None):
+    def _run_chase(self, chase, universes, stop_flag, fade_ms_override=None, arb_token=None):
         """Chase playback loop - runs in background thread"""
         chase_id = chase['chase_id']
         steps = chase.get('steps', [])
@@ -898,10 +899,10 @@ class ChaseEngine:
                 # TODO: Future improvement - store chase data on ESP nodes and trigger playback
                 # locally for perfect sync. See: sync_chase_to_node() infrastructure already exists.
                 # Would need ESP firmware to handle local chase playback with 'play_chase' command.
-                def send_to_universe(univ, cid, sflag):
+                def send_to_universe(univ, cid, sflag, token):
                     try:
-                        # Pass chase_id and stop_flag for merge layer routing and race condition fix
-                        self._send_step(univ, channels, fade_ms, distribution_mode, chase_id=cid, stop_flag=sflag)
+                        # Pass chase_id, stop_flag, and arb_token for TOCTOU safety [F08]
+                        self._send_step(univ, channels, fade_ms, distribution_mode, chase_id=cid, stop_flag=sflag, arb_token=token)
                     except Exception as e:
                         print(f"❌ Chase step send error (U{univ}): {e}", flush=True)
 
@@ -909,7 +910,7 @@ class ChaseEngine:
                 if stop_flag.is_set():
                     break
 
-                threads = [threading.Thread(target=send_to_universe, args=(univ, chase_id, stop_flag)) for univ in universes]
+                threads = [threading.Thread(target=send_to_universe, args=(univ, chase_id, stop_flag, arb_token)) for univ in universes]
                 for t in threads:
                     t.start()
                 for t in threads:
@@ -937,15 +938,18 @@ class ChaseEngine:
             self.chase_health[chase_id] = {"step": step_index, "last_time": time.time(), "status": "stopped"}
             print(f"⏹️ Chase '{chase['name']}' stopped after {loop_count} loops", flush=True)
 
-    def _send_step(self, universe, channels, fade_ms=0, distribution_mode='unified', chase_id=None, stop_flag=None):
+    def _send_step(self, universe, channels, fade_ms=0, distribution_mode='unified', chase_id=None, stop_flag=None, arb_token=None):
         """Send chase step with intelligent distribution.
 
-        RACE CONDITION FIX: Now routes through merge layer instead of direct write.
-        This ensures proper priority-based merging with effects, scenes, etc.
+        [F08] TOCTOU FIX: Validates arb_token before writing to ensure another
+        engine hasn't acquired arbitration since the chase started.
 
         distribution_mode: 'unified' = replicate to all, 'pixel' = unique per fixture"""
         # Check stop flag BEFORE writing (race condition fix)
         if stop_flag and stop_flag.is_set():
+            return
+        # [F08] Validate arbitration token — reject stale writes
+        if arb_token is not None and not arbitration.validate_token(arb_token):
             return
 
         if not channels:
@@ -1003,8 +1007,8 @@ class ChaseEngine:
                 return
 
         # Fallback: direct write if merge layer not available (legacy behavior)
-        # Arbitration guard: skip if another higher-priority engine owns DMX
-        if arbitration and not arbitration.can_write('chase'):
+        # [F08] Token-validated arbitration guard
+        if arbitration and not arbitration.can_write('chase', token=arb_token):
             return
         content_manager.set_channels(universe, parsed, fade_ms=fade_ms)
 
@@ -1024,10 +1028,17 @@ _pixel_arrays: Dict[str, PixelArrayController] = {}
 class ArbitrationManager:
     """
     Priority-based arbitration for DMX output control.
-    Priority: BLACKOUT(100) > MANUAL(80) > EFFECT(60) > CHASE(40) > SCENE(20) > IDLE(0)
+    Priority: BLACKOUT(100) > MANUAL(80) > EFFECT(60) > LOOK(50) > SEQUENCE(45) > CHASE(40) > SCENE(20) > IDLE(0)
 
     SSOT ENFORCEMENT: All DMX write attempts must check arbitration first.
     Rejected writes are tracked for diagnostics.
+
+    [F08] TOKEN-BASED TOCTOU FIX:
+    acquire() returns a monotonic token (int). Each new acquire increments the
+    token. can_write() and validate_token() check that the caller's token matches
+    the current token — if another engine acquired in between, the token is stale
+    and the write is rejected. This prevents the race where Engine A acquires,
+    Engine B force-acquires, and Engine A's subsequent write goes through unchecked.
     """
     PRIORITY = {'blackout': 100, 'manual': 80, 'effect': 60, 'look': 50, 'sequence': 45, 'chase': 40, 'scene': 20, 'idle': 0}
 
@@ -1038,20 +1049,28 @@ class ArbitrationManager:
         self.last_change = None
         self.lock = threading.Lock()
         self.history = []
+        # [F08] Monotonic token — incremented on every successful acquire
+        self._token = 0
         # SSOT diagnostics tracking
         self.rejected_writes = []  # Track rejected acquire attempts
+        self.stale_writes = 0  # [F08] Count of writes rejected due to stale token
         self.last_writer = None  # Last service that successfully wrote
         self.last_scene_id = None  # Last scene played
         self.last_scene_time = None  # When last scene was played
         self.writes_per_service = {}  # Count writes per service type
 
     def acquire(self, owner_type, owner_id=None, force=False):
+        """Acquire arbitration. Returns token (int > 0) on success, 0 on failure.
+
+        [F08] The returned token must be passed to can_write() or validate_token()
+        before writing DMX. A stale token (from a previous acquire) will be rejected.
+        For backward compatibility, the token is also truthy (non-zero = success).
+        """
         with self.lock:
             now = datetime.now().isoformat()
             if self.blackout_active and owner_type != 'blackout':
-                # Track rejected write
                 self._track_rejection(owner_type, owner_id, 'blackout_active', now)
-                return False
+                return 0
             new_pri = self.PRIORITY.get(owner_type, 0)
             cur_pri = self.PRIORITY.get(self.current_owner, 0)
             if force or new_pri >= cur_pri:
@@ -1060,18 +1079,31 @@ class ArbitrationManager:
                 self.current_id = owner_id
                 self.last_change = now
                 self.last_writer = owner_type
+                # [F08] Increment token — invalidates all previous tokens
+                self._token += 1
+                token = self._token
                 # Track scene plays specifically
                 if owner_type == 'scene':
                     self.last_scene_id = owner_id
                     self.last_scene_time = now
                 # Track writes per service
                 self.writes_per_service[owner_type] = self.writes_per_service.get(owner_type, 0) + 1
-                self.history.append({'time': now, 'from': old, 'to': owner_type, 'id': owner_id, 'action': 'acquire'})
+                self.history.append({'time': now, 'from': old, 'to': owner_type, 'id': owner_id, 'action': 'acquire', 'token': token})
                 if len(self.history) > 50: self.history = self.history[-50:]
-                print(f"🎯 Arbitration: {old} → {owner_type}", flush=True)
-                return True
-            # Track rejected write - lower priority
+                print(f"🎯 Arbitration: {old} → {owner_type} (token={token})", flush=True)
+                return token
             self._track_rejection(owner_type, owner_id, f'priority_too_low (current: {self.current_owner})', now)
+            return 0
+
+    def validate_token(self, token):
+        """[F08] Check if a token is still valid (i.e., no one acquired since).
+
+        Returns True if the token matches the current token, False if stale.
+        """
+        with self.lock:
+            if token == self._token:
+                return True
+            self.stale_writes += 1
             return False
 
     def _track_rejection(self, owner_type, owner_id, reason, timestamp):
@@ -1093,16 +1125,18 @@ class ArbitrationManager:
                 old = self.current_owner
                 self.current_owner = 'idle'
                 self.current_id = None
+                self._token += 1  # [F08] Invalidate tokens on release too
                 self.last_change = datetime.now().isoformat()
-                self.history.append({'time': self.last_change, 'from': old, 'to': 'idle', 'action': 'release'})
+                self.history.append({'time': self.last_change, 'from': old, 'to': 'idle', 'action': 'release', 'token': self._token})
                 if len(self.history) > 50: self.history = self.history[-50:]
 
     def set_blackout(self, active):
         with self.lock:
             self.blackout_active = active
             self.current_owner = 'blackout' if active else 'idle'
+            self._token += 1  # [F08] Blackout invalidates all tokens
             self.last_change = datetime.now().isoformat()
-            print(f"{'⬛ BLACKOUT ACTIVE' if active else '🔓 Blackout released'}", flush=True)
+            print(f"{'⬛ BLACKOUT ACTIVE' if active else '🔓 Blackout released'} (token={self._token})", flush=True)
 
     def get_status(self):
         with self.lock:
@@ -1111,6 +1145,8 @@ class ArbitrationManager:
                 'current_id': self.current_id,
                 'blackout_active': self.blackout_active,
                 'last_change': self.last_change,
+                'token': self._token,
+                'stale_writes': self.stale_writes,
                 'last_writer': self.last_writer,
                 'last_scene_id': self.last_scene_id,
                 'last_scene_time': self.last_scene_time,
@@ -1119,10 +1155,23 @@ class ArbitrationManager:
                 'history': self.history[-10:]
             }
 
-    def can_write(self, owner_type):
+    def can_write(self, owner_type, token=None):
+        """Check if owner_type can currently write.
+
+        [F08] If token is provided, also validates it hasn't been superseded.
+        This prevents TOCTOU races where another engine acquired between
+        the caller's acquire() and this can_write() check.
+        """
         with self.lock:
             if self.blackout_active and owner_type != 'blackout': return False
-            return self.current_owner == owner_type or self.current_owner == 'idle'
+            owner_ok = self.current_owner == owner_type or self.current_owner == 'idle'
+            if not owner_ok:
+                return False
+            # [F08] Token validation — reject stale tokens
+            if token is not None and token != self._token:
+                self.stale_writes += 1
+                return False
+            return True
 
 arbitration = ArbitrationManager()
 
