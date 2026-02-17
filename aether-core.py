@@ -2577,7 +2577,7 @@ class NodeManager:
                                     FROM fixtures f WHERE f.universe = nodes.universe
                                 ), 1)
                             ))
-                            WHERE is_paired = 1 AND ip IS NOT NULL
+                            WHERE is_paired = 1 AND ip IS NOT NULL AND status = 'online'
                         """)
                         conn.commit()
                         break
@@ -2588,10 +2588,11 @@ class NodeManager:
                             raise  # Give up after 5 attempts (2s total backoff)
 
                 # Now fetch node cache with channel_ceiling (read-only, no lock contention)
+                # [F20] Exclude offline/stale nodes — don't send DMX to dead IPs
                 c.execute("""
                     SELECT universe, ip, channel_start, channel_end, via_seance, seance_ip, channel_ceiling
                     FROM nodes
-                    WHERE is_paired = 1 AND ip IS NOT NULL AND type = 'wifi'
+                    WHERE is_paired = 1 AND ip IS NOT NULL AND type = 'wifi' AND status = 'online'
                 """)
                 new_cache = {}
                 for row in c.fetchall():
@@ -3065,12 +3066,23 @@ class NodeManager:
         c = conn.cursor()
         cutoff = (datetime.now() - timedelta(seconds=STALE_TIMEOUT)).isoformat()
         # Find which nodes are going offline BEFORE updating
-        c.execute('SELECT node_id FROM nodes WHERE last_seen < ? AND status = "online" AND is_builtin = 0', (cutoff,))
-        stale_node_ids = [row['node_id'] for row in c.fetchall()]
+        c.execute('SELECT node_id, ip, name FROM nodes WHERE last_seen < ? AND status = "online" AND is_builtin = 0', (cutoff,))
+        stale_nodes = [dict(row) for row in c.fetchall()]
+        stale_node_ids = [n['node_id'] for n in stale_nodes]
         c.execute('UPDATE nodes SET status = "offline" WHERE last_seen < ? AND status = "online" AND is_builtin = 0', (cutoff,))
         if c.rowcount > 0:
             conn.commit()
             self.broadcast_status()
+            # [F20] Emit specific stale alert to frontend via SocketIO
+            for node in stale_nodes:
+                nid = node['node_id']
+                print(f"⚠️ [F20] Node {nid} ({node.get('ip','?')}) went stale/offline", flush=True)
+                audit_log('node_stale', node_id=nid, ip=node.get('ip'), name=node.get('name'))
+            socketio.emit('node_stale', {
+                'node_ids': stale_node_ids,
+                'count': len(stale_node_ids),
+                'timestamp': datetime.now().isoformat()
+            })
             # Mark all RDM devices on stale nodes as offline in live_inventory
             for node_id in stale_node_ids:
                 try:
@@ -3078,6 +3090,35 @@ class NodeManager:
                 except Exception as e:
                     print(f"⚠️ RDM inventory update failed for stale node {node_id}: {e}", flush=True)
         conn.close()
+
+        # [F20] Periodic reconnection probing — ping offline nodes every ~90s
+        # (stale_checker runs every 30s, so probe on every 3rd call)
+        if not hasattr(self, '_stale_probe_counter'):
+            self._stale_probe_counter = 0
+        self._stale_probe_counter += 1
+        if self._stale_probe_counter % 3 == 0:
+            self._probe_offline_nodes()
+
+    def _probe_offline_nodes(self):
+        """[F20] Ping offline nodes to detect reconnection without heartbeat."""
+        conn = get_db()
+        c = conn.cursor()
+        c.execute('SELECT node_id, ip FROM nodes WHERE status = "offline" AND ip IS NOT NULL AND is_builtin = 0')
+        offline = [dict(row) for row in c.fetchall()]
+        conn.close()
+        for node in offline[:5]:  # Probe max 5 per cycle to avoid blocking
+            ip = node.get('ip')
+            if not ip or ip == 'localhost':
+                continue
+            try:
+                result = self.send_udpjson_reliable(ip, AETHER_UDPJSON_PORT,
+                    {"v": self.PROTOCOL_VERSION, "type": "ping", "seq": self._next_seq()},
+                    retries=1, timeout_ms=300)
+                if result.get('success'):
+                    print(f"✅ [F20] Offline node {node['node_id']} responded to probe — reconnecting", flush=True)
+                    audit_log('node_reconnect_probe', node_id=node['node_id'], ip=ip)
+            except Exception:
+                pass  # Expected — node is offline
 
     def broadcast_status(self):
         nodes = self.get_all_nodes()
