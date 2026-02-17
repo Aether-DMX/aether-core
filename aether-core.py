@@ -1916,10 +1916,10 @@ def get_db():
         except (sqlite3.ProgrammingError, sqlite3.OperationalError):
             # Connection was closed or broken — create a new one
             _db_local.connection = None
-    conn = sqlite3.connect(DATABASE, check_same_thread=False, timeout=10)
+    conn = sqlite3.connect(DATABASE, check_same_thread=False, timeout=10, isolation_level=None)
     conn.row_factory = sqlite3.Row
     conn.execute('PRAGMA journal_mode=WAL')       # [F04] WAL for concurrent access
-    conn.execute('PRAGMA busy_timeout=15000')       # [F04] Wait up to 15s instead of failing (increased from 5s for RDM/discovery contention)
+    conn.execute('PRAGMA busy_timeout=15000')       # [F04] Wait up to 15s instead of failing
     conn.execute('PRAGMA synchronous=NORMAL')      # [F04] Safe with WAL, faster than FULL
     conn.execute('PRAGMA cache_size=-8000')         # [F04] 8MB cache per connection
     _db_local.connection = conn
