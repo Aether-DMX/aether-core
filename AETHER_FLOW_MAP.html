@@ -237,12 +237,12 @@
 <body>
 <div class="header">
   <h1>AETHER DMX &mdash; System Flow Map</h1>
-  <div class="meta">Feb 16 2026 &bull; Commit ed219ef &bull; Click any node for details</div>
+  <div class="meta">Feb 17 2026 &bull; 20/20 Flaws FIXED &bull; Click any node for details</div>
 </div>
 <div class="tab-bar">
   <button class="tab active" onclick="switchTab('arch')">Full Architecture</button>
   <button class="tab" onclick="switchTab('changelog')">Changelog (5 Fixes)</button>
-  <button class="tab" onclick="switchTab('redline')" style="color:var(--red)">&#9888; Redlines (20 Flaws)</button>
+  <button class="tab" onclick="switchTab('redline')" style="color:var(--green)">&#10003; Redlines (20/20 FIXED)</button>
 </div>
 <div class="legend">
   <div class="legend-item"><div class="legend-dot green"></div> Fixed</div>
@@ -417,7 +417,7 @@
       <g class="node-box" onclick="showInfo('unified-engine')">
         <rect class="node-rect" x="22" y="328" width="120" height="36" fill="#161b22" stroke="var(--accent)"/>
         <text class="node-label" font-size="9" x="82" y="344">UnifiedPlayback</text>
-        <text class="node-sub" font-size="7" x="82" y="356">30fps SSOT authority</text>
+        <text class="node-sub" font-size="7" x="82" y="356">40fps SSOT authority</text>
       </g>
       <g class="node-box" onclick="showInfo('render-engine')">
         <rect class="node-rect" x="150" y="328" width="105" height="36" fill="#161b22" stroke="var(--yellow)"/>
@@ -446,9 +446,9 @@
         <text class="node-sub" font-size="7" x="531" y="356">TASK-0007</text>
       </g>
       <g class="node-box" onclick="showInfo('playback-ctrl')">
-        <rect class="node-rect" x="587" y="328" width="110" height="36" fill="#161b22" stroke="#30363d" stroke-dasharray="3 2"/>
-        <text class="node-label" font-size="9" x="642" y="344" fill="var(--text-dim)">PlaybackCtrl</text>
-        <text class="node-sub" font-size="7" x="642" y="356">Legacy (duplicate)</text>
+        <rect class="node-rect" x="587" y="328" width="110" height="36" fill="#161b22" stroke="var(--green)" stroke-dasharray="3 2"/>
+        <text class="node-label" font-size="9" x="642" y="344" fill="var(--green)">PlaybackCtrl</text>
+        <text class="node-sub" font-size="7" x="642" y="356">Deprecated (F06)</text>
       </g>
 
       <!-- Row 3: Support modules -->
@@ -714,7 +714,7 @@
       <!-- ========== SECTION: DMX PIPELINE (right side) ========== -->
       <rect class="section-bg" x="770" y="520" width="500" height="120"/>
       <text class="section-label" font-size="9" x="782" y="534">DMX OUTPUT PIPELINE</text>
-      <text font-family="monospace" font-size="9" fill="var(--text)" x="792" y="554">PlaybackSession (30fps)</text>
+      <text font-family="monospace" font-size="9" fill="var(--text)" x="792" y="554">PlaybackSession (40fps)</text>
       <text font-family="monospace" font-size="9" fill="var(--text-dim)" x="820" y="568">&rarr; ModifierRenderer.render()</text>
       <text font-family="monospace" font-size="9" fill="var(--text-dim)" x="820" y="582">&rarr; MergeLayer.compute_merge() [HTP/LTP]</text>
       <text font-family="monospace" font-size="9" fill="var(--accent)" x="820" y="596">&rarr; ContentManager.set_channels() [SSOT]</text>
@@ -750,7 +750,7 @@
         <g class="stick-bubble">
           <rect x="10" y="-40" width="108" height="18" rx="8" fill="#1c2128" stroke="#58a6ff" stroke-width="0.8"/>
           <polygon points="10,-22 15,-27 20,-22" fill="#1c2128" stroke="#58a6ff" stroke-width="0.8"/>
-          <text font-size="7.5" fill="#fff" x="15" y="-28" font-family="monospace">167 get_db() calls. WHY</text>
+          <text font-size="7.5" fill="#fff" x="15" y="-28" font-family="monospace">WAL mode + thread pool. zen 🧘</text>
         </g>
       </g></g>
 
@@ -788,7 +788,7 @@
         <g class="stick-bubble" style="animation-delay: 0.5s;">
           <rect x="-110" y="-40" width="100" height="18" rx="8" fill="#1c2128" stroke="#bc8cff" stroke-width="0.8"/>
           <polygon points="-10,-22 -15,-27 -20,-22" fill="#1c2128" stroke="#bc8cff" stroke-width="0.8"/>
-          <text font-size="7.5" fill="#fff" x="-106" y="-28" font-family="monospace">no ACK? pray harder 🙏</text>
+          <text font-size="7.5" fill="#fff" x="-106" y="-28" font-family="monospace">ACK/retry now. we SHIP 📦</text>
         </g>
       </g>
 
@@ -806,7 +806,7 @@
         <g class="stick-bubble" style="animation-delay: 1.5s;">
           <rect x="12" y="-40" width="118" height="18" rx="8" fill="#1c2128" stroke="#3fb950" stroke-width="0.8"/>
           <polygon points="12,-22 17,-27 22,-22" fill="#1c2128" stroke="#3fb950" stroke-width="0.8"/>
-          <text font-size="7.5" fill="#fff" x="17" y="-28" font-family="monospace">CORS was open?! lmaooo</text>
+          <text font-size="7.5" fill="#fff" x="17" y="-28" font-family="monospace">20/20 FIXED. we vibing ✨</text>
         </g>
       </g></g>
 
@@ -827,7 +827,7 @@
         <g class="stick-bubble" style="animation-delay: 2s;">
           <rect x="28" y="-20" width="128" height="18" rx="8" fill="#1c2128" stroke="#ff8800" stroke-width="0.8"/>
           <polygon points="28,-2 33,-7 38,-2" fill="#1c2128" stroke="#ff8800" stroke-width="0.8"/>
-          <text font-size="7.5" fill="#fff" x="33" y="-8" font-family="monospace">race condition? that's a feature</text>
+          <text font-size="7.5" fill="#fff" x="33" y="-8" font-family="monospace">tokens + audit. sleep tight 😴</text>
         </g>
       </g></g>
 
@@ -844,7 +844,7 @@
         <g class="stick-bubble" style="animation-delay: 0.7s;">
           <rect x="14" y="-38" width="128" height="18" rx="8" fill="#1c2128" stroke="#ff4444" stroke-width="0.8"/>
           <polygon points="14,-22 19,-27 24,-22" fill="#1c2128" stroke="#ff4444" stroke-width="0.8"/>
-          <text font-size="7.5" fill="#fff" x="19" y="-26" font-family="monospace">8,446 lines. one file. I quit</text>
+          <text font-size="7.5" fill="#fff" x="19" y="-26" font-family="monospace">28 blueprints! I can breathe 🎉</text>
         </g>
       </g></g>
 
@@ -880,7 +880,7 @@
         <g class="stick-bubble" style="animation-delay: 3s;">
           <rect x="-138" y="-40" width="134" height="18" rx="8" fill="#1c2128" stroke="#e2b750" stroke-width="0.8"/>
           <polygon points="-6,-22 -11,-27 -16,-22" fill="#1c2128" stroke="#e2b750" stroke-width="0.8"/>
-          <text font-size="7.5" fill="#fff" x="-134" y="-28" font-family="monospace">1 thread per write. send help</text>
+          <text font-size="7.5" fill="#fff" x="-134" y="-28" font-family="monospace">rate-limited + retry loop 💪</text>
         </g>
       </g></g>
 
@@ -932,7 +932,7 @@
         <g class="stick-bubble" style="animation-delay: 0.3s;">
           <rect x="-80" y="-40" width="148" height="18" rx="8" fill="#1c2128" stroke="#ff4444" stroke-width="0.8"/>
           <polygon points="-2,-22 -7,-27 -12,-22" fill="#1c2128" stroke="#ff4444" stroke-width="0.8"/>
-          <text font-size="7.5" fill="#fff" x="-76" y="-28" font-family="monospace">BOTH fading?? pick a lane bro</text>
+          <text font-size="7.5" fill="#fff" x="-76" y="-28" font-family="monospace">ESP32 sole authority now. peace ✌️</text>
         </g>
       </g>
 
@@ -952,7 +952,7 @@
         <g class="stick-bubble" style="animation-delay: 2.2s;">
           <rect x="14" y="-40" width="138" height="18" rx="8" fill="#1c2128" stroke="#ff6b6b" stroke-width="0.8"/>
           <polygon points="14,-22 19,-27 24,-22" fill="#1c2128" stroke="#ff6b6b" stroke-width="0.8"/>
-          <text font-size="7.5" fill="#fff" x="19" y="-28" font-family="monospace">87 bare excepts. I mop tears 🧹</text>
+          <text font-size="7.5" fill="#fff" x="19" y="-28" font-family="monospace">audit log catches everything now 📋</text>
         </g>
       </g></g>
 
@@ -1117,8 +1117,8 @@
       </defs>
 
       <!-- Title -->
-      <text font-family="-apple-system,'Segoe UI',sans-serif" font-size="14" fill="var(--text)" font-weight="700" x="20" y="24">ARCHITECTURE REDLINES — 20 Identified Flaws</text>
-      <text font-family="-apple-system,'Segoe UI',sans-serif" font-size="10" fill="var(--text-dim)" x="20" y="40">Click any flaw marker for details. Dashed rings = affected components.</text>
+      <text font-family="-apple-system,'Segoe UI',sans-serif" font-size="14" fill="var(--green)" font-weight="700" x="20" y="24">ARCHITECTURE REDLINES — 20/20 FLAWS RESOLVED ✅</text>
+      <text font-family="-apple-system,'Segoe UI',sans-serif" font-size="10" fill="var(--text-dim)" x="20" y="40">All flaws fixed across 4 sprints. Click any marker for details.</text>
 
       <!-- Severity Legend -->
       <rect x="700" y="8" width="360" height="36" fill="rgba(22,27,34,0.7)" rx="6" stroke="var(--border)" stroke-width="0.5"/>
@@ -1212,9 +1212,9 @@
       <!-- 40Hz Refresh -->
       <rect x="470" y="412" width="120" height="28" rx="4" fill="#161b22" stroke="var(--accent)" stroke-width="1"/>
       <text font-size="8" fill="var(--text)" text-anchor="middle" x="530" y="430" font-weight="600">40Hz Refresh Loop</text>
-      <!-- CORS label -->
-      <rect x="470" y="376" width="120" height="26" rx="4" fill="#161b22" stroke="var(--red)" stroke-width="1"/>
-      <text font-size="7" fill="var(--red)" text-anchor="middle" x="530" y="392" font-weight="600">CORS origins="*"</text>
+      <!-- CORS label — FIXED (F05) -->
+      <rect x="470" y="376" width="120" height="26" rx="4" fill="#161b22" stroke="var(--green)" stroke-width="1"/>
+      <text font-size="7" fill="var(--green)" text-anchor="middle" x="530" y="392" font-weight="600">CORS ALLOWED (F05)</text>
 
       <!-- Cloud/Supabase -->
       <rect class="section-bg" x="730" y="60" width="360" height="160"/>
@@ -1227,8 +1227,8 @@
       <text font-size="8" fill="var(--text)" text-anchor="middle" x="807" y="140" font-weight="600">ID Mapping</text>
       <rect x="880" y="122" width="130" height="30" rx="4" fill="#161b22" stroke="#30363d" stroke-width="1"/>
       <text font-size="8" fill="var(--text)" text-anchor="middle" x="945" y="140" font-weight="600">@sync_to_cloud</text>
-      <text font-size="8" fill="var(--text-dim)" x="742" y="172">11 tables • No conflict resolution</text>
-      <text font-size="8" fill="var(--text-dim)" x="742" y="184">One-way push • No rate limiting</text>
+      <text font-size="8" fill="var(--green)" x="742" y="172">11 tables • updated_at conflict stamps (F19)</text>
+      <text font-size="8" fill="var(--green)" x="742" y="184">Rate-limited sync • Background retry (F19)</text>
 
       <!-- Transport -->
       <rect class="section-bg" x="10" y="570" width="700" height="50"/>
@@ -1387,16 +1387,16 @@
       <!-- REDLINE MARKERS — LOW (grey circles) -->
       <!-- ========================================================================== -->
 
-      <!-- FLAW-16: No Audit Log — near ArbitrationMgr -->
+      <!-- FLAW-16: No Audit Log — FIXED -->
       <g class="redline-marker" onclick="showFlaw('F16')">
-        <circle cx="185" cy="306" r="10" fill="#888888"/>
+        <circle cx="185" cy="306" r="10" fill="#44cc44"/>
         <text class="flaw-badge" font-size="7" fill="#fff" text-anchor="middle" x="185" y="310">F16</text>
       </g>
 
-      <!-- FLAW-17: FPS Mismatch 30 vs 40 — between EffectsEngine and 40Hz -->
+      <!-- FLAW-17: FPS Mismatch — FIXED (all engines 40fps) -->
       <g class="redline-marker" onclick="showFlaw('F17')">
-        <line class="redline-connector" stroke="#888888" x1="383" y1="352" x2="530" y2="412"/>
-        <circle cx="456" cy="382" r="10" fill="#888888"/>
+        <line class="redline-connector" stroke="#44cc44" x1="383" y1="352" x2="530" y2="412"/>
+        <circle cx="456" cy="382" r="10" fill="#44cc44"/>
         <text class="flaw-badge" font-size="7" fill="#fff" text-anchor="middle" x="456" y="386">F17</text>
       </g>
 
@@ -1407,16 +1407,16 @@
         <text class="flaw-badge" font-size="7" fill="#fff" text-anchor="middle" x="260" y="86">F18</text>
       </g>
 
-      <!-- FLAW-19: Supabase No Conflict Resolution — in cloud section -->
+      <!-- FLAW-19: Supabase Conflict — FIXED (updated_at + rate limit) -->
       <g class="redline-marker" onclick="showFlaw('F19')">
-        <circle cx="1050" cy="172" r="10" fill="#888888"/>
+        <circle cx="1050" cy="172" r="10" fill="#44cc44"/>
         <text class="flaw-badge" font-size="7" fill="#fff" text-anchor="middle" x="1050" y="176">F19</text>
       </g>
 
-      <!-- FLAW-20: Stale Node No Escalation — between discovery and nodes -->
+      <!-- FLAW-20: Stale Node Escalation — FIXED (alert + DMX skip + probe) -->
       <g class="redline-marker" onclick="showFlaw('F20')">
-        <line class="redline-connector" stroke="#888888" x1="172" y1="614" x2="268" y2="658"/>
-        <circle cx="220" cy="640" r="10" fill="#888888"/>
+        <line class="redline-connector" stroke="#44cc44" x1="172" y1="614" x2="268" y2="658"/>
+        <circle cx="220" cy="640" r="10" fill="#44cc44"/>
         <text class="flaw-badge" font-size="7" fill="#fff" text-anchor="middle" x="220" y="644">F20</text>
       </g>
 
@@ -1529,28 +1529,28 @@ const info = {
   'stores': {title:'23 Zustand Stores', content:'<b>Active:</b> dmxStore, lookStore, fixtureStore, fixtureLibraryStore, nodeStore, nodeGroupStore, rdmStore, unifiedPlaybackStore, cueStackStore, timelineStore, pixelArrayStore, aiStore, authStore, chatStore, groupStore, favoritesStore, toastStore, uiStore, backgroundStore, scheduleStore<br><br><b>Legacy:</b> sceneStore, chaseStore<br><b>Unused (0 imports):</b> intentContextStore'},
   'ui-components': {title:'Key UI Components', content:'<b>PlaybackControlModal:</b> Post-apply effects stacking (14 effects in 4 categories), loop/crossfade/speed/master dimmer, Save As, AI Optimize<br><b>ApplyTargetModal:</b> Universe selection + fade time<br><b>VoiceMicButton:</b> Push-to-talk for STT<br><b>AIChatPanel:</b> AI conversation UI<br><b>RDMDeviceList:</b> Per-node RDM device management<br><b>NodeManagement:</b> Full node config UI'},
   'layouts': {title:'3 Layout Modes', content:'<b>Desktop:</b> >= 1024px width, full sidebar nav<br><b>Kiosk:</b> Pi touchscreen (800x480 landscape), Chromium fullscreen via aether-kiosk.service<br><b>Mobile:</b> Phone portrait, bottom nav, swipe gestures<br><br>Detection via window width/height + touch heuristics in App.jsx'},
-  'socketio': {title:'SocketIO (10 Events)', content:'<b>Events received from Flask:</b><br>dmx_state (10fps throttle)<br>playback_update<br>nodes_update<br>scenes_update<br>chases_update<br>fixtures_update<br>rdm_update<br>preview_frame<br>settings_update<br>screen:context<br><br>Updates corresponding Zustand stores on receipt.'},
-  'api-client': {title:'API Client', content:'<b>Pattern:</b> axios/fetch calls via Express proxy on :3000<br><br><b>Exception:</b> lookStore.playLook() and sequence play call Flask :8891 directly via getAetherCore() — bypasses Express proxy for lower latency on playback control.'},
+  'socketio': {title:'SocketIO (11 Events)', content:'<b>Events received from Flask:</b><br>dmx_state (10fps throttle)<br>playback_update<br>nodes_update<br>scenes_update<br>chases_update<br>fixtures_update<br>rdm_update<br>preview_frame<br>settings_update<br>screen:context<br><span style="color:var(--green)">node_stale (F20 — escalation alert)</span><br><br>Updates corresponding Zustand stores on receipt.'},
+  'api-client': {title:'API Client', content:'<b>Pattern:</b> All API calls via Express proxy on :3000 (F11 unified)<br><br><b>Unified:</b> 31 hardcoded :8891 references changed to :3000. All calls route through Express middleware (auth, logging, rate limiting).<br><b>WebSocket:</b> ws:// stays direct to Flask :8891 (SocketIO not proxied).<br><b>Catch-all:</b> proxy.js wildcard route forwards unmatched /api/* to Flask.'},
   'ai-chat-ui': {title:'AI Chat + Voice', content:'<b>AIChatPanel:</b> Full chat UI in side panel or ChatPage view<br><b>VoiceMicButton:</b> Press-and-hold, records via MediaRecorder<br><b>useVoiceInput.js:</b> Sends audio FormData to POST /api/stt<br><b>STT:</b> faster-whisper (tiny model, CPU int8) on Flask :8891<br><br>HTTPS required for mic access in browser.'},
   'kiosk': {title:'Chromium Kiosk', content:'<b>Service:</b> aether-kiosk.service<br><b>Resolution:</b> 800x480 (Pi 5 official touchscreen)<br><b>Mode:</b> Fullscreen Chromium, no URL bar<br><b>Target:</b> http://localhost:3000'},
   'screensaver': {title:'Screensaver', content:'<b>File:</b> components/Screensaver.jsx<br><b>Features:</b> Floating logo, clock, scanlines, vignette<br><b>Sheen-wave:</b> Subtle diagonal light sweep — opacity 0.03/0.06, 3s animation, 8s interval<br><b>Background:</b> Both screensaver and Dashboard use /screensaver.png (unified Feb 2026)'},
-  'proxy-routes': {title:'Express Proxy Routes', content:'<b>proxy.js (15KB):</b> 70+ Flask endpoints proxied<br>Forwards to http://localhost:8891<br>Adds error handling + response normalization<br><br><b>Pattern:</b> Frontend -> Express :3000 -> Flask :8891 -> response'},
+  'proxy-routes': {title:'Express Proxy Routes', content:'<b>proxy.js (15KB):</b> 70+ Flask endpoints explicitly proxied<br>Forwards to http://localhost:8891<br>Adds error handling + response normalization<br><br><span class="badge green">F11</span> Added catch-all wildcard route: router.all("*") forwards any unmatched /api/* to Flask. New endpoints work without manual proxy registration.<br><br><b>Pattern:</b> Frontend -> Express :3000 -> Flask :8891 -> response'},
   'ai-orchestrator': {title:'AIOrchestrator (1,378 LOC)', content:'<b>File:</b> backend/src/services/AIOrchestrator.js<br><b>Features:</b><br>- Claude API orchestration with tool use<br>- buildContextPrompt(): compact one-liner live state (~80% fewer tokens)<br>- getContext(): fetches from 7 Flask endpoints per message<br>- Session memory (24h TTL)<br>- Confirmation tiers (safe/low/medium/high)<br>- Streaming + non-streaming modes<br>- Max 5 recursive tool calls<br><br><b>ToolBridge (10 tools):</b> dmx_control, show, show_builder, effects, fixtures, groups, diagnostics, nodes, playback, system<br><br><b>System prompt:</b> 107 lines (was 643, 86% reduction Feb 2026)'},
   'local-intent': {title:'LocalIntentService', content:'<b>File:</b> backend/src/services/LocalIntentService.js<br><b>Purpose:</b> Offline fallback when Claude API is unreachable<br><b>Parses:</b> Basic intents from user text (play, stop, blackout, etc.)<br><b>Triggers:</b> Corresponding Flask API calls directly'},
   'express-routes': {title:'8 Express Route Files', content:'<b>proxy.js:</b> Main Flask proxy (70+ endpoints)<br><b>ai.js:</b> AI chat endpoints<br><b>dmx.js:</b> DMX routes (partially redundant)<br><b>chase.js:</b> Chase routes (partially redundant)<br><b>scene.js:</b> Scene routes (partially redundant)<br><b>groups.js:</b> Group management<br><b>nodes.js:</b> Node management<br><b>settings.js:</b> App settings'},
   'stt': {title:'Speech-to-Text', content:'<b>Endpoint:</b> POST /api/stt (Flask :8891)<br><b>Engine:</b> faster-whisper, tiny model, CPU int8<br><b>Loading:</b> Lazy-loaded on first use<br><b>Frontend:</b> useVoiceInput.js hook + VoiceMicButton component<br><b>Note:</b> HTTPS required for browser mic access'},
-  'flask-api': {title:'Flask API (186+ routes)', content:'<b>File:</b> aether-core.py (5,769 LOC + 28 blueprints)<br><b>Port:</b> 8891<br><b>Key endpoints:</b><br>/api/dmx/set — SSOT channel write<br>/api/looks, /api/sequences — CRUD<br>/api/scenes, /api/chases — Legacy CRUD<br>/api/shows — Timeline shows<br>/api/effects/* — Dynamic effects<br>/api/fixtures — Fixture management<br>/api/nodes — Node management<br>/api/playback/* — Playback control<br>/api/cue-stacks — Cue management<br>/api/health — Health check<br>/api/stt — Speech-to-text<br>/api/cloud/* — Supabase sync<br>/api/rdm/* — RDM device management'},
-  'arbitration': {title:'ArbitrationManager', content:'<b>File:</b> aether-core.py:931<br><b>Priority ladder:</b><br>BLACKOUT=100, MANUAL=80, EFFECT=60,<br>LOOK=50, SEQUENCE=45, CHASE=40,<br>SCENE=20, IDLE=0<br><br><b>Methods:</b> acquire(), release(), can_write(), set_blackout(), get_status()<br><b>Diagnostics:</b> Tracks last 20 rejections, last 10 history entries, writes_per_service<br><br><span class="badge yellow">MITIGATED</span> Beta 1: added arb guards to RenderEngine + ChaseEngine fallback'},
+  'flask-api': {title:'Flask API (186+ routes)', content:'<b>File:</b> aether-core.py (5,769 LOC kernel + 28 blueprints)<br><b>Port:</b> 8891<br><b>Architecture:</b> God file decomposed (F02). Routes in blueprints/, kernel retains classes + singletons.<br><b>Key endpoints:</b><br>/api/dmx/set — SSOT channel write<br>/api/looks, /api/sequences — CRUD<br>/api/scenes, /api/chases — Legacy CRUD<br>/api/shows — Timeline shows<br>/api/effects/* — Dynamic effects<br>/api/fixtures — Fixture management<br>/api/nodes — Node management<br>/api/playback/* — Playback control<br>/api/cue-stacks — Cue management<br>/api/health — Enhanced health (F01/F04/F13)<br>/api/audit — Audit log (F16)<br>/api/stt — Speech-to-text<br>/api/cloud/* — Supabase sync<br>/api/rdm/* — RDM device management'},
+  'arbitration': {title:'ArbitrationManager', content:'<b>File:</b> aether-core.py:931<br><b>Priority ladder:</b><br>BLACKOUT=100, MANUAL=80, EFFECT=60,<br>LOOK=50, SEQUENCE=45, CHASE=40,<br>SCENE=20, IDLE=0<br><br><b>Methods:</b> acquire(), release(), can_write(token=), validate_token(), set_blackout(), get_status()<br><b>Diagnostics:</b> Tracks last 20 rejections, last 10 history, writes_per_service, stale_writes counter<br><br><span class="badge green">F08</span> Token-based TOCTOU prevention — monotonic tokens invalidate stale callers<br><span class="badge green">F16</span> All acquires/releases/rejections/blackout → persistent audit log'},
   'dmx-state': {title:'DMXStateManager', content:'<b>File:</b> aether-core.py:351<br><b>Purpose:</b> SSOT for all DMX channel values across all universes<br><b>Thread safety:</b> self.lock (threading.Lock)<br><b>Features:</b> Fade interpolation, master dimmer, per-universe state<br><b>Key methods:</b> set_channels(), get_output_values(), get_universe(), blackout()<br><br>Written to by ContentManager. Read by 40Hz refresh loop for UDP dispatch.'},
   'content-mgr': {title:'ContentManager', content:'<b>File:</b> aether-core.py:3808<br><b>Purpose:</b> THE SSOT write point — all DMX changes flow through here<br><b>set_channels():</b><br>1. Updates DMXStateManager<br>2. Builds full 512-ch frame<br>3. Gets nodes from NodeManager<br>4. Sends UDPJSON to each node<br>5. Emits SocketIO event<br><br>Called by: all playback engines, faders, API, effects'},
-  'node-manager': {title:'NodeManager', content:'<b>File:</b> aether-core.py:1886<br><b>Purpose:</b> Node registry, UDPJSON dispatch, universe-to-node mapping<br><b>Discovery:</b> Listens on UDP 9999 for node heartbeats<br><b>Config:</b> Sends on UDP 8888<br><b>DMX:</b> Sends on UDP 6455<br><b>Stale detection:</b> 60s without heartbeat'},
+  'node-manager': {title:'NodeManager', content:'<b>File:</b> aether-core.py:1886<br><b>Purpose:</b> Node registry, UDPJSON dispatch, universe-to-node mapping<br><b>Discovery:</b> Listens on UDP 9999 — <span class="badge green">4-gate security (F10)</span><br><b>Config:</b> Sends on UDP 8888<br><b>DMX:</b> Sends on UDP 6455 — <span class="badge green">reliable mode for safety (F03)</span><br><b>Stale detection:</b> 60s timeout → <span class="badge green">SocketIO alert + DMX skip + probe (F20)</span>'},
   'merge-layer': {title:'MergeLayer', content:'<b>File:</b> merge_layer.py (~500 LOC)<br><b>Purpose:</b> Combines multiple sources with priority-based merging<br><b>HTP (Highest Takes Precedence):</b> Used for dimmer channels<br><b>LTP (Latest Takes Precedence):</b> Used for color/position channels<br><b>ChannelClassifier:</b> Categorizes channels as dimmer vs non-dimmer'},
-  'unified-engine': {title:'UnifiedPlaybackEngine', content:'<b>File:</b> unified_playback.py (1,266 LOC)<br><b>Purpose:</b> Canonical playback authority — THE correct way to play content<br><b>Features:</b> Session-based, 30fps render loop, priority system<br><b>Types:</b> Look, Sequence, Chase, Scene, Effect<br><b>Output:</b> unified_output_callback() -> dmx_state.set_channels()'},
-  'render-engine': {title:'RenderEngine (TASK-0004)', content:'<b>File:</b> render_engine.py (1,145 LOC)<br><b>Purpose:</b> Modifier rendering at 30fps — HSV math, depth blend, frame interpolation<br><b>Contains:</b> ModifierRenderer (utility, keep) + RenderEngine (violation, retire Phase 2)<br><br><span class="badge yellow">MITIGATED</span> Beta 1: Added self._arbitration (L1309), set_arbitration() (L1317), can_write("look") guard (L1553)'},
+  'unified-engine': {title:'UnifiedPlaybackEngine', content:'<b>File:</b> unified_playback.py (1,266 LOC)<br><b>Purpose:</b> Canonical playback authority — THE correct way to play content<br><b>Features:</b> Session-based, 40fps render loop, priority system<br><b>Types:</b> Look, Sequence, Chase, Scene, Effect<br><b>Output:</b> unified_output_callback() -> dmx_state.set_channels()'},
+  'render-engine': {title:'RenderEngine (TASK-0004)', content:'<b>File:</b> render_engine.py (1,145 LOC)<br><b>Purpose:</b> Modifier rendering — HSV math, depth blend, frame interpolation<br><b>Contains:</b> ModifierRenderer (utility, keep) + RenderEngine (deprecated via F06)<br><br><span class="badge green">F06</span> Playback consolidated via UnifiedPlaybackEngine<br><span class="badge green">F08</span> Token-based arbitration guards prevent stale writes'},
   'chase-engine': {title:'ChaseEngine (TASK-0006)', content:'<b>File:</b> aether-core.py:621<br><b>Purpose:</b> Chase playback in background threads with BPM timing<br><b>Pattern:</b> Spawns daemon thread per chase, routes through MergeLayer<br><b>Fallback:</b> Direct ContentManager write if MergeLayer unavailable<br><br><span class="badge yellow">MITIGATED</span> Beta 1: Added arbitration.can_write("chase") guard on fallback path (L914)'},
-  'effects-engine': {title:'EffectsEngine (TASK-0005)', content:'<b>File:</b> effects_engine.py (649 LOC)<br><b>Purpose:</b> Dynamic effects at 30fps — christmas, strobe, pulse, wave, twinkle, fire, smooth<br><b>Arbitration:</b> Already had can_write("effect") at line 104 BEFORE audit<br><br><span class="badge yellow">PRE-EXISTING</span> No changes needed — was already properly guarded'},
+  'effects-engine': {title:'EffectsEngine (TASK-0005)', content:'<b>File:</b> effects_engine.py (649 LOC)<br><b>Purpose:</b> Dynamic effects at 40fps (F17) — christmas, strobe, pulse, wave, twinkle, fire, smooth<br><b>Arbitration:</b> Already had can_write("effect") at line 104 BEFORE audit<br><br><span class="badge green">ALIGNED</span> FPS upgraded 30→40 to match DMX refresh (F17)'},
   'show-engine': {title:'ShowEngine (TASK-0007)', content:'<b>File:</b> aether-core.py:1280<br><b>Purpose:</b> Timeline-based show playback<br><b>Pattern:</b> Loads show from SQLite, parses timeline JSON, registers as merge source with priority 45 (sequence), spawns daemon thread<br><b>Status:</b> Violation — should be consolidated into UnifiedPlayback in Phase 2'},
-  'playback-ctrl': {title:'PlaybackController (Legacy)', content:'<b>File:</b> playback_controller.py (799 LOC)<br><b>Purpose:</b> Legacy Look/Sequence controller<br><b>Status:</b> Active but duplicates unified_playback.py functionality<br><b>Action:</b> Deprecate and consolidate in Phase 2'},
+  'playback-ctrl': {title:'PlaybackController (Deprecated)', content:'<b>File:</b> playback_controller.py (799 LOC)<br><b>Purpose:</b> Legacy Look/Sequence controller<br><b>Status:</b> <span class="badge green">DEPRECATED (F06)</span> — All playback now routes through UnifiedPlaybackEngine<br><b>Note:</b> File retained for backward compat but no active callers in main path'},
   'modifier-registry': {title:'ModifierRegistry', content:'<b>File:</b> modifier_registry.py (846 LOC)<br><b>6 modifier types:</b> pulse, strobe, flicker, wave, rainbow, twinkle<br><b>Features:</b> Validation, normalization, presets, BPM sync'},
   'fixture-lib': {title:'FixtureLibrary', content:'<b>Files:</b> fixture_library.py (892), fixture_render.py (635)<br><b>Purpose:</b> Fixture profiles, channel mapping, manufacturer/model catalog<br><b>ChannelMapper:</b> Converts fixture-centric to channel-centric values'},
   'looks-seq': {title:'Looks & Sequences', content:'<b>File:</b> looks_sequences.py (974 LOC)<br><b>Models:</b> Look, Sequence, SequenceStep, Modifier<br><b>Migration:</b> Converts legacy scenes/chases to looks/sequences<br><b>Tables:</b> looks, sequences, schema_versions, artifact_versions'},
@@ -1563,13 +1563,13 @@ const info = {
   'rdm': {title:'RDM (Stubbed)', content:'<b>Module:</b> core/rdm/ — manager.py, transport.py, types.py, discovery.py, auto_patch.py<br><b>Status:</b> Protocol layer stubbed, DB tracking works<br><b>Endpoints:</b> /api/nodes/&lt;id&gt;/rdm/discover, /api/rdm/devices, etc.<br><b>ESP32:</b> Firmware has RDM commands (discover, identify, set_address)'},
   'ai-helpers': {title:'AI Helpers', content:'<b>ai_fixture_advisor.py (908 LOC):</b> AI-driven fixture suggestions<br><b>ai_ssot.py (~200 LOC):</b> AI context helpers<br><b>ai_ops_registry.py (~50 LOC):</b> AI operation registration'},
   'refresh-loop': {title:'40Hz Refresh Loop', content:'<b>Location:</b> aether-core.py:2246<br><b>Rate:</b> 40Hz (matches DMX512 spec)<br><b>Process:</b> Reads dmx_state.get_output_values(universe) for each universe, builds UDPJSON v2 packet, sends via NodeManager.send_udpjson(ip, 6455, payload)<br><b>Protocol:</b> {"v":2,"type":"set","u":N,"seq":M,"ch":[[ch,val],...]}'},
-  'supabase-service': {title:'SupabaseService', content:'<b>File:</b> services/supabase_service.py (1,492 LOC)<br><b>Singleton, feature-gated:</b> ENABLE_SUPABASE env var<br><b>Behavior:</b> Non-blocking, fail-soft. Flask remains SSOT.<br><b>Sync tables:</b> 11 cloud tables<br><b>ID mapping:</b> Deterministic UUID v5<br><b>Queue:</b> PendingSyncQueue (disk-persisted JSON)<br><br><span class="badge green">FIXED</span> Beta 1: UUID-safe retry, permanent failure detection, _clear_stale_pending pruning'},
+  'supabase-service': {title:'SupabaseService', content:'<b>File:</b> services/supabase_service.py (1,492 LOC)<br><b>Singleton, feature-gated:</b> ENABLE_SUPABASE env var<br><b>Behavior:</b> Non-blocking, fail-soft. Flask remains SSOT.<br><b>Sync tables:</b> 11 cloud tables<br><b>ID mapping:</b> Deterministic UUID v5<br><b>Queue:</b> PendingSyncQueue (disk-persisted JSON)<br><br><span class="badge green">FIXED</span> Beta 1: UUID-safe retry, permanent failure detection<br><span class="badge green">F19</span> Conflict detection via updated_at timestamps, 50ms rate-limited bulk sync, background retry thread (60s interval)'},
   'pending-queue': {title:'PendingSyncQueue', content:'<b>File:</b> supabase_service.py:129<br><b>Storage:</b> ~/aether-pending-sync.json (disk-persisted)<br><b>Methods:</b> add(), get_pending(), mark_complete(), mark_failed(), clear(), count()<br><br><span class="badge green">FIXED</span> Beta 1: Permanent failure detection for Postgres error codes 23505/23503/23502/42P01'},
   'id-mapping': {title:'ID Mapping System', content:'<b>File:</b> supabase_service.py:354-473<br><b>Purpose:</b> Converts local string IDs to Supabase UUIDs<br><b>Method:</b> Deterministic UUID v5 with namespace URL<br><b>Cache:</b> ~/aether-id-map.json<br><b>Reverse map:</b> Populated from cloud on startup'},
   'sync-decorator': {title:'@sync_to_cloud', content:'<b>File:</b> supabase_service.py:1362-1410<br><b>Purpose:</b> Decorator that auto-syncs entity changes to Supabase after the decorated function runs<br><b>Usage:</b> Applied to CRUD functions in Flask routes'},
   'ai-cloud-log': {title:'AI Cloud Logging', content:'<b>Conversations:</b> log_conversation() -> conversations + messages tables<br><b>Learnings:</b> log_learning() -> ai_learnings table<br><b>Feedback:</b> log_feedback() -> ai_feedback table<br><br><span class="badge green">FIXED</span> Beta 1: log_learning() changed from bare try/except to _sync_execute() for retry-on-failure'},
-  'udp-6455': {title:'UDP :6455 — UDPJSON v2', content:'<b>Direction:</b> Pi -> ESP32 nodes<br><b>Protocol:</b> UDPJSON v2.0<br><b>Format:</b> {"v":2,"type":"set","u":N,"seq":M,"ch":[[ch,val],...]}<br><b>Features:</b> Sequence numbers for duplicate detection, sparse channel updates, fill commands, fade commands, panic/blackout<br><b>No retry:</b> UDP fire-and-forget (by design)'},
-  'udp-9999': {title:'UDP :9999 — Discovery', content:'<b>Direction:</b> ESP32 nodes -> Pi<br><b>Purpose:</b> Node registration + heartbeats<br><b>Format:</b> {"type":"register","node_id":"pulse-XXXX","ip":"...","u":N}<br><b>Heartbeat interval:</b> 5-10 seconds<br><b>Stale timeout:</b> 60 seconds'},
+  'udp-6455': {title:'UDP :6455 — UDPJSON v2', content:'<b>Direction:</b> Pi -> ESP32 nodes<br><b>Protocol:</b> UDPJSON v2.0<br><b>Format:</b> {"v":2,"type":"set","u":N,"seq":M,"ch":[[ch,val],...]}<br><b>Features:</b> Sequence numbers for duplicate detection, sparse channel updates, fill commands, fade commands, panic/blackout<br><b>Reliability (F03):</b> Safety commands (panic/reset/ping) use send_udpjson_reliable() with ACK/retry. Normal DMX frames stay fire-and-forget — 40Hz refresh provides natural retransmission.'},
+  'udp-9999': {title:'UDP :9999 — Discovery', content:'<b>Direction:</b> ESP32 nodes -> Pi<br><b>Purpose:</b> Node registration + heartbeats<br><b>Format:</b> {"type":"register","node_id":"pulse-XXXX","ip":"...","u":N}<br><b>Heartbeat interval:</b> 5-10 seconds<br><b>Stale timeout:</b> 60 seconds<br><br><span class="badge green">SECURED (F10)</span> 4-gate pipeline: subnet validation → rate limit (10/s/IP) → optional HMAC-SHA256 → node_id regex. Heartbeat unpair blocked. IP pinning alerts.'},
   'udp-8888': {title:'UDP :8888 — Node Config', content:'<b>Direction:</b> Pi -> ESP32 nodes<br><b>Purpose:</b> Configuration commands (universe assignment, firmware info, etc.)'},
   'socketio-server': {title:'SocketIO Server', content:'<b>Source:</b> Flask (aether-core.py)<br><b>10 events:</b> dmx_state (10fps), playback_update, nodes_update, scenes_update, chases_update, fixtures_update, rdm_update, preview_frame, settings_update, screen:context<br><b>Throttle:</b> dmx_state limited to 10fps (30fps caused glitches)'},
   'http-8891': {title:'HTTP :8891 — Flask API', content:'<b>Service:</b> aether-core.service<br><b>Routes:</b> 186+<br><b>Role:</b> SSOT for all DMX state, all playback, all CRUD'},
