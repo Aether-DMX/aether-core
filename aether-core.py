@@ -27,6 +27,7 @@ import uuid
 import platform
 import logging
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Dict, Optional
@@ -331,6 +332,43 @@ print(f"🔒 CORS allowed origins: {ALLOWED_ORIGINS}")
 
 CORS(app, resources={r"/api/*": {"origins": ALLOWED_ORIGINS}})
 socketio = SocketIO(app, cors_allowed_origins=ALLOWED_ORIGINS, async_mode='threading')
+
+# ============================================================
+# Thread Pool — bounded executor for async I/O (F13 fix)
+# ============================================================
+# Replaces 21+ raw threading.Thread spawns for Supabase sync,
+# cloud logging, and node sync operations. Caps concurrency to
+# prevent unbounded thread accumulation when Supabase is slow.
+_cloud_pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix='cloud-sync')
+_node_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix='node-sync')
+
+# Thread monitoring — track high-water mark for health endpoint
+_thread_hwm = 0  # high-water mark
+_thread_hwm_lock = threading.Lock()
+
+def _update_thread_hwm():
+    """Update thread high-water mark for monitoring."""
+    global _thread_hwm
+    count = threading.active_count()
+    with _thread_hwm_lock:
+        if count > _thread_hwm:
+            _thread_hwm = count
+
+def cloud_submit(fn, *args, **kwargs):
+    """Submit a task to the cloud sync thread pool (bounded)."""
+    _update_thread_hwm()
+    try:
+        _cloud_pool.submit(fn, *args, **kwargs)
+    except RuntimeError:
+        pass  # Pool shut down during graceful exit
+
+def node_submit(fn, *args, **kwargs):
+    """Submit a task to the node sync thread pool (bounded)."""
+    _update_thread_hwm()
+    try:
+        _node_pool.submit(fn, *args, **kwargs)
+    except RuntimeError:
+        pass  # Pool shut down during graceful exit
 
 # ============================================================
 # Beta Debug Logging - Enable with AETHER_BETA_DEBUG=1
@@ -2748,10 +2786,7 @@ class NodeManager:
         if SUPABASE_AVAILABLE and node:
             supabase = get_supabase_service()
             if supabase and supabase.is_enabled():
-                threading.Thread(
-                    target=lambda: supabase.sync_node(node),
-                    daemon=True
-                ).start()
+                cloud_submit(supabase.sync_node, node)
 
         return node
 
@@ -2784,10 +2819,7 @@ class NodeManager:
         if SUPABASE_AVAILABLE and node:
             supabase = get_supabase_service()
             if supabase and supabase.is_enabled():
-                threading.Thread(
-                    target=lambda: supabase.sync_node(node),
-                    daemon=True
-                ).start()
+                cloud_submit(supabase.sync_node, node)
 
         return node
 
@@ -4120,10 +4152,7 @@ class ContentManager:
         if SUPABASE_AVAILABLE and scene:
             supabase = get_supabase_service()
             if supabase and supabase.is_enabled():
-                threading.Thread(
-                    target=lambda: supabase.sync_scene(scene),
-                    daemon=True
-                ).start()
+                cloud_submit(supabase.sync_scene, scene)
 
         return {'success': True, 'scene_id': scene_id}
 
@@ -4362,10 +4391,7 @@ class ContentManager:
             if SUPABASE_AVAILABLE and chase:
                 supabase = get_supabase_service()
                 if supabase and supabase.is_enabled():
-                    threading.Thread(
-                        target=lambda: supabase.sync_chase(chase),
-                        daemon=True
-                    ).start()
+                    cloud_submit(supabase.sync_chase, chase)
         except Exception as e:
             print(f"Supabase error: {e}", flush=True)
 
@@ -5039,7 +5065,7 @@ def discovery_listener():
                     # Auto-sync content to newly registered node if paired
                     node = node_manager.get_node(msg.get('node_id'))
                     if node and node.get('is_paired'):
-                        threading.Thread(target=node_manager.sync_content_to_node, args=(node,), daemon=True).start()
+                        node_submit(node_manager.sync_content_to_node, node)
         except socket.timeout:
             pass
         except Exception as e:
@@ -5112,13 +5138,55 @@ def health():
     db_health = check_database_health()
     overall_healthy = db_health['healthy']
     uptime_s = time.monotonic() - _startup_time
+    thread_count = threading.active_count()
+    _update_thread_hwm()
+
+    # Memory stats via /proc/self/status (Linux) or resource module
+    mem_info = {}
+    try:
+        import resource
+        rusage = resource.getrusage(resource.RUSAGE_SELF)
+        mem_info['rss_mb'] = round(rusage.ru_maxrss / 1024, 1)  # Linux: kB → MB
+    except Exception:
+        pass
+    try:
+        with open('/proc/self/status', 'r') as f:
+            for line in f:
+                if line.startswith('VmRSS:'):
+                    mem_info['rss_mb'] = round(int(line.split()[1]) / 1024, 1)
+                elif line.startswith('VmSize:'):
+                    mem_info['vms_mb'] = round(int(line.split()[1]) / 1024, 1)
+    except Exception:
+        pass
+
+    # Thread pool stats
+    pool_stats = {
+        'cloud_pool': {
+            'max_workers': _cloud_pool._max_workers,
+            'pending': _cloud_pool._work_queue.qsize(),
+        },
+        'node_pool': {
+            'max_workers': _node_pool._max_workers,
+            'pending': _node_pool._work_queue.qsize(),
+        },
+    }
+
+    # Alert thresholds
+    thread_alert = thread_count > 30
+    if mem_info.get('rss_mb') and mem_info['rss_mb'] > 512:
+        overall_healthy = False
+
     return jsonify({
         'status': 'healthy' if overall_healthy else 'degraded',
         'version': AETHER_VERSION,
         'timestamp': datetime.now().isoformat(),
         'uptime_seconds': round(uptime_s, 1),
         'uptime_human': f"{int(uptime_s//3600)}h {int((uptime_s%3600)//60)}m {int(uptime_s%60)}s",
-        'thread_count': threading.active_count(),
+        'thread_count': thread_count,
+        'thread_hwm': _thread_hwm,
+        'thread_alert': thread_alert,
+        'memory': mem_info,
+        'pools': pool_stats,
         'services': {
             'database': db_health['healthy'],
             'discovery': True,
@@ -5710,13 +5778,13 @@ def sync_node(node_id):
     node = node_manager.get_node(node_id)
     if not node:
         return jsonify({'error': 'Node not found'}), 404
-    threading.Thread(target=node_manager.sync_content_to_node, args=(node,), daemon=True).start()
+    node_submit(node_manager.sync_content_to_node, node)
     return jsonify({'success': True, 'message': 'Sync started'})
 
 @app.route('/api/nodes/sync', methods=['POST'])
 def sync_all_nodes():
     """Force sync content to all nodes"""
-    threading.Thread(target=node_manager.sync_all_content, daemon=True).start()
+    node_submit(node_manager.sync_all_content)
     return jsonify({'success': True, 'message': 'Full sync started'})
 
 # ─────────────────────────────────────────────────────────
@@ -7183,10 +7251,7 @@ def create_look():
     if SUPABASE_AVAILABLE:
         supabase = get_supabase_service()
         if supabase and supabase.is_enabled():
-            threading.Thread(
-                target=lambda: supabase.sync_look(result.to_dict()),
-                daemon=True
-            ).start()
+            cloud_submit(supabase.sync_look, result.to_dict())
 
     return jsonify({'success': True, 'look': result.to_dict()})
 
@@ -7217,10 +7282,7 @@ def update_look(look_id):
     if SUPABASE_AVAILABLE:
         supabase = get_supabase_service()
         if supabase and supabase.is_enabled():
-            threading.Thread(
-                target=lambda: supabase.sync_look(result.to_dict()),
-                daemon=True
-            ).start()
+            cloud_submit(supabase.sync_look, result.to_dict())
 
     return jsonify({'success': True, 'look': result.to_dict()})
 
@@ -7480,10 +7542,7 @@ def create_sequence():
     if SUPABASE_AVAILABLE:
         supabase = get_supabase_service()
         if supabase and supabase.is_enabled():
-            threading.Thread(
-                target=lambda: supabase.sync_sequence(result.to_dict()),
-                daemon=True
-            ).start()
+            cloud_submit(supabase.sync_sequence, result.to_dict())
 
     return jsonify({'success': True, 'sequence': result.to_dict()})
 
@@ -7514,10 +7573,7 @@ def update_sequence(sequence_id):
     if SUPABASE_AVAILABLE:
         supabase = get_supabase_service()
         if supabase and supabase.is_enabled():
-            threading.Thread(
-                target=lambda: supabase.sync_sequence(result.to_dict()),
-                daemon=True
-            ).start()
+            cloud_submit(supabase.sync_sequence, result.to_dict())
 
     return jsonify({'success': True, 'sequence': result.to_dict()})
 
@@ -10035,7 +10091,7 @@ def create_group():
                 group_data = {'group_id': group_id, 'name': data.get('name', 'New Group'),
                               'universe': data.get('universe', 1), 'channels': data.get('channels', []),
                               'color': data.get('color', '#8b5cf6')}
-                threading.Thread(target=lambda: supabase.sync_group(group_data), daemon=True).start()
+                cloud_submit(supabase.sync_group, group_data)
         except Exception as e:
             print(f"Supabase group sync error: {e}", flush=True)
 
@@ -10077,7 +10133,7 @@ def update_group(group_id):
                 group_data = {'group_id': group_id, 'name': data.get('name'),
                               'universe': data.get('universe', 1), 'channels': data.get('channels', []),
                               'color': data.get('color', '#8b5cf6')}
-                threading.Thread(target=lambda: supabase.sync_group(group_data), daemon=True).start()
+                cloud_submit(supabase.sync_group, group_data)
         except Exception as e:
             print(f"Supabase group sync error: {e}", flush=True)
 
@@ -10097,7 +10153,7 @@ def delete_group(group_id):
         try:
             supabase = get_supabase_service()
             if supabase and supabase.is_enabled():
-                threading.Thread(target=lambda: supabase.delete_group(group_id), daemon=True).start()
+                cloud_submit(supabase.delete_group, group_id)
         except Exception as e:
             print(f"Supabase group delete error: {e}", flush=True)
 
@@ -10151,7 +10207,7 @@ def create_show():
                 show_data = {'show_id': show_id, 'name': data.get('name', 'New Show'),
                              'description': data.get('description', ''), 'timeline': timeline,
                              'duration_ms': duration_ms}
-                threading.Thread(target=lambda: supabase.sync_show(show_data), daemon=True).start()
+                cloud_submit(supabase.sync_show, show_data)
         except Exception as e:
             print(f"Supabase show sync error: {e}", flush=True)
 
@@ -10196,7 +10252,7 @@ def update_show(show_id):
                 show_data = {'show_id': show_id, 'name': data.get('name'),
                              'description': data.get('description', ''), 'timeline': timeline,
                              'duration_ms': duration_ms}
-                threading.Thread(target=lambda: supabase.sync_show(show_data), daemon=True).start()
+                cloud_submit(supabase.sync_show, show_data)
         except Exception as e:
             print(f"Supabase show sync error: {e}", flush=True)
 
@@ -10216,7 +10272,7 @@ def delete_show(show_id):
         try:
             supabase = get_supabase_service()
             if supabase and supabase.is_enabled():
-                threading.Thread(target=lambda: supabase.delete_show(show_id), daemon=True).start()
+                cloud_submit(supabase.delete_show, show_id)
         except Exception as e:
             print(f"Supabase show delete error: {e}", flush=True)
 
@@ -10299,7 +10355,7 @@ def create_schedule():
                 sched_data = {'schedule_id': schedule_id, 'name': data.get('name', 'New Schedule'),
                               'cron': data.get('cron', '0 8 * * *'), 'action_type': data.get('action_type', 'scene'),
                               'action_id': data.get('action_id'), 'enabled': data.get('enabled', True)}
-                threading.Thread(target=lambda: supabase.sync_schedule(sched_data), daemon=True).start()
+                cloud_submit(supabase.sync_schedule, sched_data)
         except Exception as e:
             print(f"Supabase schedule sync error: {e}", flush=True)
 
@@ -10343,7 +10399,7 @@ def update_schedule(schedule_id):
                 sched_data = {'schedule_id': schedule_id, 'name': data.get('name'),
                               'cron': data.get('cron'), 'action_type': data.get('action_type'),
                               'action_id': data.get('action_id'), 'enabled': data.get('enabled', True)}
-                threading.Thread(target=lambda: supabase.sync_schedule(sched_data), daemon=True).start()
+                cloud_submit(supabase.sync_schedule, sched_data)
         except Exception as e:
             print(f"Supabase schedule sync error: {e}", flush=True)
 
@@ -10364,7 +10420,7 @@ def delete_schedule(schedule_id):
         try:
             supabase = get_supabase_service()
             if supabase and supabase.is_enabled():
-                threading.Thread(target=lambda: supabase.delete_schedule(schedule_id), daemon=True).start()
+                cloud_submit(supabase.delete_schedule, schedule_id)
         except Exception as e:
             print(f"Supabase schedule delete error: {e}", flush=True)
 
@@ -10724,7 +10780,7 @@ def log_cloud_conversation():
             supabase.log_conversation(session_id, messages, metadata)
         except Exception as e:
             print(f"⚠️ Conversation logging failed (will retry via queue): {e}")
-    threading.Thread(target=_log, daemon=True).start()
+    cloud_submit(_log)
     return jsonify({'success': True, 'queued': True})
 
 @app.route('/api/cloud/log-message', methods=['POST'])
@@ -10750,7 +10806,7 @@ def log_cloud_message():
             )
         except Exception as e:
             print(f"Message logging failed: {e}")
-    threading.Thread(target=_log, daemon=True).start()
+    cloud_submit(_log)
     return jsonify({'success': True, 'queued': True})
 
 @app.route('/api/cloud/log-learning', methods=['POST'])
@@ -10771,7 +10827,7 @@ def log_cloud_learning():
             supabase.log_learning(data)
         except Exception as e:
             print(f"⚠️ Cloud learning log failed (will retry via queue): {e}")
-    threading.Thread(target=_log, daemon=True).start()
+    cloud_submit(_log)
     return jsonify({'success': True, 'queued': True})
 
 @app.route('/api/cloud/feedback', methods=['POST'])
@@ -10788,7 +10844,7 @@ def log_cloud_feedback():
             supabase.log_feedback(data)
         except Exception as e:
             print(f"Feedback log failed: {e}")
-    threading.Thread(target=_log, daemon=True).start()
+    cloud_submit(_log)
     return jsonify({'success': True, 'queued': True})
 
 @app.route('/api/cloud/learnings', methods=['GET'])
@@ -11126,8 +11182,8 @@ if __name__ == '__main__':
                 except Exception as e:
                     print(f"⚠️ Startup cloud sync failed (non-fatal): {e}")
 
-            # Run sync in background thread (doesn't block startup)
-            threading.Thread(target=startup_cloud_sync, daemon=True).start()
+            # Run sync in cloud pool (doesn't block startup)
+            cloud_submit(startup_cloud_sync)
             print(f"☁️ Supabase cloud sync enabled - syncing in background...")
         else:
             print("☁️ Supabase not configured - running in local-only mode")
@@ -11368,6 +11424,12 @@ if __name__ == '__main__':
         try:
             node_manager.stop_dmx_refresh()
             print("  ✓ DMX refresh stopped", flush=True)
+        except Exception:
+            pass
+        try:
+            _cloud_pool.shutdown(wait=False)
+            _node_pool.shutdown(wait=False)
+            print("  ✓ Thread pools shut down", flush=True)
         except Exception:
             pass
         try:
