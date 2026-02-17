@@ -45,7 +45,13 @@ def system_info():
     """System information for frontend mode detection"""
     device_id = _get_or_create_device_id()
     is_pi = os.path.exists('/sys/firmware/devicetree/base/model')
-    has_display = bool(os.environ.get('DISPLAY') or os.environ.get('WAYLAND_DISPLAY'))
+    # Check for display: env vars first, then X11 socket, then loginctl session
+    has_display = bool(
+        os.environ.get('DISPLAY') or
+        os.environ.get('WAYLAND_DISPLAY') or
+        os.path.exists('/tmp/.X11-unix/X0') or
+        os.path.exists('/run/user/1000/wayland-0')
+    )
 
     # Determine mode from settings
     mode_setting = _app_settings.get('system', {}).get('uiMode', 'auto')
