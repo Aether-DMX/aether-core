@@ -27,6 +27,9 @@ import uuid
 import platform
 import logging
 import tempfile
+import re
+import hmac
+import hashlib
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -174,6 +177,14 @@ UART_GATEWAY_BAUD = 115200
 
 # DMX Transport Mode - UDPJSON only
 DMX_TRANSPORT_MODE = "udp_json"  # Only supported mode
+
+# [F10] Discovery security configuration
+DISCOVERY_SUBNET = os.environ.get('AETHER_NODE_SUBNET', '192.168.50.')  # Allowed source subnet
+DISCOVERY_SECRET = os.environ.get('AETHER_DISCOVERY_SECRET', '').encode()  # HMAC shared secret (optional)
+DISCOVERY_STRICT_HMAC = os.environ.get('AETHER_DISCOVERY_STRICT', '').lower() == 'true'  # Require HMAC
+DISCOVERY_NODE_ID_PATTERN = re.compile(r'^(pulse|gateway|seance|universe)-[0-9A-Fa-f]{4,8}$|^universe-\d+-builtin$')
+DISCOVERY_RATE_LIMIT = 10  # Max packets per second per IP
+_discovery_stats = {'rejections': 0, 'warnings': 0, 'accepted': 0}  # [F10] Module-level stats
 
 # Dynamic paths - works for any user
 HOME_DIR = os.path.expanduser("~")
@@ -2869,13 +2880,25 @@ class NodeManager:
             was_offline = row and row[0] == 'offline'
             pi_thinks_paired = row and row[1] == 1
 
+            # [F10] IP pinning: warn if paired node's IP changes (DHCP re-assignment or spoof)
+            existing_ip = existing['ip'] if existing else None
+            incoming_ip = data.get('ip')
+            if pi_thinks_paired and existing_ip and incoming_ip and existing_ip != incoming_ip:
+                print(f"[F10 WARN] Paired node {node_id} IP changed: {existing_ip} → {incoming_ip} (DHCP re-assign or spoof?)")
+
             # Check if node reports unpaired status (intentional unpair or NVS wipe)
             node_reports_unpaired = data.get('is_paired') == False or data.get('waiting_for_config') == True
 
-            # If Pi thinks node is paired but node reports unpaired, sync Pi's state
+            # [F10] Block heartbeat-driven unpairing for paired nodes — only REST API can unpair
             if pi_thinks_paired and node_reports_unpaired:
-                print(f"Node {node_id} reports unpaired - syncing Pi database")
-                c.execute('UPDATE nodes SET is_paired = 0 WHERE node_id = ?', (node_id,))
+                msg_type = data.get('type', 'unknown')
+                if msg_type == 'heartbeat':
+                    # Heartbeats cannot force-unpair — log and skip
+                    print(f"[F10 BLOCK] Heartbeat from {node_id} claims unpaired — ignoring (use REST API to unpair)")
+                elif msg_type == 'register':
+                    # Fresh registration with is_paired=false could be legitimate NVS wipe
+                    print(f"[F10 WARN] Registration from {node_id} reports unpaired — syncing Pi database (possible NVS wipe)")
+                    c.execute('UPDATE nodes SET is_paired = 0 WHERE node_id = ?', (node_id,))
 
             # Update basic fields that always come from heartbeats/registrations
             c.execute('''UPDATE nodes SET hostname = COALESCE(?, hostname), mac = COALESCE(?, mac),
@@ -5297,27 +5320,82 @@ def discovery_listener():
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind(('0.0.0.0', DISCOVERY_PORT))
     sock.settimeout(1.0)
-    print(f"✓ Discovery listening on UDP {DISCOVERY_PORT}")
+
+    # [F10] Security state
+    _rate_tracker = {}  # {ip: [timestamp, count]}
+
+    security_mode = 'strict-hmac' if DISCOVERY_STRICT_HMAC else ('hmac-optional' if DISCOVERY_SECRET else 'subnet-only')
+    print(f"✓ Discovery listening on UDP {DISCOVERY_PORT} [F10 security={security_mode}, subnet={DISCOVERY_SUBNET}]")
 
     while True:
         try:
             data, addr = sock.recvfrom(4096)
+            source_ip = addr[0]
+
+            # [F10] Gate 1: Subnet validation
+            if DISCOVERY_SUBNET and not source_ip.startswith(DISCOVERY_SUBNET) and source_ip != '127.0.0.1':
+                _discovery_stats['rejections'] += 1
+                if _discovery_stats['rejections'] <= 10:  # Don't flood logs
+                    print(f"[F10 REJECT] Discovery from outside subnet: {source_ip}")
+                continue
+
+            # [F10] Gate 2: Rate limiting per IP
+            now_mono = time.monotonic()
+            ip_rate = _rate_tracker.get(source_ip)
+            if ip_rate and now_mono - ip_rate[0] < 1.0:
+                ip_rate[1] += 1
+                if ip_rate[1] > DISCOVERY_RATE_LIMIT:
+                    if ip_rate[1] == DISCOVERY_RATE_LIMIT + 1:
+                        print(f"[F10 RATE] Throttling discovery from {source_ip} (>{DISCOVERY_RATE_LIMIT}/sec)")
+                    _discovery_stats['rejections'] += 1
+                    continue
+            else:
+                _rate_tracker[source_ip] = [now_mono, 1]
+
             msg = json.loads(data.decode())
-            msg['ip'] = addr[0]
+
+            # [F10] Gate 3: HMAC validation (if secret configured)
+            if DISCOVERY_SECRET:
+                token = msg.pop('hmac', None)
+                # Compute HMAC over the raw JSON minus the hmac field
+                check_data = json.dumps({k: v for k, v in msg.items()}, separators=(',', ':')).encode()
+                if token:
+                    expected = hmac.new(DISCOVERY_SECRET, check_data, hashlib.sha256).hexdigest()
+                    if not hmac.compare_digest(expected, token):
+                        _discovery_stats['rejections'] += 1
+                        print(f"[F10 REJECT] Bad HMAC from {source_ip} node_id={msg.get('node_id')}")
+                        continue
+                elif DISCOVERY_STRICT_HMAC:
+                    _discovery_stats['rejections'] += 1
+                    print(f"[F10 REJECT] Missing HMAC (strict mode) from {source_ip} node_id={msg.get('node_id')}")
+                    continue
+                else:
+                    _discovery_stats['warnings'] += 1
+                    if _discovery_stats['warnings'] <= 20:
+                        print(f"[F10 WARN] No HMAC from {source_ip} node_id={msg.get('node_id')} — accepting (non-strict)")
+
+            # [F10] Gate 4: node_id format validation
+            node_id = msg.get('node_id', '')
+            if not DISCOVERY_NODE_ID_PATTERN.match(str(node_id)):
+                _discovery_stats['rejections'] += 1
+                print(f"[F10 REJECT] Malformed node_id from {source_ip}: '{node_id}'")
+                continue
+
+            msg['ip'] = source_ip
             msg_type = msg.get('type', 'unknown')
             if msg_type in ('register', 'heartbeat'):
+                _discovery_stats['accepted'] += 1
                 node_manager.register_node(msg)
                 # Report heartbeat to Trust Enforcer (Phase 4 Lane 3)
-                node_id = msg.get('node_id', msg.get('hostname', 'unknown'))
                 report_node_heartbeat(node_id, {
-                    'ip': addr[0],
+                    'ip': source_ip,
                     'rssi': msg.get('rssi'),
                     'uptime': msg.get('uptime'),
                     'stale': msg.get('stale', False),
                     'type': msg_type
                 })
                 if msg_type == 'register':
-                    print(f"📥 Node registered: {msg.get('hostname', 'Unknown')} @ {addr[0]}")
+                    print(f"📥 Node registered: {msg.get('hostname', 'Unknown')} @ {source_ip}")
                     # Auto-sync content to newly registered node if paired
                     node = node_manager.get_node(msg.get('node_id'))
                     if node and node.get('is_paired'):
@@ -5450,6 +5528,13 @@ def health():
         },
         'database': db_health,
         'udp_delivery': node_manager.get_delivery_stats(),
+        'discovery_security': {
+            'mode': 'strict-hmac' if DISCOVERY_STRICT_HMAC else ('hmac-optional' if DISCOVERY_SECRET else 'subnet-only'),
+            'subnet': DISCOVERY_SUBNET,
+            'accepted': _discovery_stats['accepted'],
+            'rejections': _discovery_stats['rejections'],
+            'warnings': _discovery_stats['warnings'],
+        },
     })
 
 @app.route('/api/arbitration', methods=['GET'])
