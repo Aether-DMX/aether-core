@@ -1404,9 +1404,8 @@ class TimerRunner:
                 except Exception as e:
                     print(f"❌ Timer action error: {e}")
 
-            # Broadcast completion via WebSocket
-            broadcast_ws({
-                'type': 'timer_complete',
+            # Broadcast completion via WebSocket [N01 fix]
+            socketio.emit('timer_complete', {
                 'timer_id': timer_id,
                 'name': name
             })
@@ -1975,6 +1974,14 @@ def init_database():
         synced_to_nodes BOOLEAN DEFAULT 0,
         distribution_mode TEXT DEFAULT 'unified',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )''')
+
+    # [N02 fix] Shows table — timeline-based show playback
+    c.execute('''CREATE TABLE IF NOT EXISTS shows (
+        show_id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT,
+        timeline TEXT, duration_ms INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        distributed BOOLEAN DEFAULT 0
     )''')
 
     c.execute('''CREATE TABLE IF NOT EXISTS groups (
@@ -5132,10 +5139,9 @@ def stop_all_playback(blackout=False, fade_ms=1000, universe=None):
         except Exception as e:
             print(f"  ❌ Blackout error: {e}", flush=True)
 
-    # Broadcast stop event to all connected clients
+    # Broadcast stop event to all connected clients [N01 fix]
     try:
-        broadcast_ws({
-            'type': 'playback_stopped',
+        socketio.emit('playback_stopped', {
             'all_stopped': True,
             'blackout': blackout
         })
