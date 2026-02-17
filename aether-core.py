@@ -186,6 +186,27 @@ DISCOVERY_NODE_ID_PATTERN = re.compile(r'^(pulse|gateway|seance|universe)-[0-9A-
 DISCOVERY_RATE_LIMIT = 10  # Max packets per second per IP
 _discovery_stats = {'rejections': 0, 'warnings': 0, 'accepted': 0}  # [F10] Module-level stats
 
+# [F16] Persistent audit log with file rotation
+from logging.handlers import RotatingFileHandler
+AUDIT_LOG_DIR = os.path.join(os.path.expanduser("~"), "aether-logs")
+os.makedirs(AUDIT_LOG_DIR, exist_ok=True)
+_audit_logger = logging.getLogger('aether.audit')
+_audit_logger.setLevel(logging.INFO)
+_audit_logger.propagate = False  # Don't spam console
+_audit_handler = RotatingFileHandler(
+    os.path.join(AUDIT_LOG_DIR, 'audit.log'),
+    maxBytes=5 * 1024 * 1024,  # 5 MB per file
+    backupCount=5,              # Keep 5 rotated files (25 MB total)
+    encoding='utf-8'
+)
+_audit_handler.setFormatter(logging.Formatter('%(asctime)s %(message)s', datefmt='%Y-%m-%dT%H:%M:%S'))
+_audit_logger.addHandler(_audit_handler)
+
+def audit_log(event_type, **kwargs):
+    """[F16] Write a structured audit log entry. Persists to ~/aether-logs/audit.log with rotation."""
+    entry = json.dumps({'event': event_type, **kwargs}, separators=(',', ':'))
+    _audit_logger.info(entry)
+
 # Dynamic paths - works for any user
 HOME_DIR = os.path.expanduser("~")
 DATABASE = os.path.join(HOME_DIR, "aether-core.db")
@@ -1101,6 +1122,8 @@ class ArbitrationManager:
                 self.writes_per_service[owner_type] = self.writes_per_service.get(owner_type, 0) + 1
                 self.history.append({'time': now, 'from': old, 'to': owner_type, 'id': owner_id, 'action': 'acquire', 'token': token})
                 if len(self.history) > 50: self.history = self.history[-50:]
+                # [F16] Persistent audit trail
+                audit_log('arb_acquire', owner=owner_type, id=owner_id, prev=old, token=token, force=force)
                 print(f"🎯 Arbitration: {old} → {owner_type} (token={token})", flush=True)
                 return token
             self._track_rejection(owner_type, owner_id, f'priority_too_low (current: {self.current_owner})', now)
@@ -1128,6 +1151,8 @@ class ArbitrationManager:
         })
         if len(self.rejected_writes) > 20:
             self.rejected_writes = self.rejected_writes[-20:]
+        # [F16] Persist rejection
+        audit_log('arb_reject', requester=owner_type, id=owner_id, reason=reason, current=self.current_owner)
         print(f"⚠️ Arbitration REJECTED: {owner_type} (reason: {reason})", flush=True)
 
     def release(self, owner_type=None):
@@ -1140,6 +1165,8 @@ class ArbitrationManager:
                 self.last_change = datetime.now().isoformat()
                 self.history.append({'time': self.last_change, 'from': old, 'to': 'idle', 'action': 'release', 'token': self._token})
                 if len(self.history) > 50: self.history = self.history[-50:]
+                # [F16] Persist release
+                audit_log('arb_release', prev=old, token=self._token)
 
     def set_blackout(self, active):
         with self.lock:
@@ -1147,6 +1174,8 @@ class ArbitrationManager:
             self.current_owner = 'blackout' if active else 'idle'
             self._token += 1  # [F08] Blackout invalidates all tokens
             self.last_change = datetime.now().isoformat()
+            # [F16] Persist blackout state changes
+            audit_log('arb_blackout', active=active, token=self._token)
             print(f"{'⬛ BLACKOUT ACTIVE' if active else '🔓 Blackout released'} (token={self._token})", flush=True)
 
     def get_status(self):
@@ -2450,6 +2479,7 @@ class NodeManager:
         [F03] Uses reliable sending with ACK verification and retry.
         Falls back to fire-and-forget if ACK times out (command still sent).
         """
+        audit_log('panic', ip=node_ip, universe=universe)  # [F16]
         print(f"🚨 PANIC: Sending to {node_ip} universe {universe}", flush=True)
         payload = {
             "v": self.PROTOCOL_VERSION,
@@ -5337,6 +5367,7 @@ def discovery_listener():
                 _discovery_stats['rejections'] += 1
                 if _discovery_stats['rejections'] <= 10:  # Don't flood logs
                     print(f"[F10 REJECT] Discovery from outside subnet: {source_ip}")
+                    audit_log('discovery_reject', reason='subnet', ip=source_ip)  # [F16]
                 continue
 
             # [F10] Gate 2: Rate limiting per IP
@@ -5379,6 +5410,7 @@ def discovery_listener():
             if not DISCOVERY_NODE_ID_PATTERN.match(str(node_id)):
                 _discovery_stats['rejections'] += 1
                 print(f"[F10 REJECT] Malformed node_id from {source_ip}: '{node_id}'")
+                audit_log('discovery_reject', reason='malformed_id', ip=source_ip, node_id=str(node_id))  # [F16]
                 continue
 
             msg['ip'] = source_ip
@@ -5535,7 +5567,38 @@ def health():
             'rejections': _discovery_stats['rejections'],
             'warnings': _discovery_stats['warnings'],
         },
+        'audit_log': os.path.join(AUDIT_LOG_DIR, 'audit.log'),
     })
+
+@app.route('/api/audit', methods=['GET'])
+def get_audit_log():
+    """[F16] Read recent audit log entries. ?lines=N (default 100)"""
+    lines_requested = request.args.get('lines', 100, type=int)
+    lines_requested = min(lines_requested, 1000)  # Cap at 1000
+    log_path = os.path.join(AUDIT_LOG_DIR, 'audit.log')
+    if not os.path.exists(log_path):
+        return jsonify({'entries': [], 'total_lines': 0})
+    try:
+        with open(log_path, 'r', encoding='utf-8') as f:
+            all_lines = f.readlines()
+        recent = all_lines[-lines_requested:] if len(all_lines) > lines_requested else all_lines
+        entries = []
+        for line in recent:
+            line = line.strip()
+            if not line:
+                continue
+            # Format: "2026-02-18T02:30:00 {json}"
+            parts = line.split(' ', 1)
+            if len(parts) == 2:
+                try:
+                    entry = json.loads(parts[1])
+                    entry['_timestamp'] = parts[0]
+                    entries.append(entry)
+                except json.JSONDecodeError:
+                    entries.append({'_timestamp': parts[0], 'raw': parts[1]})
+        return jsonify({'entries': entries, 'total_lines': len(all_lines)})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/arbitration', methods=['GET'])
 def get_arbitration():
