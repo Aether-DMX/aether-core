@@ -23,6 +23,7 @@ Usage:
 import os
 import uuid
 import json
+import time
 import asyncio
 import threading
 from datetime import datetime, timezone
@@ -58,6 +59,7 @@ SETTINGS_FILE = os.path.join(HOME_DIR, "aether-settings.json")
 SYNC_RETRY_DELAY = 5  # seconds between retry attempts
 MAX_SYNC_RETRIES = 3
 SYNC_BATCH_SIZE = 50  # max records per batch sync
+SYNC_RATE_LIMIT_MS = 50  # [F19] Minimum ms between API calls in bulk sync
 
 # Deterministic UUID namespace for local->cloud ID mapping
 # All AETHER installations produce the same UUID for the same local ID
@@ -529,9 +531,14 @@ class SupabaseService:
         record_id: str = None,
         op_type: str = "upsert"
     ) -> Optional[Dict[str, Any]]:
-        """Synchronous wrapper for execute with retry"""
+        """Synchronous wrapper for execute with retry.
+        [F19] Stamps updated_at on data for conflict detection."""
         if not self._enabled or not self._client:
             return None
+
+        # [F19] Stamp updated_at for conflict visibility
+        if data and op_type == "upsert":
+            data['updated_at'] = datetime.now(timezone.utc).isoformat()
 
         try:
             result = operation()
@@ -1142,78 +1149,31 @@ class SupabaseService:
 
         try:
             print("☁️ Starting initial sync to Supabase...")
+            _rate_delay = SYNC_RATE_LIMIT_MS / 1000.0  # [F19] Rate limiting
 
-            # Sync nodes
-            if nodes:
-                for node in nodes:
-                    if self.sync_node(node):
-                        results["nodes"] += 1
+            # [F19] Helper to sync a list with rate limiting
+            def _sync_batch(items, sync_fn, label):
+                count = 0
+                if not items:
+                    return count
+                for item in items:
+                    if sync_fn(item):
+                        count += 1
                     else:
                         results["errors"] += 1
+                    if _rate_delay > 0:
+                        time.sleep(_rate_delay)  # [F19] Rate limit
+                return count
 
-            # Sync looks
-            if looks:
-                for look in looks:
-                    if self.sync_look(look):
-                        results["looks"] += 1
-                    else:
-                        results["errors"] += 1
-
-            # Sync sequences
-            if sequences:
-                for seq in sequences:
-                    if self.sync_sequence(seq):
-                        results["sequences"] += 1
-                    else:
-                        results["errors"] += 1
-
-            # Sync scenes
-            if scenes:
-                for scene in scenes:
-                    if self.sync_scene(scene):
-                        results["scenes"] += 1
-                    else:
-                        results["errors"] += 1
-
-            # Sync chases
-            if chases:
-                for chase in chases:
-                    if self.sync_chase(chase):
-                        results["chases"] += 1
-                    else:
-                        results["errors"] += 1
-
-            # Sync fixtures
-            if fixtures:
-                for fixture in fixtures:
-                    if self.sync_fixture(fixture):
-                        results["fixtures"] += 1
-                    else:
-                        results["errors"] += 1
-
-            # Sync shows
-            if shows:
-                for show in shows:
-                    if self.sync_show(show):
-                        results["shows"] += 1
-                    else:
-                        results["errors"] += 1
-
-            # Sync schedules
-            if schedules:
-                for schedule in schedules:
-                    if self.sync_schedule(schedule):
-                        results["schedules"] += 1
-                    else:
-                        results["errors"] += 1
-
-            # Sync groups
-            if groups:
-                for group in groups:
-                    if self.sync_group(group):
-                        results["groups"] += 1
-                    else:
-                        results["errors"] += 1
+            results["nodes"] = _sync_batch(nodes, self.sync_node, "nodes")
+            results["looks"] = _sync_batch(looks, self.sync_look, "looks")
+            results["sequences"] = _sync_batch(sequences, self.sync_sequence, "sequences")
+            results["scenes"] = _sync_batch(scenes, self.sync_scene, "scenes")
+            results["chases"] = _sync_batch(chases, self.sync_chase, "chases")
+            results["fixtures"] = _sync_batch(fixtures, self.sync_fixture, "fixtures")
+            results["shows"] = _sync_batch(shows, self.sync_show, "shows")
+            results["schedules"] = _sync_batch(schedules, self.sync_schedule, "schedules")
+            results["groups"] = _sync_batch(groups, self.sync_group, "groups")
 
             self._last_sync_at = datetime.now(timezone.utc)
 

@@ -5443,6 +5443,20 @@ def stale_checker():
         time.sleep(30)
         node_manager.check_stale_nodes()
 
+def supabase_retry_loop():
+    """[F19] Periodically retry pending Supabase operations."""
+    while True:
+        time.sleep(60)  # Retry every 60 seconds
+        if SUPABASE_AVAILABLE:
+            try:
+                supabase = get_supabase_service()
+                if supabase and supabase.is_enabled():
+                    result = supabase.retry_pending()
+                    if result and result.get('completed', 0) > 0:
+                        print(f"☁️ [F19] Supabase retry: {result['completed']} synced, {result.get('remaining', 0)} pending")
+            except Exception as e:
+                pass  # Silent — don't crash background thread
+
 # ============================================================
 # API Routes
 # ============================================================
@@ -5778,6 +5792,7 @@ if __name__ == '__main__':
 
     threading.Thread(target=discovery_listener, daemon=True).start()
     threading.Thread(target=stale_checker, daemon=True).start()
+    threading.Thread(target=supabase_retry_loop, daemon=True).start()  # [F19]
     schedule_runner.start()
     node_manager.start_dmx_refresh()  # 40Hz refresh loop sends DMX to nodes via UDPJSON
 
