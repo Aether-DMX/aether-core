@@ -1307,10 +1307,10 @@
       <!-- REDLINE MARKERS — HIGH (orange circles) -->
       <!-- ========================================================================== -->
 
-      <!-- FLAW-06: Duplicate Playback Systems — ring spans all engines -->
+      <!-- FLAW-06: Duplicate Playback Systems — FIXED (consolidated via unified engine) -->
       <g class="redline-marker" onclick="showFlaw('F06')">
-        <rect class="flaw-ring sev-high" x="18" y="318" width="618" height="38" rx="6"/>
-        <circle cx="644" cy="320" r="12" fill="#ff8800"/>
+        <rect class="flaw-ring sev-fixed" x="18" y="318" width="618" height="38" rx="6" stroke="#44cc44" stroke-dasharray="6,4"/>
+        <circle cx="644" cy="320" r="12" fill="#44cc44"/>
         <text class="flaw-badge" font-size="8" fill="#fff" text-anchor="middle" x="644" y="324">F06</text>
       </g>
 
@@ -1362,11 +1362,11 @@
         <text class="flaw-badge" font-size="8" fill="#fff" text-anchor="middle" x="500" y="270">F12</text>
       </g>
 
-      <!-- FLAW-13: Memory Growth Unbounded Threads -->
+      <!-- FLAW-13: Thread Pool — FIXED (bounded pools + monitoring) -->
       <g class="redline-marker" onclick="showFlaw('F13')">
-        <circle cx="660" cy="340" r="12" fill="#ddaa00"/>
-        <text class="flaw-badge" font-size="8" fill="#000" text-anchor="middle" x="660" y="344">F13</text>
-        <text font-size="7" fill="#ddaa00" x="678" y="344">thread leaks</text>
+        <circle cx="660" cy="340" r="12" fill="#44cc44"/>
+        <text class="flaw-badge" font-size="8" fill="#fff" text-anchor="middle" x="660" y="344">F13</text>
+        <text font-size="7" fill="#44cc44" x="678" y="344">pooled</text>
       </g>
 
       <!-- FLAW-14: Cron Parser — FIXED -->
@@ -1447,7 +1447,7 @@
       <!-- HIGH -->
       <text font-size="9" fill="#ff8800" font-weight="700" x="742" y="398" font-family="monospace">━━ HIGH ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</text>
       <g class="redline-marker" onclick="showFlaw('F06')">
-        <circle cx="752" cy="416" r="6" fill="#ff8800"/><text font-size="9" fill="var(--text)" x="764" y="420">F06  5 Duplicate Playback Systems — interleaved writes, flickering</text>
+        <circle cx="752" cy="416" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="420">F06  ✅ FIXED — playback consolidated via UnifiedPlaybackEngine</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('F07')">
         <circle cx="752" cy="434" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="438">F07  ✅ FIXED — ESP32 sole fade authority, SSOT sends target+ms</text>
@@ -1471,7 +1471,7 @@
         <circle cx="752" cy="552" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="556">F12  ✅ FIXED — values clamped 0-255, universe validated 1-64</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('F13')">
-        <circle cx="752" cy="570" r="6" fill="#ddaa00"/><text font-size="9" fill="var(--text)" x="764" y="574">F13  Unbounded Threads — Supabase spawns new thread per op, no pool</text>
+        <circle cx="752" cy="570" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="574">F13  ✅ FIXED — bounded pools (cloud=4, node=2) + memory monitoring</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('F14')">
         <circle cx="752" cy="588" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="592">F14  ✅ FIXED — croniter replaces hand-rolled parser</text>
@@ -1630,14 +1630,14 @@ const flaws = {
   'F03': {title:'F03 — UDP No Delivery Guarantee (CRITICAL)', sev:'CRITICAL', sevColor:'#ff4444', component:'NodeManager.send_udpjson() (L1948)', problem:'ALL DMX commands sent via UDP fire-and-forget. No ACK, no retry, no verification. WiFi packet loss 1-5% typical.', scenario:'Critical blackout/panic UDP packet dropped. Node continues outputting previous state. SSOT believes blackout was sent but physical output does not match. Safety failure.', fix:'1) Add ACK mode for critical commands (blackout, panic)\n2) Auto-retry with 25ms backoff for non-critical\n3) Track per-node delivery success rates'},
   'F04': {title:'F04 — SQLite Concurrent Access ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'get_db() and all DB operations', problem:'[FIXED] Thread-local connection pool via threading.local(). WAL journal mode for concurrent reads. _ThreadLocalConnection wrapper makes .close() a no-op. Atomic single-UPDATE for node cache refresh with 5-attempt retry.', scenario:'Fixed. "database is locked" errors eliminated. WAL allows concurrent readers + single writer. Commit chain: 5fc2a3b → 83a6bad → 1359eb1.', fix:'RESOLVED: Thread-local pool + WAL mode + atomic node cache refresh.'},
   'F05': {title:'F05 — CORS Wildcard ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'aether-core.py L305-332', problem:'[FIXED] Code computed ALLOWED_ORIGINS but used origins="*". Now uses ALLOWED_ORIGINS for both Flask-CORS and SocketIO.', scenario:'Fixed in commit 86589f1. Evil origins now blocked.', fix:'RESOLVED: origins=ALLOWED_ORIGINS on both Flask-CORS and SocketIO.'},
-  'F06': {title:'F06 — Duplicate Playback Systems (HIGH)', sev:'HIGH', sevColor:'#ff8800', component:'ChaseEngine, ShowEngine, UnifiedPlayback, RenderEngine, PlaybackCtrl', problem:'5 separate playback systems with independent timing loops and thread management. Code has "AUTHORITY VIOLATION" warning comments. ChaseEngine and ShowEngine bypass UnifiedPlaybackEngine.', scenario:'Look + Chase on same universe. Both engines write to dmx_state within same 25ms frame. Interleaved channel values cause flickering.', fix:'Complete TASK-0006/0007 migration:\nRetire ChaseEngine/ShowEngine timing loops.\nExtract as pure functions called by UnifiedPlayback.'},
+  'F06': {title:'F06 — Duplicate Playback Systems ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'UnifiedPlaybackEngine (canonical authority)', problem:'[FIXED] Consolidated 5 playback systems. /api/looks/<id>/play rerouted from RenderEngine to unified_play_look(). ChaseEngine, DynamicEffectsEngine, RenderEngine deprecated with consolidation markers. Only ShowEngine meta-timeline thread remains.', scenario:'Fixed. Looks, chases, sequences, scenes, fixture effects all route through UnifiedPlaybackEngine. Legacy effect routes kept for backward compat. Commit 0d5ed02.', fix:'RESOLVED: TASK-0018 resolved. Look/chase/sequence/scene/fixture-effect → unified engine.'},
   'F07': {title:'F07 — Dual Fade Engine ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'DMXStateManager.get_output_values() + ESP32 firmware', problem:'[FIXED] ESP32 is now sole fade authority. SSOT sends target values + fade_ms. Python-side interpolation removed.', scenario:'Fixed. Single fade authority eliminates stutter-step. Smooth fades at all durations.', fix:'RESOLVED: ESP32 sole fade authority, SSOT sends target+fade_ms.'},
   'F08': {title:'F08 — Arbitration TOCTOU Race (HIGH)', sev:'HIGH', sevColor:'#ff8800', component:'ArbitrationManager (L931)', problem:'TOCTOU race: engine calls acquire(), does work, then writes. Between acquire and write, another engine can acquire with higher priority, changing the owner. release() unconditionally resets to idle.', scenario:'Effect engine acquires (60). Chase force-acquires. Effect thread still running writes channels via content_manager — both engines writing, arbitration not preventing it.', fix:'1) Per-write arbitration tokens\n2) acquire() returns token, set_channels() requires it\n3) Revoke callback so engines stop when they lose ownership'},
   'F09': {title:'F09 — No Crash Recovery ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'All global singletons', problem:'[FIXED] save_state_now() bypasses debounce for critical transitions. _save_state() persists active_look/chase/scene/effect with full metadata. _load_state() resumes playback on startup if interrupted.', scenario:'Fixed. Power loss during show → auto-resume on restart. State saved on every playback transition. Commit 06f4b30.', fix:'RESOLVED: Immediate state persistence + auto-resume on startup.'},
   'F10': {title:'F10 — Discovery No Authentication (HIGH)', sev:'HIGH', sevColor:'#ff8800', component:'discovery_listener() (L4850)', problem:'UDP discovery on port 9999 accepts any JSON from any IP. No auth, no signing, no allowlist. msg["ip"] = addr[0] overwrites. Rogue device can register with any node_id.', scenario:'Attacker on AetherDMX WiFi sends spoofed registration as "pulse-422C". NodeManager updates IP. DMX commands go to attacker instead of real node.', fix:'1) HMAC shared secret on registration packets\n2) Validate source IP matches registered IP\n3) Re-registration from different IP triggers alert\n4) Node allowlist'},
   'F11': {title:'F11 — API Routing Inconsistency (MEDIUM)', sev:'MEDIUM', sevColor:'#ddaa00', component:'Frontend stores + Express proxy', problem:'Some calls go through Express proxy (port 3000), others bypass to Flask directly (port 8891). Look/Sequence playback calls Flask direct. Express middleware skipped for critical operations.', scenario:'Auth middleware added to Express. Playback control remains unprotected. Bug in Express proxy makes proxied requests fail, but direct calls work — intermittent failure.', fix:'Choose one routing strategy consistently.\nRecommend: everything through Express for auth/logging.'},
   'F12': {title:'F12 — Input Validation ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'DMXStateManager.set_channels()', problem:'[FIXED] Values now clamped max(0, min(255, int(value))) at SSOT write point. Universe validated int 1-64.', scenario:'Fixed in commit 810ede1. Boundary tested: 0, 255, 300, -10, None.', fix:'RESOLVED: Clamping + universe validation in set_channels().'},
-  'F13': {title:'F13 — Unbounded Thread Spawning (MEDIUM)', sev:'MEDIUM', sevColor:'#ddaa00', component:'ChaseEngine, Supabase sync, node cache refresh', problem:'35 threading.Thread spawns. Supabase spawns NEW thread per create/update — no pool, no limit. Node cache refresh leaks connections. Crashed chase threads never cleaned up.', scenario:'Rapid scene creation + slow Supabase = hundreds of threads. Each creates network connection + DB connection. Pi RAM exhausted. OOM kill.', fix:'1) ThreadPoolExecutor for Supabase sync\n2) Context managers for all SQLite connections\n3) Memory monitoring in health endpoint\n4) Max thread counts for engines'},
+  'F13': {title:'F13 — Thread Pool + Memory Monitoring ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'ThreadPoolExecutor + /api/health', problem:'[FIXED] Replaced 22 raw threading.Thread spawns with bounded ThreadPoolExecutor. _cloud_pool (4 workers) for Supabase sync/logging. _node_pool (2 workers) for ESP32 sync. Thread HWM monitoring. RSS/VMS memory tracking. Pool queue depth reporting.', scenario:'Fixed. Thread count bounded at pool limits. Health endpoint reports thread HWM, memory RSS/VMS, pool queue depths. Alert at >30 threads or >512MB RSS. Commit a06864d.', fix:'RESOLVED: cloud_submit() + node_submit() + enhanced /api/health.'},
   'F14': {title:'F14 — Cron Parser ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'ScheduleRunner (L1089)', problem:'[FIXED] Replaced 20-line hand-rolled cron parser with croniter.match(). Full cron syntax support.', scenario:'Fixed in commit eaf1e8d. croniter 6.0.0 installed. Tested wildcards, steps, ranges.', fix:'RESOLVED: croniter.match() replaces custom parser.'},
   'F15': {title:'F15 — Timeline Drift ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'ShowEngine._run_timeline() (L1439)', problem:'[FIXED] Replaced time.time() with time.monotonic(). Fixed tempo math: elapsed_logical = wall_time * tempo.', scenario:'Fixed in commit 00b4bf6. Tested tempo 0.5x, 1.0x, 2.0x — sub-1ms drift.', fix:'RESOLVED: Monotonic clock + correct tempo scaling.'},
   'F16': {title:'F16 — No Persistent Audit Log (LOW)', sev:'LOW', sevColor:'#888888', component:'ArbitrationManager.history', problem:'In-memory list capped at 50 entries. Rejected writes capped at 20. Lost on restart. Post-incident analysis impossible.', scenario:'Lighting "glitched" during live event. History overwritten by normal operations. No way to determine cause.', fix:'1) Structured logging with file rotation\n2) Persist audit trail to SQLite\n3) Timestamps + correlation IDs'},
