@@ -5062,6 +5062,32 @@ def stream_preview_frame(session_id, frame):
 preview_service.set_frame_callback(stream_preview_frame)
 
 # ============================================================
+# Blueprint Registration (F02 — god file decomposition)
+# ============================================================
+# Phase 1: Extract most isolated route groups into blueprints.
+# Each blueprint imports only what it needs — no circular deps.
+
+from blueprints.trust_bp import trust_bp
+from blueprints.modifiers_bp import modifiers_bp
+from blueprints.migrate_bp import migrate_bp, init_app as migrate_init
+from blueprints.settings_bp import settings_bp, init_app as settings_init
+from blueprints.merge_bp import merge_bp, init_app as merge_init
+
+# Wire dependencies into blueprints that need shared state
+migrate_init(DATABASE, looks_sequences_manager)
+settings_init(app_settings, save_settings, socketio)
+merge_init(merge_layer, content_manager, load_fixtures_into_classifier)
+
+# Register all blueprints with the Flask app
+app.register_blueprint(trust_bp)
+app.register_blueprint(modifiers_bp)
+app.register_blueprint(migrate_bp)
+app.register_blueprint(settings_bp)
+app.register_blueprint(merge_bp)
+
+print(f"[F02] 5 blueprints registered: trust, modifiers, migrate, settings, merge")
+
+# ============================================================
 # Background Services
 # ============================================================
 def discovery_listener():
@@ -6455,59 +6481,7 @@ def ping_all_nodes():
 # Trust Enforcement API (Phase 4 Lane 3)
 # ============================================================
 
-@app.route('/api/trust/status', methods=['GET'])
-def trust_status():
-    """Get current trust enforcement status.
-
-    TRUST RULE: Operator must always see system state.
-    Returns:
-        - monitoring: whether background monitoring is active
-        - node_health: health status for all tracked nodes
-        - playback_halted_due_to_failure: whether playback was halted
-        - active_alerts: list of active alert IDs
-        - recent_events: last 10 trust events
-    """
-    return jsonify(get_trust_status())
-
-
-@app.route('/api/trust/events', methods=['GET'])
-def trust_events():
-    """Get trust event history.
-
-    TRUST RULE: All trust events must be visible to operators.
-    Returns chronological list of trust-related events.
-    """
-    limit = request.args.get('limit', 100, type=int)
-    return jsonify({'events': get_trust_events(limit)})
-
-
-@app.route('/api/trust/ui-sync', methods=['POST'])
-def trust_ui_sync_check():
-    """Check if UI state matches backend reality.
-
-    TRUST RULE: UI desync -> REALITY wins over UI.
-    UI should call this periodically to verify its state matches backend.
-    If mismatch detected, UI must update to match reality.
-    """
-    data = request.get_json() or {}
-    ui_state = data.get('state', {})
-    component = data.get('component', 'unknown')
-
-    result = check_ui_sync(ui_state, component)
-    return jsonify(result)
-
-
-@app.route('/api/trust/clear-halt', methods=['POST'])
-def trust_clear_halt():
-    """Clear playback halt after operator acknowledges failure.
-
-    TRUST RULE: Partial node failure -> SYSTEM HALTS playback + ALERTS.
-    After operator acknowledges the issue, this endpoint clears the halt.
-    """
-    print("🛡️ TRUST: Operator clearing failure halt", flush=True)
-    clear_failure_halt()
-    return jsonify({'success': True, 'message': 'Failure halt cleared'})
-
+# [F02] Trust routes moved to blueprints/trust_bp.py (4 routes)
 
 # ============================================================
 # RDM API (Consolidated — all routes via rdm_manager singleton)
@@ -8312,103 +8286,7 @@ def cue_stack_status(stack_id):
     return jsonify(result)
 
 
-# ─────────────────────────────────────────────────────────
-# Merge Layer API (Phase 5 - Multi-source playback)
-# ─────────────────────────────────────────────────────────
-
-@app.route('/api/merge/status', methods=['GET'])
-def get_merge_status():
-    """
-    Get merge layer status including all active sources.
-
-    Returns:
-    {
-        "source_count": 2,
-        "active_count": 2,
-        "blackout_active": false,
-        "sources": [
-            {"source_id": "look_xxx", "source_type": "look", "priority": 50, ...},
-            {"source_id": "effect_yyy", "source_type": "effect", "priority": 60, ...}
-        ]
-    }
-    """
-    return jsonify(merge_layer.get_status())
-
-
-@app.route('/api/merge/channel/<int:universe>/<int:channel>', methods=['GET'])
-def get_channel_breakdown(universe, channel):
-    """
-    Debug endpoint: Show which sources contribute to a specific channel.
-
-    Returns the merge breakdown with:
-    - All contributing sources
-    - Channel type (dimmer/color/etc)
-    - Merge mode (HTP/LTP)
-    - Final merged value
-    """
-    return jsonify(merge_layer.get_source_breakdown(universe, channel))
-
-
-@app.route('/api/merge/blackout', methods=['POST'])
-def merge_blackout():
-    """
-    Activate merge layer blackout (highest priority override).
-
-    POST body:
-    {
-        "active": true,           // Enable/disable blackout
-        "universes": [1, 2]       // Optional: specific universes (null = all)
-    }
-    """
-    data = request.get_json() or {}
-    active = data.get('active', True)
-    universes = data.get('universes')
-
-    merge_layer.set_blackout(active, universes)
-
-    # Also trigger SSOT blackout for physical output
-    if active:
-        if universes:
-            for univ in universes:
-                content_manager.blackout(universe=univ, fade_ms=0)
-        else:
-            content_manager.blackout(fade_ms=0)
-
-    return jsonify({
-        'success': True,
-        'blackout_active': merge_layer.is_blackout(),
-        'universes': universes
-    })
-
-
-@app.route('/api/merge/sources', methods=['GET'])
-def get_merge_sources():
-    """List all registered merge sources with their priorities"""
-    status = merge_layer.get_status()
-    return jsonify({
-        'sources': status.get('sources', []),
-        'priority_levels': {
-            'blackout': 100,
-            'manual': 80,
-            'effect': 60,
-            'look': 50,
-            'sequence': 45,
-            'chase': 40,
-            'scene': 20,
-            'background': 10
-        }
-    })
-
-
-@app.route('/api/merge/classifier/reload', methods=['POST'])
-def reload_fixture_classifier():
-    """Reload fixture definitions into the channel classifier"""
-    load_fixtures_into_classifier()
-    return jsonify({
-        'success': True,
-        'message': 'Fixture classifier reloaded'
-    })
-
+# [F02] Merge Layer routes moved to blueprints/merge_bp.py (5 routes)
 
 # ─────────────────────────────────────────────────────────
 # Preview Service API (Phase 6 - Live editing preview)
@@ -8618,177 +8496,7 @@ def get_preview_status():
     return jsonify(preview_service.get_status())
 
 
-# ─────────────────────────────────────────────────────────
-# Modifier Registry API (schemas, presets, validation)
-# ─────────────────────────────────────────────────────────
-@app.route('/api/modifiers/schemas', methods=['GET'])
-def get_modifier_schemas_route():
-    """
-    Get all modifier schemas for UI generation.
-    Returns complete schema definitions including params, presets, and categories.
-    """
-    return jsonify(modifier_registry.to_api_response())
-
-@app.route('/api/modifiers/types', methods=['GET'])
-def get_modifier_types_route():
-    """Get list of available modifier types"""
-    return jsonify({
-        'types': modifier_registry.get_types(),
-        'categories': modifier_registry.get_categories()
-    })
-
-@app.route('/api/modifiers/<modifier_type>/presets', methods=['GET'])
-def get_modifier_presets_route(modifier_type):
-    """Get all presets for a specific modifier type"""
-    presets = modifier_registry.get_presets(modifier_type)
-    if not presets and modifier_type not in modifier_registry.get_types():
-        return jsonify({'error': f'Unknown modifier type: {modifier_type}'}), 404
-    return jsonify({
-        'modifier_type': modifier_type,
-        'presets': presets
-    })
-
-@app.route('/api/modifiers/<modifier_type>/presets/<preset_id>', methods=['GET'])
-def get_modifier_preset_route(modifier_type, preset_id):
-    """Get a specific preset and create a modifier from it"""
-    modifier_data = modifier_registry.create_from_preset(modifier_type, preset_id)
-    if not modifier_data:
-        return jsonify({'error': f'Preset not found: {modifier_type}/{preset_id}'}), 404
-    return jsonify({
-        'success': True,
-        'modifier': modifier_data
-    })
-
-@app.route('/api/modifiers/validate', methods=['POST'])
-def validate_modifier_route():
-    """
-    Validate a modifier against its schema.
-    Returns validation result with detailed error if invalid.
-    """
-    data = request.get_json() or {}
-    is_valid, error = validate_modifier(data)
-    if not is_valid:
-        return jsonify({
-            'valid': False,
-            'error': error
-        }), 400
-    return jsonify({
-        'valid': True,
-        'normalized': normalize_modifier(data)
-    })
-
-@app.route('/api/modifiers/normalize', methods=['POST'])
-def normalize_modifier_route():
-    """
-    Normalize a modifier by applying defaults and generating ID.
-    Use this before saving a modifier to ensure all fields are populated.
-    """
-    data = request.get_json() or {}
-    # Validate first
-    is_valid, error = validate_modifier(data)
-    if not is_valid:
-        return jsonify({'success': False, 'error': error}), 400
-    return jsonify({
-        'success': True,
-        'modifier': normalize_modifier(data)
-    })
-
-
-# ─────────────────────────────────────────────────────────
-# Distribution Modes API (Phase 1 - Fixture-Centric Architecture)
-# ─────────────────────────────────────────────────────────
-@app.route('/api/modifiers/distribution-modes', methods=['GET'])
-def get_distribution_modes_route():
-    """
-    Get all available distribution modes and their descriptions.
-
-    Distribution modes control how modifiers are applied across multiple fixtures:
-    - SYNCED: All fixtures identical (default)
-    - INDEXED: Scaled by fixture index
-    - PHASED: Time offset per fixture
-    - PIXELATED: Unique per fixture
-    - RANDOM: Deterministic random per fixture
-    """
-    modes = [
-        {
-            'mode': mode.value,
-            'name': mode.name,
-            'description': {
-                'synced': 'All fixtures receive identical effect values',
-                'indexed': 'Effect values scale linearly with fixture position',
-                'phased': 'Time offset between fixtures for traveling effects',
-                'pixelated': 'Each fixture has unique, independent effect values',
-                'random': 'Deterministic random variation per fixture',
-                'grouped': 'Same value for fixtures in same group',
-            }.get(mode.value, '')
-        }
-        for mode in DistributionMode
-    ]
-    return jsonify({
-        'modes': modes,
-        'presets': list_distribution_presets()
-    })
-
-
-@app.route('/api/modifiers/distribution-modes/<modifier_type>', methods=['GET'])
-def get_modifier_distribution_modes_route(modifier_type):
-    """Get supported distribution modes for a specific modifier type"""
-    supported = get_supported_distributions(modifier_type)
-    return jsonify({
-        'modifier_type': modifier_type,
-        'supported_modes': [mode.value for mode in supported]
-    })
-
-
-@app.route('/api/modifiers/distribution-modes/suggest', methods=['POST'])
-def suggest_distribution_mode_route():
-    """
-    Get AI-suggested distribution mode for a modifier and fixture selection.
-
-    Request body:
-    {
-        "modifier_type": "wave",
-        "fixture_count": 8,
-        "effect_intent": "chase" (optional)
-    }
-    """
-    data = request.get_json() or {}
-    modifier_type = data.get('modifier_type', 'pulse')
-    fixture_count = data.get('fixture_count', 1)
-    effect_intent = data.get('effect_intent')
-
-    suggestion = suggest_distribution_for_effect(
-        modifier_type=modifier_type,
-        fixture_count=fixture_count,
-        effect_intent=effect_intent
-    )
-
-    return jsonify({
-        'suggestion': suggestion.to_dict(),
-        'modifier_type': modifier_type,
-        'fixture_count': fixture_count
-    })
-
-
-@app.route('/api/modifiers/distribution-presets', methods=['GET'])
-def get_distribution_presets_route():
-    """Get all distribution presets"""
-    return jsonify({
-        'presets': list_distribution_presets()
-    })
-
-
-@app.route('/api/modifiers/distribution-presets/<preset_name>', methods=['GET'])
-def get_distribution_preset_route(preset_name):
-    """Get a specific distribution preset"""
-    preset = get_distribution_preset(preset_name)
-    if not preset:
-        return jsonify({'error': f'Preset not found: {preset_name}'}), 404
-    return jsonify({
-        'name': preset_name,
-        'config': preset.to_dict()
-    })
-
+# [F02] Modifier & Distribution routes moved to blueprints/modifiers_bp.py (11 routes)
 
 # ─────────────────────────────────────────────────────────
 # AI Fixture Advisor API (Phase 2 - Fixture-Centric Architecture)
@@ -8996,25 +8704,7 @@ def set_render_features_route():
 # ─────────────────────────────────────────────────────────
 # Migration Routes (legacy scenes/chases to looks/sequences)
 # ─────────────────────────────────────────────────────────
-@app.route('/api/migrate/scenes-to-looks', methods=['POST'])
-def migrate_scenes_to_looks_route():
-    """Migrate legacy scenes to new looks format"""
-    from looks_sequences import migrate_scenes_to_looks
-    report = migrate_scenes_to_looks(DATABASE, looks_sequences_manager)
-    return jsonify({'success': True, 'report': report})
-
-@app.route('/api/migrate/chases-to-sequences', methods=['POST'])
-def migrate_chases_to_sequences_route():
-    """Migrate legacy chases to new sequences format"""
-    from looks_sequences import migrate_chases_to_sequences
-    report = migrate_chases_to_sequences(DATABASE, looks_sequences_manager)
-    return jsonify({'success': True, 'report': report})
-
-@app.route('/api/migrate/all', methods=['POST'])
-def migrate_all_route():
-    """Run full migration from legacy to new format"""
-    report = run_full_migration(DATABASE)
-    return jsonify({'success': True, 'report': report})
+# [F02] Migration routes moved to blueprints/migrate_bp.py (3 routes)
 
 # ─────────────────────────────────────────────────────────
 # Dynamic Effects Routes (DEPRECATED — use /api/effects/fixture instead)
@@ -10848,66 +10538,7 @@ def get_cloud_learnings():
 # ─────────────────────────────────────────────────────────
 # Settings Routes
 # ─────────────────────────────────────────────────────────
-@app.route('/api/settings/all', methods=['GET'])
-def get_all_settings():
-    return jsonify(app_settings)
-
-@app.route('/api/settings/<category>', methods=['GET'])
-def get_settings_category(category):
-    return jsonify(app_settings.get(category, {}))
-
-@app.route('/api/settings/<category>', methods=['POST', 'PUT'])
-def update_settings_category(category):
-    global app_settings
-    data = request.get_json()
-    if category in app_settings:
-        app_settings[category].update(data)
-        save_settings(app_settings)
-        socketio.emit('settings_update', {'category': category, 'data': app_settings[category]})
-        return jsonify({'success': True, category: app_settings[category]})
-    return jsonify({'error': 'Category not found'}), 404
-
-@app.route('/api/screen-context', methods=['POST'])
-def screen_context():
-    data = request.get_json()
-    socketio.emit('screen:context', {'page': data.get('page', 'Unknown'),
-                                      'action': data.get('action'),
-                                      'timestamp': datetime.now().isoformat()})
-    return jsonify({'success': True})
-
-# ─────────────────────────────────────────────────────────
-# Setup Complete Routes (for browser onboarding persistence)
-# ─────────────────────────────────────────────────────────
-@app.route('/api/settings/setup-complete', methods=['GET'])
-def get_setup_complete():
-    """Get setup completion status - shared across all browsers"""
-    setup = app_settings.get('setup', {'complete': False})
-    return jsonify(setup)
-
-@app.route('/api/settings/setup-complete', methods=['POST'])
-def set_setup_complete():
-    """Mark setup as complete - persists on server for all browsers"""
-    global app_settings
-    data = request.get_json() or {}
-    if 'setup' not in app_settings:
-        app_settings['setup'] = {'complete': False, 'mode': None, 'userProfile': {}}
-    app_settings['setup']['complete'] = data.get('complete', True)
-    if 'mode' in data:
-        app_settings['setup']['mode'] = data['mode']
-    if 'userProfile' in data:
-        app_settings['setup']['userProfile'].update(data['userProfile'])
-    save_settings(app_settings)
-    socketio.emit('settings_update', {'category': 'setup', 'data': app_settings['setup']})
-    return jsonify({'success': True, 'setup': app_settings['setup']})
-
-@app.route('/api/settings/setup-reset', methods=['POST'])
-def reset_setup():
-    """Reset setup (for debugging/testing)"""
-    global app_settings
-    app_settings['setup'] = {'complete': False, 'mode': None, 'userProfile': {}}
-    save_settings(app_settings)
-    return jsonify({'success': True, 'setup': app_settings['setup']})
-
+# [F02] Settings & Screen Context routes moved to blueprints/settings_bp.py (7 routes)
 
 # ============================================================
 # AI SSOT Routes
