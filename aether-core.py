@@ -968,6 +968,7 @@ class ChaseEngine:
             self.chase_health[chase_id] = {"step": step_index, "last_time": time.time(), "status": f"error: {e}"}
         finally:
             self.chase_health[chase_id] = {"step": step_index, "last_time": time.time(), "status": "stopped"}
+            close_db()  # [N05 fix] Clean up thread-local DB connection
             print(f"⏹️ Chase '{chase['name']}' stopped after {loop_count} loops", flush=True)
 
     def _send_step(self, universe, channels, fade_ms=0, distribution_mode='unified', chase_id=None, stop_flag=None, arb_token=None):
@@ -1039,6 +1040,9 @@ class ChaseEngine:
                 return
 
         # Fallback: direct write if merge layer not available (legacy behavior)
+        # [N03] This path bypasses UnifiedPlayback — log for visibility
+        logging.warning(f"⚠️ N03: ChaseEngine fallback direct write (merge_layer={self._merge_layer is not None}, chase_id={chase_id})")
+        audit_log('chase_fallback_write', chase_id=chase_id, universe=universe, channels=len(parsed))
         # [F08] Token-validated arbitration guard
         if arbitration and not arbitration.can_write('chase', token=arb_token):
             return
@@ -1411,6 +1415,7 @@ class TimerRunner:
             })
 
         conn.close()
+        close_db()  # [N05 fix] Actually close thread-local connection (conn.close() is a no-op wrapper)
 
         # Remove from active timers
         with self.lock:
@@ -6066,6 +6071,27 @@ if __name__ == '__main__':
     import signal
     def _graceful_shutdown(signum, frame):
         print("\n⏹️ SIGTERM received — graceful shutdown...", flush=True)
+        # [N07 fix] Stop all playback engines before saving state
+        try:
+            effects_engine.stop_effect()
+            print("  ✓ Effects stopped", flush=True)
+        except Exception:
+            pass
+        try:
+            chase_engine.stop_all()
+            print("  ✓ Chases stopped", flush=True)
+        except Exception:
+            pass
+        try:
+            show_engine.stop()
+            print("  ✓ Shows stopped", flush=True)
+        except Exception:
+            pass
+        try:
+            unified_engine.stop_all()
+            print("  ✓ Unified playback stopped", flush=True)
+        except Exception:
+            pass
         try:
             dmx_state.save_state_now()  # [F09] Persist state before shutdown
             print("  ✓ State saved", flush=True)

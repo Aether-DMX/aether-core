@@ -1504,33 +1504,33 @@
       <line x1="742" y1="770" x2="1350" y2="770" stroke="var(--yellow)" stroke-width="0.5" opacity="0.4"/>
 
       <!-- CRITICAL -->
-      <text font-size="9" fill="#ff4444" font-weight="700" x="742" y="792" font-family="monospace">━━ CRITICAL (2) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</text>
+      <text font-size="9" fill="#ff4444" font-weight="700" x="742" y="792" font-family="monospace">━━ CRITICAL (2 — ALL FIXED) ━━━━━━━━━━━━━━━━━</text>
       <g class="redline-marker" onclick="showFlaw('N01')">
-        <circle cx="752" cy="810" r="6" fill="#ff4444"/><text font-size="9" fill="#ff4444" x="764" y="814">N01  broadcast_ws() called but NEVER DEFINED — runtime crash</text>
+        <circle cx="752" cy="810" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="814">N01  ✅ FIXED — broadcast_ws() replaced with socketio.emit()</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('N02')">
-        <circle cx="752" cy="828" r="6" fill="#ff4444"/><text font-size="9" fill="#ff4444" x="764" y="832">N02  shows table missing from init_database() — show ops crash</text>
+        <circle cx="752" cy="828" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="832">N02  ✅ FIXED — shows table added to init_database()</text>
       </g>
 
       <!-- HIGH -->
-      <text font-size="9" fill="#ff8800" font-weight="700" x="742" y="856" font-family="monospace">━━ HIGH (6) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</text>
+      <text font-size="9" fill="#ff8800" font-weight="700" x="742" y="856" font-family="monospace">━━ HIGH (6 — 3 FIXED, 1 MITIGATED, 2 FALSE) ━</text>
       <g class="redline-marker" onclick="showFlaw('N03')">
-        <circle cx="752" cy="874" r="6" fill="#ff8800"/><text font-size="9" fill="var(--text)" x="764" y="878">N03  ChaseEngine direct ContentManager write bypasses UnifiedPlayback</text>
+        <circle cx="752" cy="874" r="6" fill="#ddaa00"/><text font-size="9" fill="var(--yellow)" x="764" y="878">N03  ⚠ MITIGATED — fallback path now audit-logged (TASK-0006 debt)</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('N04')">
-        <circle cx="752" cy="892" r="6" fill="#ff8800"/><text font-size="9" fill="var(--text)" x="764" y="896">N04  EffectsEngine guarded flag can be bypassed (TASK-0005 incomplete)</text>
+        <circle cx="752" cy="892" r="6" fill="#ddaa00"/><text font-size="9" fill="var(--text-dim)" x="764" y="896">N04  ⚠ DEFERRED — EffectsEngine TASK-0005 (same class as N03)</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('N05')">
-        <circle cx="752" cy="910" r="6" fill="#ff8800"/><text font-size="9" fill="var(--text)" x="764" y="914">N05  Thread-local DB connections never explicitly closed</text>
+        <circle cx="752" cy="910" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="914">N05  ✅ FIXED — close_db() added to daemon thread finally blocks</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('N06')">
-        <circle cx="752" cy="928" r="6" fill="#ff8800"/><text font-size="9" fill="var(--text)" x="764" y="932">N06  SocketIO emit() in background threads — not thread-safe</text>
+        <circle cx="752" cy="928" r="6" fill="#555"/><text font-size="9" fill="var(--text-dim)" x="764" y="932">N06  ✗ FALSE POSITIVE — Flask-SocketIO emit IS thread-safe by design</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('N07')">
-        <circle cx="752" cy="946" r="6" fill="#ff8800"/><text font-size="9" fill="var(--text)" x="764" y="950">N07  No graceful shutdown for playback threads on SIGTERM</text>
+        <circle cx="752" cy="946" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="950">N07  ✅ FIXED — effects/chases/shows/unified stopped before shutdown</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('N08')">
-        <circle cx="752" cy="964" r="6" fill="#ff8800"/><text font-size="9" fill="var(--text)" x="764" y="968">N08  Supabase sync has no offline queue — data lost if cloud down</text>
+        <circle cx="752" cy="964" r="6" fill="#555"/><text font-size="9" fill="var(--text-dim)" x="764" y="968">N08  ✗ FALSE POSITIVE — PendingSyncQueue already exists (disk-persisted)</text>
       </g>
 
       <!-- MEDIUM -->
