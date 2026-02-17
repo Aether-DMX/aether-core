@@ -1,14 +1,15 @@
 {
-  "updated": "2026-02-17T16:30:00Z",
-  "session": "idle",
+  "updated": "2026-02-17T19:05:00Z",
+  "session": "active",
   "current_task": {
-    "flaw_id": null,
-    "title": "Awaiting Sprint 3 — Architecture Hardening",
-    "status": "pending",
-    "component": "all",
-    "notes": "Sprint 2 complete (9/20 fixed). Next: F06, F08, F02, F13"
+    "flaw_id": "F06",
+    "title": "Consolidate 5 duplicate playback systems",
+    "status": "in_progress",
+    "component": "playback",
+    "notes": "Sprint 3 started (10/20 fixed). Current: F06, then F08, F02"
   },
   "recent_completions": [
+    {"flaw_id": "F13", "title": "Thread pool + memory monitoring — bounded pools, health endpoint enhanced", "time": "19:04"},
     {"flaw_id": "F07", "title": "ESP32 sole fade authority — Python interpolation for UI only", "time": "16:00"},
     {"flaw_id": "F09", "title": "Crash recovery: immediate state persistence + enriched sessions", "time": "15:50"},
     {"flaw_id": "F01", "title": "Systemd watchdog (30s) + graceful shutdown + health endpoint", "time": "15:40"},
@@ -22,15 +23,18 @@
   "flaws": {
     "F01": "fixed", "F02": "open", "F03": "open", "F04": "fixed", "F05": "fixed",
     "F06": "open", "F07": "fixed", "F08": "open", "F09": "fixed", "F10": "open",
-    "F11": "open", "F12": "fixed", "F13": "open", "F14": "fixed", "F15": "fixed",
+    "F11": "open", "F12": "fixed", "F13": "fixed", "F14": "fixed", "F15": "fixed",
     "F16": "open", "F17": "open", "F18": "fixed", "F19": "open", "F20": "open"
   },
   "sprint": {
-    "current": "Between Sprints — Sprint 2 Complete ✅",
-    "items": ["F04", "F01", "F09", "F07"],
-    "progress": "4/4"
+    "current": "Sprint 3 — Architecture Hardening 🔧",
+    "items": ["F13", "F06", "F08", "F02"],
+    "progress": "1/4"
   },
   "session_log": [
+    "19:05 — 🔧 Starting F06: Consolidate 5 duplicate playback systems",
+    "19:04 — ✅ F13 FIXED: Bounded thread pools (cloud=4, node=2) + memory monitoring — commit a06864d, deployed",
+    "19:04 — 🚀 Sprint 3 started: Architecture Hardening",
     "16:30 — 💤 Session idle — awaiting Sprint 3 go-ahead",
     "16:00 — ✅ F07 FIXED: ESP32 sole fade authority — commit 9f233f0, deployed",
     "16:00 — 🏁 SPRINT 2 COMPLETE: 4/4 critical infrastructure fixes resolved!",
@@ -39,9 +43,6 @@
     "15:15 — ✅ F04 FIXED: Thread-local pool + WAL + atomic UPDATE — commits 5fc2a3b/83a6bad/1359eb1",
     "15:00 — 🚀 Sprint 2 started: Critical Infrastructure",
     "00:25 — 🏁 SPRINT 1 COMPLETE: 5/5 quick wins resolved!",
-    "00:20 — ✅ F14 FIXED: croniter replaces hand-rolled parser",
-    "00:10 — ✅ F15 FIXED: time.monotonic() + tempo math",
-    "23:15 — ✅ F12 FIXED: DMX values clamped 0-255",
-    "23:10 — ✅ F05 FIXED: CORS origins='*' → ALLOWED_ORIGINS"
+    "00:20 — ✅ F14 FIXED: croniter replaces hand-rolled parser"
   ]
 }
