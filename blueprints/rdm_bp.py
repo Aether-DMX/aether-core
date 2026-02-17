@@ -26,8 +26,11 @@ def init_app(rdm_manager, get_db_fn):
 @rdm_bp.route('/api/nodes/<node_id>/rdm/discover', methods=['POST'])
 def rdm_discover(node_id):
     """Start RDM discovery on a node - finds all RDM fixtures on DMX bus"""
-    result = _rdm_manager.discover_devices(node_id)
-    return jsonify(result)
+    try:
+        result = _rdm_manager.discover_devices(node_id)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @rdm_bp.route('/api/nodes/<node_id>/rdm/discover/status', methods=['GET'])

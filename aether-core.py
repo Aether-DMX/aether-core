@@ -1919,7 +1919,7 @@ def get_db():
     conn = sqlite3.connect(DATABASE, check_same_thread=False, timeout=10)
     conn.row_factory = sqlite3.Row
     conn.execute('PRAGMA journal_mode=WAL')       # [F04] WAL for concurrent access
-    conn.execute('PRAGMA busy_timeout=5000')       # [F04] Wait up to 5s instead of failing
+    conn.execute('PRAGMA busy_timeout=15000')       # [F04] Wait up to 15s instead of failing (increased from 5s for RDM/discovery contention)
     conn.execute('PRAGMA synchronous=NORMAL')      # [F04] Safe with WAL, faster than FULL
     conn.execute('PRAGMA cache_size=-8000')         # [F04] 8MB cache per connection
     _db_local.connection = conn
@@ -3844,6 +3844,7 @@ class RDMManager:
                 VALUES (?, ?, ?, ?, ?, ?)''',
                 (uid, node_id, universe, manufacturer_id, device_model_id,
                  datetime.now().isoformat()))
+        conn.commit()
 
         conn.commit()
         print(f"✓ Saved {len(devices)} RDM devices to database")
