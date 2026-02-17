@@ -3934,12 +3934,19 @@ class RDMManager:
         return [dict(zip(columns, row)) for row in c.fetchall()]
 
     def get_all_devices(self):
-        """Get all RDM devices from database."""
+        """Get all RDM devices from database, enriched with live_inventory status."""
         conn = get_db()
         c = conn.cursor()
         c.execute('SELECT * FROM rdm_devices ORDER BY node_id, dmx_address')
         columns = [d[0] for d in c.description]
-        return [dict(zip(columns, row)) for row in c.fetchall()]
+        devices = [dict(zip(columns, row)) for row in c.fetchall()]
+        # Merge live_inventory into each device for real-time status
+        for dev in devices:
+            inv = self.live_inventory.get(dev.get('uid'), {})
+            dev['online'] = inv.get('status', 'offline') == 'online'
+            dev['status'] = inv.get('status', 'offline')
+            dev['is_patched'] = inv.get('is_patched', False)
+        return devices
 
     def delete_device(self, uid):
         """Remove a device from the database and cache."""
@@ -5398,6 +5405,15 @@ app.register_blueprint(dmx_bp)
 app.register_blueprint(playback_bp)
 
 print(f"[F02] 28 blueprints registered — god file decomposition nearly complete")
+
+# Restore persisted auto-sync state from settings
+_autosync_cfg = app_settings.get('autosync', {})
+if _autosync_cfg.get('enabled', False):
+    app._autosync_enabled = True
+    app._autosync_interval = _autosync_cfg.get('interval_minutes', 30)
+    from blueprints.system_bp import _start_autosync_thread
+    _start_autosync_thread()
+    print(f"✓ Auto-sync restored from settings: every {app._autosync_interval} min")
 
 # ============================================================
 # Background Services

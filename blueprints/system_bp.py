@@ -230,17 +230,30 @@ def system_update():
 @system_bp.route('/api/system/update/check', methods=['GET'])
 def system_update_check():
     """Check if updates are available without applying them"""
+    git_dir = os.path.dirname(_AETHER_FILE_PATH)
     try:
-        subprocess.run(
+        fetch_result = subprocess.run(
             ['git', 'fetch', 'origin'],
             capture_output=True, text=True, timeout=30,
-            cwd=os.path.dirname(_AETHER_FILE_PATH)
+            cwd=git_dir
         )
+
+        # Detect connectivity failure — git fetch returns non-zero or stderr contains "fatal"
+        fetch_failed = fetch_result.returncode != 0 or 'fatal' in (fetch_result.stderr or '').lower()
+        if fetch_failed:
+            return jsonify({
+                'current_commit': _AETHER_COMMIT,
+                'update_available': False,
+                'commits_behind': 0,
+                'latest_commit': None,
+                'offline': True,
+                'error': 'Cannot reach remote — check internet connection'
+            })
 
         result = subprocess.run(
             ['git', 'rev-list', 'HEAD..origin/main', '--count'],
             capture_output=True, text=True, timeout=10,
-            cwd=os.path.dirname(_AETHER_FILE_PATH)
+            cwd=git_dir
         )
 
         commits_behind = int(result.stdout.strip()) if result.returncode == 0 else 0
@@ -248,48 +261,62 @@ def system_update_check():
         log_result = subprocess.run(
             ['git', 'log', 'origin/main', '-1', '--format=%h %s'],
             capture_output=True, text=True, timeout=10,
-            cwd=os.path.dirname(_AETHER_FILE_PATH)
+            cwd=git_dir
         )
 
         return jsonify({
             'current_commit': _AETHER_COMMIT,
             'update_available': commits_behind > 0,
             'commits_behind': commits_behind,
-            'latest_commit': log_result.stdout.strip() if log_result.returncode == 0 else None
+            'latest_commit': log_result.stdout.strip() if log_result.returncode == 0 else None,
+            'offline': False
+        })
+    except subprocess.TimeoutExpired:
+        return jsonify({
+            'current_commit': _AETHER_COMMIT,
+            'update_available': False,
+            'offline': True,
+            'error': 'Git fetch timed out — no internet?'
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 @system_bp.route('/api/system/autosync', methods=['GET'])
 def get_autosync_status():
-    """Get auto-sync status"""
+    """Get auto-sync status (persisted in settings)"""
+    # Load from persistent settings first, fall back to runtime state
+    autosync_settings = _app_settings.get('autosync', {})
     return jsonify({
-        'enabled': getattr(_app, '_autosync_enabled', False),
-        'interval_minutes': getattr(_app, '_autosync_interval', 30),
+        'enabled': autosync_settings.get('enabled', getattr(_app, '_autosync_enabled', False)),
+        'interval_minutes': autosync_settings.get('interval_minutes', getattr(_app, '_autosync_interval', 30)),
         'last_check': getattr(_app, '_autosync_last_check', None),
         'last_update': getattr(_app, '_autosync_last_update', None)
     })
 
 @system_bp.route('/api/system/autosync', methods=['POST'])
 def set_autosync():
-    """Enable/disable auto-sync"""
+    """Enable/disable auto-sync (persisted to settings)"""
     data = request.get_json() or {}
     enabled = data.get('enabled', False)
-    interval = data.get('interval_minutes', 30)
+    interval = max(5, min(1440, data.get('interval_minutes', 30)))
 
     _app._autosync_enabled = enabled
-    _app._autosync_interval = max(5, min(1440, interval))
+    _app._autosync_interval = interval
+
+    # Persist to settings file so it survives restarts
+    _app_settings['autosync'] = {'enabled': enabled, 'interval_minutes': interval}
+    _save_settings(_app_settings)
 
     if enabled:
         _start_autosync_thread()
-        print(f"✓ Auto-sync enabled: checking every {_app._autosync_interval} minutes")
+        print(f"✓ Auto-sync enabled: checking every {interval} minutes (persisted)")
     else:
-        print("✓ Auto-sync disabled")
+        print("✓ Auto-sync disabled (persisted)")
 
     return jsonify({
         'success': True,
-        'enabled': _app._autosync_enabled,
-        'interval_minutes': _app._autosync_interval
+        'enabled': enabled,
+        'interval_minutes': interval
     })
 
 

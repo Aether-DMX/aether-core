@@ -4,6 +4,9 @@ Routes: /api/nodes/*
 Dependencies: node_manager (also aliased as ssot), get_db, node_submit
 """
 
+import os
+import subprocess
+import threading
 from flask import Blueprint, jsonify, request
 
 nodes_bp = Blueprint('nodes', __name__)
@@ -268,13 +271,79 @@ def reboot_node(node_id):
 
 @nodes_bp.route('/api/nodes/<node_id>/update', methods=['POST'])
 def update_node_firmware(node_id):
-    """Firmware OTA update - not yet supported over network."""
+    """OTA firmware update via espota.py — pushes firmware.bin to node over WiFi."""
+    node = _node_manager.get_node(node_id)
+    if not node:
+        return jsonify({'success': False, 'error': 'Node not found'}), 404
+
+    node_ip = node.get('ip')
+    if not node_ip:
+        return jsonify({'success': False, 'error': 'Node has no IP address'}), 400
+
+    # Locate firmware binary and espota.py
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # aether-core/
+    pulse_dir = os.path.join(os.path.dirname(base_dir), 'aether-pulse')
+
+    # Check multiple firmware locations
+    firmware_paths = [
+        os.path.join(base_dir, 'firmware', 'firmware.bin'),               # aether-core/firmware/
+        os.path.join(pulse_dir, 'hybrid', '.pio', 'build', 'pulse_bulletproof', 'firmware.bin'),
+        os.path.join(pulse_dir, '.pio', 'build', 'pulse', 'firmware.bin'),
+    ]
+    firmware_path = None
+    for fp in firmware_paths:
+        if os.path.exists(fp):
+            firmware_path = fp
+            break
+
+    if not firmware_path:
+        return jsonify({
+            'success': False,
+            'error': 'No firmware.bin found. Build firmware first or place in aether-core/firmware/',
+            'searched': firmware_paths
+        }), 404
+
+    espota_paths = [
+        os.path.join(pulse_dir, 'hybrid', 'espota.py'),
+        os.path.join(pulse_dir, 'espota.py'),
+    ]
+    espota_path = None
+    for ep in espota_paths:
+        if os.path.exists(ep):
+            espota_path = ep
+            break
+
+    if not espota_path:
+        return jsonify({'success': False, 'error': 'espota.py not found in aether-pulse'}), 404
+
+    firmware_size = os.path.getsize(firmware_path)
+    print(f"OTA: Pushing {firmware_path} ({firmware_size} bytes) to {node_id} ({node_ip})", flush=True)
+
+    # Run OTA in background thread so we don't block the request
+    def run_ota():
+        try:
+            result = subprocess.run(
+                ['python3', espota_path, '-i', node_ip, '-p', '8266', '-f', firmware_path],
+                capture_output=True, text=True, timeout=120
+            )
+            if result.returncode == 0:
+                print(f"OTA: ✅ {node_id} updated successfully", flush=True)
+            else:
+                print(f"OTA: ❌ {node_id} failed: {result.stderr}", flush=True)
+        except subprocess.TimeoutExpired:
+            print(f"OTA: ❌ {node_id} timed out after 120s", flush=True)
+        except Exception as e:
+            print(f"OTA: ❌ {node_id} error: {e}", flush=True)
+
+    ota_thread = threading.Thread(target=run_ota, daemon=True)
+    ota_thread.start()
+
     return jsonify({
-        'success': False,
-        'error': 'OTA firmware update not yet supported. Flash via USB.',
-        'node_id': node_id,
-        'action': 'update'
-    }), 501
+        'success': True,
+        'message': f'OTA update started for {node_id} ({node_ip})',
+        'firmware_size': firmware_size,
+        'firmware_path': firmware_path
+    })
 
 @nodes_bp.route('/api/nodes/ping', methods=['POST'])
 def ping_all_nodes():
