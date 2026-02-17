@@ -5088,6 +5088,7 @@ from blueprints.node_groups_bp import node_groups_bp, init_app as node_groups_in
 from blueprints.rdm_bp import rdm_bp, init_app as rdm_init
 from blueprints.preview_bp import preview_bp, init_app as preview_init
 from blueprints.effects_bp import effects_bp, init_app as effects_init
+from blueprints.nodes_bp import nodes_bp, init_app as nodes_init
 
 # Wire dependencies into blueprints that need shared state
 migrate_init(DATABASE, looks_sequences_manager)
@@ -5111,6 +5112,7 @@ node_groups_init(get_db)
 rdm_init(rdm_manager, get_db)
 preview_init(preview_service)
 effects_init(effects_engine, content_manager, unified_engine)
+nodes_init(node_manager, get_db, node_submit)
 
 # Register all blueprints with the Flask app
 app.register_blueprint(trust_bp)
@@ -5134,8 +5136,9 @@ app.register_blueprint(node_groups_bp)
 app.register_blueprint(rdm_bp)
 app.register_blueprint(preview_bp)
 app.register_blueprint(effects_bp)
+app.register_blueprint(nodes_bp)
 
-print(f"[F02] 21 blueprints registered: trust, modifiers, migrate, settings, merge, scenes, chases, pixel, shows, schedules, cloud, session, system, groups, ai, fixtures, fixture_library, node_groups, rdm, preview, effects")
+print(f"[F02] 22 blueprints registered: trust, modifiers, migrate, settings, merge, scenes, chases, pixel, shows, schedules, cloud, session, system, groups, ai, fixtures, fixture_library, node_groups, rdm, preview, effects, nodes")
 
 # ============================================================
 # Background Services
@@ -5331,128 +5334,8 @@ def version():
 
 # [F02] System routes moved to blueprints/system_bp.py (7 routes + autosync helper)
 
-@app.route('/api/nodes', methods=['GET'])
-def get_nodes():
-    return jsonify(node_manager.get_all_nodes())
+# [F02] Node routes moved to blueprints/nodes_bp.py (10 routes)
 
-@app.route('/api/nodes/online', methods=['GET'])
-def get_online_nodes():
-    return jsonify(node_manager.get_all_nodes(include_offline=False))
-
-@app.route('/api/nodes/<node_id>', methods=['GET'])
-def get_node(node_id):
-    node = node_manager.get_node(node_id)
-    return jsonify(node) if node else (jsonify({'error': 'Node not found'}), 404)
-
-@app.route('/api/nodes/<node_id>/pair', methods=['POST'])
-def pair_node(node_id):
-    try:
-        node = node_manager.pair_node(node_id, request.get_json() or {})
-        if node:
-            return jsonify(node)
-        else:
-            return jsonify({'error': 'Node not found - it may not have registered yet'}), 404
-    except Exception as e:
-        print(f"Error pairing node {node_id}: {e}")
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/nodes/<node_id>/configure', methods=['POST'])
-def configure_node(node_id):
-    """Update configuration for an already-paired node"""
-    config = request.get_json() or {}
-    node = node_manager.get_node(node_id)
-    if not node:
-        return jsonify({'error': 'Node not found'}), 404
-
-    # Support both legacy and new slice field names
-    channel_start = config.get('channelStart') or config.get('channel_start')
-    channel_end = config.get('channelEnd') or config.get('channel_end')
-    slice_mode = config.get('slice_mode')
-
-    # Update database (including type and slice_mode if specified)
-    conn = get_db()
-    c = conn.cursor()
-    new_type = config.get('type')
-    if new_type:
-        c.execute('''UPDATE nodes SET
-            name = COALESCE(?, name),
-            universe = COALESCE(?, universe),
-            channel_start = COALESCE(?, channel_start),
-            channel_end = COALESCE(?, channel_end),
-            slice_mode = COALESCE(?, slice_mode),
-            type = ?
-            WHERE node_id = ?''',
-            (config.get('name'), config.get('universe'),
-             channel_start, channel_end, slice_mode,
-             new_type, str(node_id)))
-    else:
-        c.execute('''UPDATE nodes SET
-            name = COALESCE(?, name),
-            universe = COALESCE(?, universe),
-            channel_start = COALESCE(?, channel_start),
-            channel_end = COALESCE(?, channel_end),
-            slice_mode = COALESCE(?, slice_mode)
-            WHERE node_id = ?''',
-            (config.get('name'), config.get('universe'),
-             channel_start, channel_end, slice_mode, str(node_id)))
-    conn.commit()
-    conn.close()
-
-    # Refresh node from DB
-    node = node_manager.get_node(node_id)
-
-    # Send config to node via UDP command port
-    if node and node.get('type') == 'wifi':
-        node_manager.send_config_to_node(node, {
-            'name': node.get('name'),
-            'universe': node.get('universe'),
-            'channel_start': node.get('channel_start'),
-            'channel_end': node.get('channel_end'),
-            'slice_mode': node.get('slice_mode', 'zero_outside')
-        })
-
-    node_manager.broadcast_status()
-    return jsonify({'success': True, 'node': node})
-
-@app.route('/api/nodes/<node_id>/unpair', methods=['POST'])
-def unpair_node(node_id):
-    node_manager.unpair_node(node_id)
-    return jsonify({'success': True})
-
-@app.route('/api/nodes/<node_id>', methods=['DELETE'])
-def delete_node(node_id):
-    node_manager.delete_node(node_id)
-    return jsonify({'success': True})
-
-@app.route('/api/nodes/<node_id>/toggle-visibility', methods=['POST'])
-def toggle_node_visibility(node_id):
-    """Toggle whether a node is hidden from the dashboard"""
-    data = request.get_json() or {}
-    hidden = data.get('hidden', False)
-
-    conn = get_db()
-    c = conn.cursor()
-    c.execute('UPDATE nodes SET hidden_from_dashboard = ? WHERE node_id = ?', (1 if hidden else 0, node_id))
-    conn.commit()
-    conn.close()
-
-    node_manager.broadcast_status()
-    return jsonify({'success': True, 'hidden_from_dashboard': hidden})
-
-@app.route('/api/nodes/<node_id>/sync', methods=['POST'])
-def sync_node(node_id):
-    """Force sync content to a specific node"""
-    node = node_manager.get_node(node_id)
-    if not node:
-        return jsonify({'error': 'Node not found'}), 404
-    node_submit(node_manager.sync_content_to_node, node)
-    return jsonify({'success': True, 'message': 'Sync started'})
-
-@app.route('/api/nodes/sync', methods=['POST'])
-def sync_all_nodes():
-    """Force sync content to all nodes"""
-    node_submit(node_manager.sync_all_content)
-    return jsonify({'success': True, 'message': 'Full sync started'})
 
 # [F02] Node groups routes moved to blueprints/node_groups_bp.py (10 routes)
 
@@ -5637,187 +5520,7 @@ def dmx_panic():
     return jsonify(results)
 
 
-@app.route('/api/nodes/<node_id>/ping', methods=['POST'])
-def ping_node(node_id):
-    """SAFETY ACTION: Health check for a specific node.
-
-    Sends a ping command to verify node connectivity.
-    Returns success/failure status.
-    """
-    print(f"🏓 SAFETY ACTION: /api/nodes/{node_id}/ping called", flush=True)
-
-    node = node_manager.get_node(node_id)
-    if not node:
-        print(f"   ✗ Node {node_id} not found", flush=True)
-        return jsonify({'success': False, 'error': 'Node not found'}), 404
-
-    node_ip = node.get('ip')
-    if not node_ip:
-        print(f"   ✗ Node {node_id} has no IP address", flush=True)
-        return jsonify({'success': False, 'error': 'Node has no IP address'}), 400
-
-    try:
-        result = ssot.send_udpjson_ping(node_ip)
-        success = result is not None
-        print(f"   {'✓' if success else '✗'} Ping to {node_id} ({node_ip}): {'success' if success else 'failed'}", flush=True)
-        return jsonify({
-            'success': success,
-            'node_id': node_id,
-            'ip': node_ip,
-            'action': 'ping'
-        })
-    except Exception as e:
-        print(f"   ✗ Ping to {node_id} failed: {e}", flush=True)
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-
-@app.route('/api/nodes/<node_id>/reset', methods=['POST'])
-def reset_node(node_id):
-    """SAFETY ACTION: Reset a specific node.
-
-    Commands the node to reset its internal state:
-    - Clears any stuck effects
-    - Resets DMX output to zero
-    - Reinitializes the node
-
-    Use this when a node is misbehaving or stuck.
-    """
-    print(f"🔄 SAFETY ACTION: /api/nodes/{node_id}/reset called", flush=True)
-
-    node = node_manager.get_node(node_id)
-    if not node:
-        print(f"   ✗ Node {node_id} not found", flush=True)
-        return jsonify({'success': False, 'error': 'Node not found'}), 404
-
-    node_ip = node.get('ip')
-    if not node_ip:
-        print(f"   ✗ Node {node_id} has no IP address", flush=True)
-        return jsonify({'success': False, 'error': 'Node has no IP address'}), 400
-
-    try:
-        result = ssot.send_udpjson_reset(node_ip)
-        success = result is not None
-        print(f"   {'✓' if success else '✗'} Reset {node_id} ({node_ip}): {'success' if success else 'failed'}", flush=True)
-        return jsonify({
-            'success': success,
-            'node_id': node_id,
-            'ip': node_ip,
-            'action': 'reset'
-        })
-    except Exception as e:
-        print(f"   ✗ Reset {node_id} failed: {e}", flush=True)
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-
-@app.route('/api/nodes/<node_id>/stats', methods=['GET'])
-def node_stats(node_id):
-    """Get real-time stats for a node from stored heartbeat data."""
-    node = node_manager.get_node(node_id)
-    if not node:
-        return jsonify({'error': 'Node not found'}), 404
-
-    return jsonify({
-        'rssi': node.get('rssi', 0),
-        'wifi_rssi': node.get('rssi', 0),
-        'dmx_fps': node.get('fps', 0),
-        'fps': node.get('fps', 0),
-        'uptime': node.get('uptime', 0),
-        'free_heap': node.get('free_heap', 0),
-        'firmware': node.get('firmware', 'Unknown'),
-        'hardware': 'ESP32',
-        'status': node.get('status', 'offline'),
-        'rx_packets': node.get('rx_total', 0),
-        'tx_packets': node.get('tx_dmx_frames', 0),
-        'rx_errors': node.get('rx_bad', 0),
-        'tx_errors': 0,
-        'node_id': node_id,
-        'ip': node.get('ip'),
-    })
-
-
-@app.route('/api/nodes/<node_id>/identify', methods=['POST'])
-def identify_node(node_id):
-    """Send identify command to flash the node's LED."""
-    node = node_manager.get_node(node_id)
-    if not node:
-        return jsonify({'success': False, 'error': 'Node not found'}), 404
-
-    node_ip = node.get('ip')
-    if not node_ip:
-        return jsonify({'success': False, 'error': 'Node has no IP address'}), 400
-
-    try:
-        result = node_manager.send_command_to_wifi(node_ip, {"cmd": "identify"})
-        return jsonify({'success': bool(result), 'node_id': node_id, 'action': 'identify'})
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-
-@app.route('/api/nodes/<node_id>/reboot', methods=['POST'])
-def reboot_node(node_id):
-    """Send reboot command to restart the node."""
-    print(f"🔄 REBOOT: /api/nodes/{node_id}/reboot called", flush=True)
-    node = node_manager.get_node(node_id)
-    if not node:
-        return jsonify({'success': False, 'error': 'Node not found'}), 404
-
-    node_ip = node.get('ip')
-    if not node_ip:
-        return jsonify({'success': False, 'error': 'Node has no IP address'}), 400
-
-    try:
-        result = node_manager.send_command_to_wifi(node_ip, {"cmd": "reboot"})
-        print(f"   {'✓' if result else '✗'} Reboot sent to {node_id} ({node_ip})", flush=True)
-        return jsonify({'success': bool(result), 'node_id': node_id, 'action': 'reboot'})
-    except Exception as e:
-        print(f"   ✗ Reboot {node_id} failed: {e}", flush=True)
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-
-@app.route('/api/nodes/<node_id>/update', methods=['POST'])
-def update_node_firmware(node_id):
-    """Firmware OTA update — not yet supported over network."""
-    return jsonify({
-        'success': False,
-        'error': 'OTA firmware update not yet supported. Flash via USB.',
-        'node_id': node_id,
-        'action': 'update'
-    }), 501
-
-
-@app.route('/api/nodes/ping', methods=['POST'])
-def ping_all_nodes():
-    """SAFETY ACTION: Health check for all online nodes.
-
-    Sends ping commands to all known online nodes.
-    Returns a summary of which nodes responded.
-    """
-    print("🏓 SAFETY ACTION: /api/nodes/ping (all) called", flush=True)
-
-    all_nodes = node_manager.get_all_nodes(include_offline=False)
-    results = {'success': True, 'nodes': [], 'total': len(all_nodes), 'responded': 0}
-
-    for node in all_nodes:
-        node_id = node.get('node_id')
-        node_ip = node.get('ip')
-
-        if not node_ip:
-            results['nodes'].append({'node_id': node_id, 'success': False, 'error': 'No IP'})
-            continue
-
-        try:
-            result = ssot.send_udpjson_ping(node_ip)
-            success = result is not None
-            results['nodes'].append({'node_id': node_id, 'ip': node_ip, 'success': success})
-            if success:
-                results['responded'] += 1
-        except Exception as e:
-            results['nodes'].append({'node_id': node_id, 'ip': node_ip, 'success': False, 'error': str(e)})
-
-    # Overall success only if all nodes responded
-    results['success'] = results['responded'] == results['total']
-    print(f"🏓 Ping all complete: {results['responded']}/{results['total']} nodes responded", flush=True)
-    return jsonify(results)
+# [F02] Node safety routes moved to blueprints/nodes_bp.py (7 routes)
 
 
 # ============================================================
