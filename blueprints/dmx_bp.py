@@ -378,7 +378,7 @@ def dmx_diagnostics():
 
     return jsonify({
         'timestamp': datetime.now().isoformat(),
-        'packet_version': _NodeManager.PACKET_VERSION,
+        'packet_version': getattr(_NodeManager, 'PACKET_VERSION', 3),
         'packet_version_info': 'v3: full 512-ch frames, ESP32 firmware v1.1 has 2500-byte buffer',
 
         # Transport diagnostics (UDPJSON only)
