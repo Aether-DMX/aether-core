@@ -1534,30 +1534,30 @@
       </g>
 
       <!-- MEDIUM -->
-      <text font-size="9" fill="#ddaa00" font-weight="700" x="742" y="996" font-family="monospace">━━ MEDIUM (8) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</text>
+      <text font-size="9" fill="#ddaa00" font-weight="700" x="742" y="996" font-family="monospace">━━ MEDIUM (8 — 1 FIXED, 3 DEFERRED, 4 FALSE) ━</text>
       <g class="redline-marker" onclick="showFlaw('N09')">
-        <circle cx="752" cy="1014" r="6" fill="#ddaa00"/><text font-size="9" fill="var(--text)" x="764" y="1018">N09  MergeLayer HTP/LTP channel classification may be stale</text>
+        <circle cx="752" cy="1014" r="6" fill="#ddaa00"/><text font-size="9" fill="var(--text-dim)" x="764" y="1018">N09  ⚠ DEFERRED — MergeLayer cache stale on fixture change (low impact)</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('N10')">
-        <circle cx="752" cy="1032" r="6" fill="#ddaa00"/><text font-size="9" fill="var(--text)" x="764" y="1036">N10  RDM discovery scan blocks main thread during fixture ID</text>
+        <circle cx="752" cy="1032" r="6" fill="#ddaa00"/><text font-size="9" fill="var(--text-dim)" x="764" y="1036">N10  ⚠ DEFERRED — RDM scan blocks (expected for explicit user action)</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('N11')">
-        <circle cx="752" cy="1050" r="6" fill="#ddaa00"/><text font-size="9" fill="var(--text)" x="764" y="1054">N11  CueStack crossfade math uses wall clock instead of monotonic</text>
+        <circle cx="752" cy="1050" r="6" fill="#555"/><text font-size="9" fill="var(--text-dim)" x="764" y="1054">N11  ✗ FALSE POSITIVE — CueStack delegates fade to DMX state manager</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('N12')">
-        <circle cx="752" cy="1068" r="6" fill="#ddaa00"/><text font-size="9" fill="var(--text)" x="764" y="1072">N12  Blueprint imports use wildcard — namespace collisions possible</text>
+        <circle cx="752" cy="1068" r="6" fill="#555"/><text font-size="9" fill="var(--text-dim)" x="764" y="1072">N12  ✗ FALSE POSITIVE — all 28 blueprint imports are explicit</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('N13')">
-        <circle cx="752" cy="1086" r="6" fill="#ddaa00"/><text font-size="9" fill="var(--text)" x="764" y="1090">N13  Express proxy has no request timeout — hung Flask = hung proxy</text>
+        <circle cx="752" cy="1086" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="1090">N13  ✅ FIXED — 30s axios timeout on proxy + all direct calls</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('N14')">
-        <circle cx="752" cy="1104" r="6" fill="#ddaa00"/><text font-size="9" fill="var(--text)" x="764" y="1108">N14  FixtureLibrary loaded into memory on every import (no cache)</text>
+        <circle cx="752" cy="1104" r="6" fill="#555"/><text font-size="9" fill="var(--text-dim)" x="764" y="1108">N14  ✗ FALSE POSITIVE — FixtureLibrary uses singleton pattern</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('N15')">
-        <circle cx="752" cy="1122" r="6" fill="#ddaa00"/><text font-size="9" fill="var(--text)" x="764" y="1126">N15  Preview frame emits full 512ch per universe at 10fps (bandwidth)</text>
+        <circle cx="752" cy="1122" r="6" fill="#ddaa00"/><text font-size="9" fill="var(--text-dim)" x="764" y="1126">N15  ⚠ DEFERRED — preview only active in UI, 10fps already throttled</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('N16')">
-        <circle cx="752" cy="1140" r="6" fill="#ddaa00"/><text font-size="9" fill="var(--text)" x="764" y="1144">N16  AI context fetch (7 endpoints) has no parallel/batch mode</text>
+        <circle cx="752" cy="1140" r="6" fill="#555"/><text font-size="9" fill="var(--text-dim)" x="764" y="1144">N16  ✗ FALSE POSITIVE — getContext() already uses Promise.all()</text>
       </g>
 
       <!-- LOW -->
