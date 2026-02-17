@@ -243,7 +243,7 @@
 <div class="tab-bar">
   <button class="tab active" onclick="switchTab('arch')">Full Architecture</button>
   <button class="tab" onclick="switchTab('changelog')">Changelog (5 Fixes)</button>
-  <button class="tab" onclick="switchTab('redline')" style="color:var(--green)">&#10003; Redlines (28 Fixed · 9 FP · 4 Deferred · 1 Mitigated)</button>
+  <button class="tab" onclick="switchTab('redline')" style="color:var(--green)">&#10003; Redlines (28 Fixed · 9 FP · 4 Deferred · 1 Mitigated) + 5 Hot-Fixes</button>
 </div>
 <div class="legend">
   <div class="legend-item"><div class="legend-dot green"></div> Fixed</div>
@@ -1581,6 +1581,28 @@
         <circle cx="752" cy="1280" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="1284">N22  ✅ FIXED — Screensaver timeout now in uiStore, configurable + server-persisted</text>
       </g>
 
+      <!-- ========================================================================== -->
+      <!-- HOT-FIXES — Live session fixes (Feb 17 evening)                            -->
+      <!-- ========================================================================== -->
+      <text font-size="12" fill="var(--accent)" font-weight="700" x="742" y="1324" font-family="-apple-system,'Segoe UI',sans-serif">HOT-FIXES — Feb 17 Live Session</text>
+      <line x1="742" y1="1330" x2="1350" y2="1330" stroke="var(--accent)" stroke-width="0.5" opacity="0.4"/>
+
+      <g class="redline-marker" onclick="showFlaw('HF01')">
+        <circle cx="752" cy="1350" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="1354">HF01 ✅ RDM Layer Elevation — rdmStore rewrite (health/polling/conflicts), Dashboard widget, live_inventory merge, status dot fix</text>
+      </g>
+      <g class="redline-marker" onclick="showFlaw('HF02')">
+        <circle cx="752" cy="1368" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="1372">HF02 ✅ Node OTA — nodes_bp.py real espota.py subprocess implementation (was 501 stub)</text>
+      </g>
+      <g class="redline-marker" onclick="showFlaw('HF03')">
+        <circle cx="752" cy="1386" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="1390">HF03 ✅ Pi Self-Update Hardening — Internet gate on git fetch, autosync persisted to settings.json, proxy 120s/60s timeouts</text>
+      </g>
+      <g class="redline-marker" onclick="showFlaw('HF04')">
+        <circle cx="752" cy="1404" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="1408">HF04 ✅ Kiosk Mode Fix — systemd has no DISPLAY env; added /tmp/.X11-unix/X0 + wayland socket fallback detection</text>
+      </g>
+      <g class="redline-marker" onclick="showFlaw('HF05')">
+        <circle cx="752" cy="1422" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="1426">HF05 ✅ Infinite Re-render Loop — useSystemMode had circular dep (systemInfo in useEffect deps → detectMode sets systemInfo → loop). Split to mount-once + resize effects. Removed per-render console.log spam.</text>
+      </g>
+
     </svg>
     </div>
 
@@ -1728,6 +1750,11 @@ const flaws = {
   'F18': {title:'F18 — Dead Frontend Code ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'Frontend stores', problem:'[FIXED] activeChannelStore + stageStore already deleted. intentContextStore found to be ACTIVELY USED (17+ refs across 6 files).', scenario:'Resolved: dead stores cleaned, live store reclassified.', fix:'RESOLVED: Dead code already removed in prior cleanup.'},
   'F19': {title:'F19 — Supabase Conflict + Rate Limit ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'supabase_service.py _sync_execute + initial_sync', problem:'[FIXED] Added updated_at timestamp to all upserted records for conflict visibility. Rate-limited initial_sync with 50ms delay between API calls. Background retry thread (60s interval) processes pending queue automatically. SYNC_RATE_LIMIT_MS configurable.', scenario:'Fixed. All synced records carry updated_at — cloud dashboard shows when each record was last pushed. Bulk sync throttled to 20 req/sec max. Pending ops auto-retried every 60s.', fix:'RESOLVED: updated_at stamping + rate-limited initial_sync + background retry loop.'},
   'F20': {title:'F20 — Stale Node Escalation ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'check_stale_nodes() + _probe_offline_nodes()', problem:'[FIXED] Stale nodes now trigger: (1) SocketIO node_stale event to frontend with node IDs, (2) Audit log entry for post-incident analysis, (3) DMX refresh loop skips offline nodes (no more sending to dead IPs), (4) Periodic reconnection probing — pings offline nodes every ~90s to detect recovery without heartbeat.', scenario:'Fixed. Node loses WiFi → marked stale → frontend alert → DMX stops sending → probe every 90s → on response, node flagged for re-registration.', fix:'RESOLVED: SocketIO alert + audit + DMX skip offline + probe every 90s.'},
+  'HF01': {title:'HF01 — RDM Layer Elevation ✅ FIXED', sev:'HOT-FIX', sevColor:'#58a6ff', component:'rdmStore.js + Dashboard.jsx + RDMDiscoveryPanel.jsx + aether-core.py + rdm_bp.py', problem:'[FIXED] RDM elevated to "king" status. Backend: get_all_devices() now merges live_inventory into each device (online/status/is_patched fields). Frontend: rdmStore.js rewritten with health state (deviceCount/onlineCount/offlineCount/conflictCount), 10s polling, fetchStatus/fetchConflicts/autoFixAddresses/verifyCueReadiness. Dashboard.jsx: RDM health widget in right column. RDMDiscoveryPanel: Fixed always-green status dot (device.online === true), added auto-fix button.', scenario:'Fixed. Dashboard shows live RDM fixture counts with online/offline status. Address conflicts surfaced with one-click auto-fix. Commits d5120a8 + d8c2a3d.', fix:'RESOLVED: Backend live_inventory merge + rdmStore rewrite + Dashboard widget + discovery panel fixes.'},
+  'HF02': {title:'HF02 — Node OTA ✅ FIXED', sev:'HOT-FIX', sevColor:'#58a6ff', component:'blueprints/nodes_bp.py', problem:'[FIXED] Replaced 501 stub with real OTA implementation. Locates firmware.bin from multiple paths (aether-core/firmware/, aether-pulse/hybrid/.pio/, aether-pulse/.pio/). Locates espota.py from aether-pulse directory. Runs OTA push in background thread via subprocess (python3 espota.py -i <ip> -p 8266 -f firmware.bin) with 120s timeout. NodeDiagnostics.jsx updated with success/failure feedback.', scenario:'Fixed. Pi can push firmware to ESP32 nodes over WiFi using ArduinoOTA protocol. Commit d5120a8.', fix:'RESOLVED: espota.py subprocess in background thread with multi-path firmware.bin search.'},
+  'HF03': {title:'HF03 — Pi Self-Update Hardening ✅ FIXED', sev:'HOT-FIX', sevColor:'#58a6ff', component:'system_bp.py + proxy.js + MoreMenu.jsx + aether-core.py', problem:'[FIXED] (1) Internet detection gate: system_update_check() now detects git fetch failures (returncode != 0 or "fatal" in stderr), returns offline:true instead of false "up to date". TimeoutExpired handler added. (2) Auto-sync persistence: set_autosync() saves to app_settings[autosync] via save_settings(). get_autosync_status() reads persistent settings first. aether-core.py restores autosync on startup. (3) Proxy timeouts: /system/update POST = 120s, /system/update/check GET = 60s (was 30s). (4) MoreMenu.jsx: 45s timeout, offline flag from backend.', scenario:'Fixed. Pi without internet correctly shows "offline" instead of falsely reporting "up to date". Auto-sync survives restarts. Long git operations no longer timeout at proxy layer. Commit d5120a8.', fix:'RESOLVED: Internet gate + autosync persistence + proxy timeouts + offline flag.'},
+  'HF04': {title:'HF04 — Kiosk Mode Detection ✅ FIXED', sev:'HOT-FIX', sevColor:'#58a6ff', component:'blueprints/system_bp.py', problem:'[FIXED] systemd services do not inherit DISPLAY or WAYLAND_DISPLAY environment variables. The /api/system/info endpoint checked only env vars, so has_display was always false, forcing desktop mode on the Pi touchscreen. Added X11 socket fallback (/tmp/.X11-unix/X0) and Wayland socket fallback (/run/user/1000/wayland-0) detection.', scenario:'Fixed. Pi now correctly reports mode:"kiosk" even when running as a systemd service. Frontend renders touch-optimized kiosk layout. Commit 84772ab.', fix:'RESOLVED: Added os.path.exists() checks for X11/Wayland sockets as DISPLAY env fallback.'},
+  'HF05': {title:'HF05 — Infinite Re-render Loop ✅ FIXED', sev:'HOT-FIX', sevColor:'#58a6ff', component:'hooks/useSystemMode.js + App.jsx', problem:'[FIXED] useSystemMode hook had circular dependency: useEffect depended on [detectMode, detectClientMode, systemInfo], but detectMode() calls setSystemInfo() on every invocation, creating a new object reference that triggers the effect again → infinite loop. 10,000+ re-renders/sec caused the app to appear stuck on "Detecting display mode..." even though KioskContent was technically rendering beneath. Additionally, App.jsx had console.log in every render function (App, AppContent, KioskContent, DesktopContent, MobileContent, mousemove handler) amplifying the performance impact.', scenario:'Fixed. Split into two effects: mount-once for initial detectMode(), resize listener with systemInfo dep. Removed 8 per-render console.logs. Console messages dropped from 7,600+ to 176 on fresh load. Commit ba69126.', fix:'RESOLVED: useEffect deps split: [] for mount + [systemInfo, detectClientMode] for resize. Console.log spam removed.'},
 };
 
 function showFlaw(key) {
