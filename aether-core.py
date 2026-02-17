@@ -5490,7 +5490,16 @@ def discovery_listener():
             msg_type = msg.get('type', 'unknown')
             if msg_type in ('register', 'heartbeat'):
                 _discovery_stats['accepted'] += 1
-                node_manager.register_node(msg)
+                # Retry register_node up to 3 times on DB lock
+                for _attempt in range(3):
+                    try:
+                        node_manager.register_node(msg)
+                        break
+                    except Exception as db_err:
+                        if 'database is locked' in str(db_err) and _attempt < 2:
+                            time.sleep(0.1 * (_attempt + 1))
+                            continue
+                        raise
                 # Report heartbeat to Trust Enforcer (Phase 4 Lane 3)
                 report_node_heartbeat(node_id, {
                     'ip': source_ip,
