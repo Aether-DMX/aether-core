@@ -194,14 +194,8 @@ def play_look(look_id):
     fade_ms = data.get('fade_ms', look.fade_ms or 0)
     has_modifiers = len(look.modifiers) > 0 and any(m.enabled for m in look.modifiers)
 
-    # Stop existing look/scene sessions before playing new one (replace mode)
-    # This prevents HTP stacking where old look channels persist
-    if _unified_engine:
-        from unified_playback import PlaybackType
-        _unified_engine.stop_type(PlaybackType.LOOK)
-        _unified_engine.stop_type(PlaybackType.SCENE)
-
     # Route through UnifiedPlaybackEngine (canonical authority)
+    # Note: play_look() handles stopping existing look/scene sessions (HF06)
     look_data = look.to_dict()
     session_id = _unified_play_look(
         look_id,

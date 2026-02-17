@@ -1,10 +1,12 @@
 """
 AETHER Core — AI & Render Pipeline Blueprint
 Routes: /api/ai/*, /api/render/pipeline/*, /api/render/features
-Dependencies: ai_fixture_advisor functions, get_ai_advisor, get_render_pipeline
+Dependencies: ai_fixture_advisor functions, get_ai_advisor, get_render_pipeline, get_db
 """
 
 from flask import Blueprint, jsonify, request
+from datetime import datetime
+import json
 from ai_fixture_advisor import (
     get_distribution_suggestions,
     apply_ai_suggestion,
@@ -15,49 +17,201 @@ ai_bp = Blueprint('ai', __name__)
 
 _get_ai_advisor = None
 _get_render_pipeline = None
+_get_db = None
 
 
-def init_app(get_ai_advisor_fn, get_render_pipeline_fn):
+def init_app(get_ai_advisor_fn, get_render_pipeline_fn, get_db_fn=None):
     """Initialize blueprint with required dependencies."""
-    global _get_ai_advisor, _get_render_pipeline
+    global _get_ai_advisor, _get_render_pipeline, _get_db
     _get_ai_advisor = get_ai_advisor_fn
     _get_render_pipeline = get_render_pipeline_fn
+    _get_db = get_db_fn
+    # Initialize AI tables if DB available
+    if _get_db:
+        _init_ai_tables()
+
+
+def _init_ai_tables():
+    """Create AI learning tables if they don't exist."""
+    conn = _get_db()
+    conn.execute('''CREATE TABLE IF NOT EXISTS ai_preferences (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )''')
+    conn.execute('''CREATE TABLE IF NOT EXISTS ai_outcomes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        intent TEXT,
+        effect TEXT,
+        rating INTEGER,
+        feedback TEXT,
+        context TEXT,
+        created_at TEXT NOT NULL
+    )''')
+    conn.execute('''CREATE TABLE IF NOT EXISTS ai_audit_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        action TEXT NOT NULL,
+        detail TEXT,
+        created_at TEXT NOT NULL
+    )''')
+    print("✅ AI learning tables initialized")
+
+
+def _audit(action, detail=None):
+    """Log an AI action to the audit trail."""
+    if not _get_db:
+        return
+    try:
+        conn = _get_db()
+        conn.execute(
+            'INSERT INTO ai_audit_log (action, detail, created_at) VALUES (?, ?, ?)',
+            (action, json.dumps(detail) if detail else None, datetime.now().isoformat())
+        )
+    except Exception as e:
+        print(f"⚠️ AI audit log error: {e}")
 
 
 # ============================================================
-# AI SSOT Stub Routes
+# AI Learning Routes — Preferences, Outcomes, Audit, Ops
 # ============================================================
 @ai_bp.route('/api/ai/preferences', methods=['GET'])
 def ai_get_prefs():
-    return jsonify({})
+    """Get all stored AI preferences."""
+    if not _get_db:
+        return jsonify({})
+    conn = _get_db()
+    rows = conn.execute('SELECT key, value FROM ai_preferences').fetchall()
+    prefs = {}
+    for row in rows:
+        try:
+            prefs[row[0]] = json.loads(row[1])
+        except (json.JSONDecodeError, TypeError):
+            prefs[row[0]] = row[1]
+    return jsonify(prefs)
+
 
 @ai_bp.route('/api/ai/preferences/<key>', methods=['GET', 'POST'])
 def ai_pref(key):
+    """Get or set a single AI preference."""
+    if not _get_db:
+        if request.method == 'POST':
+            return jsonify({'success': True})
+        return jsonify({'value': None})
+
+    conn = _get_db()
     if request.method == 'POST':
-        data = request.get_json()
-        pass  # stubbed
-        return jsonify({'success': True})
-    return jsonify({'value': None})
+        data = request.get_json() or {}
+        value = data.get('value', data)
+        conn.execute(
+            'INSERT OR REPLACE INTO ai_preferences (key, value, updated_at) VALUES (?, ?, ?)',
+            (key, json.dumps(value), datetime.now().isoformat())
+        )
+        _audit('preference_set', {'key': key, 'value': value})
+        return jsonify({'success': True, 'key': key})
+    else:
+        row = conn.execute('SELECT value FROM ai_preferences WHERE key = ?', (key,)).fetchone()
+        if row:
+            try:
+                return jsonify({'value': json.loads(row[0])})
+            except (json.JSONDecodeError, TypeError):
+                return jsonify({'value': row[0]})
+        return jsonify({'value': None})
+
 
 @ai_bp.route('/api/ai/budget', methods=['GET'])
 def ai_budget():
-    return jsonify({"remaining":999,"used":0})
+    """Get AI operation budget (tracks usage for rate limiting)."""
+    if not _get_db:
+        return jsonify({"remaining": 999, "used": 0})
+    conn = _get_db()
+    # Count outcomes in last 24h as "used"
+    row = conn.execute(
+        "SELECT COUNT(*) FROM ai_outcomes WHERE created_at > datetime('now', '-1 day')"
+    ).fetchone()
+    used = row[0] if row else 0
+    return jsonify({"remaining": max(0, 999 - used), "used": used})
+
 
 @ai_bp.route('/api/ai/outcomes', methods=['GET', 'POST'])
 def ai_outcomes():
+    """Store or retrieve AI outcome feedback (learning data)."""
+    if not _get_db:
+        if request.method == 'POST':
+            return jsonify({'success': True})
+        return jsonify({'outcomes': []})
+
+    conn = _get_db()
     if request.method == 'POST':
-        d = request.get_json()
-        pass  # stubbed
+        d = request.get_json() or {}
+        conn.execute(
+            'INSERT INTO ai_outcomes (intent, effect, rating, feedback, context, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+            (
+                d.get('intent', ''),
+                d.get('effect', ''),
+                d.get('rating', 0),
+                d.get('feedback', ''),
+                json.dumps(d.get('context', {})),
+                datetime.now().isoformat()
+            )
+        )
+        _audit('outcome_recorded', {'intent': d.get('intent'), 'rating': d.get('rating')})
         return jsonify({'success': True})
-    return jsonify({'outcomes': []})
+    else:
+        limit = request.args.get('limit', 50, type=int)
+        rows = conn.execute(
+            'SELECT id, intent, effect, rating, feedback, context, created_at FROM ai_outcomes ORDER BY id DESC LIMIT ?',
+            (limit,)
+        ).fetchall()
+        outcomes = []
+        for r in rows:
+            outcomes.append({
+                'id': r[0], 'intent': r[1], 'effect': r[2],
+                'rating': r[3], 'feedback': r[4],
+                'context': json.loads(r[5]) if r[5] else {},
+                'created_at': r[6]
+            })
+        return jsonify({'outcomes': outcomes})
+
 
 @ai_bp.route('/api/ai/audit', methods=['GET'])
 def ai_audit():
-    return jsonify({'log': []})
+    """Get AI audit log (actions taken by the AI system)."""
+    if not _get_db:
+        return jsonify({'log': []})
+    conn = _get_db()
+    limit = request.args.get('limit', 100, type=int)
+    rows = conn.execute(
+        'SELECT id, action, detail, created_at FROM ai_audit_log ORDER BY id DESC LIMIT ?',
+        (limit,)
+    ).fetchall()
+    log = []
+    for r in rows:
+        log.append({
+            'id': r[0], 'action': r[1],
+            'detail': json.loads(r[2]) if r[2] else None,
+            'created_at': r[3]
+        })
+    return jsonify({'log': log})
+
 
 @ai_bp.route('/api/ai/ops', methods=['GET'])
 def ai_ops():
-    return jsonify({'ops': {}})
+    """Get AI operational stats."""
+    if not _get_db:
+        return jsonify({'ops': {}})
+    conn = _get_db()
+    total_outcomes = conn.execute('SELECT COUNT(*) FROM ai_outcomes').fetchone()[0]
+    total_prefs = conn.execute('SELECT COUNT(*) FROM ai_preferences').fetchone()[0]
+    avg_rating = conn.execute('SELECT AVG(rating) FROM ai_outcomes WHERE rating > 0').fetchone()[0]
+    top_intents = conn.execute(
+        'SELECT intent, COUNT(*) as cnt FROM ai_outcomes GROUP BY intent ORDER BY cnt DESC LIMIT 5'
+    ).fetchall()
+    return jsonify({'ops': {
+        'total_outcomes': total_outcomes,
+        'total_preferences': total_prefs,
+        'average_rating': round(avg_rating, 2) if avg_rating else None,
+        'top_intents': [{'intent': r[0], 'count': r[1]} for r in top_intents],
+    }})
 
 
 # ============================================================
@@ -134,50 +288,53 @@ def ai_optimize_playback():
 
     # Check if it's a preset vibe
     if intent.lower() in VIBE_EFFECTS:
+        _audit('optimize_playback', {'intent': intent, 'matched': 'preset'})
         return jsonify(VIBE_EFFECTS[intent.lower()])
 
     # For custom text intents, do simple keyword matching
     intent_lower = intent.lower()
 
     if any(w in intent_lower for w in ['relax', 'calm', 'chill', 'soft', 'gentle']):
-        return jsonify(VIBE_EFFECTS['chill'])
+        result = VIBE_EFFECTS['chill']
     elif any(w in intent_lower for w in ['party', 'dance', 'energy', 'exciting', 'fun']):
-        return jsonify(VIBE_EFFECTS['party'])
+        result = VIBE_EFFECTS['party']
     elif any(w in intent_lower for w in ['romantic', 'intimate', 'love', 'date', 'cozy']):
-        return jsonify(VIBE_EFFECTS['romantic'])
+        result = VIBE_EFFECTS['romantic']
     elif any(w in intent_lower for w in ['dramatic', 'intense', 'powerful', 'bold']):
-        return jsonify(VIBE_EFFECTS['dramatic'])
+        result = VIBE_EFFECTS['dramatic']
     elif any(w in intent_lower for w in ['concert', 'show', 'performance', 'live']):
-        return jsonify(VIBE_EFFECTS['concert'])
+        result = VIBE_EFFECTS['concert']
     elif any(w in intent_lower for w in ['sunset', 'warm', 'golden', 'evening']):
-        return jsonify(VIBE_EFFECTS['sunset'])
+        result = VIBE_EFFECTS['sunset']
     elif any(w in intent_lower for w in ['focus', 'work', 'study', 'clean', 'bright']):
-        return jsonify(VIBE_EFFECTS['focus'])
+        result = VIBE_EFFECTS['focus']
     elif any(w in intent_lower for w in ['spooky', 'halloween', 'scary', 'creepy', 'horror']):
-        return jsonify(VIBE_EFFECTS['spooky'])
+        result = VIBE_EFFECTS['spooky']
     elif any(w in intent_lower for w in ['rainbow', 'colorful', 'color']):
-        return jsonify({
+        result = {
             'explanation': 'Adding vibrant rainbow colors that cycle through the spectrum.',
             'changes': [
                 {'type': 'add_effect', 'effect_id': 'fixture_rainbow', 'params': {'speed': 0.3, 'depth': 100}},
             ]
-        })
+        }
     elif any(w in intent_lower for w in ['pulse', 'beat', 'rhythm']):
-        return jsonify({
+        result = {
             'explanation': 'Adding rhythmic pulses to match the beat.',
             'changes': [
                 {'type': 'add_effect', 'effect_id': 'fixture_pulse', 'params': {'speed': 1.0, 'depth': 80}},
             ]
-        })
+        }
     else:
-        # Default suggestion
-        return jsonify({
+        result = {
             'explanation': f'Based on "{intent}", adding some dynamic color and movement.',
             'changes': [
                 {'type': 'add_effect', 'effect_id': 'fixture_color_fade', 'params': {'speed': 0.2, 'depth': 70}},
                 {'type': 'add_effect', 'effect_id': 'wave', 'params': {'speed': 0.5, 'depth': 50}},
             ]
-        })
+        }
+
+    _audit('optimize_playback', {'intent': intent, 'matched': 'keyword'})
+    return jsonify(result)
 
 
 # ============================================================
@@ -214,6 +371,7 @@ def apply_ai_suggestion_route(suggestion_id):
     success = apply_ai_suggestion(suggestion_id)
     if not success:
         return jsonify({'error': 'Suggestion not found'}), 404
+    _audit('suggestion_applied', {'suggestion_id': suggestion_id})
     return jsonify({
         'success': True,
         'suggestion_id': suggestion_id,
@@ -227,6 +385,7 @@ def dismiss_ai_suggestion_route(suggestion_id):
     success = dismiss_ai_suggestion(suggestion_id)
     if not success:
         return jsonify({'error': 'Suggestion not found'}), 404
+    _audit('suggestion_dismissed', {'suggestion_id': suggestion_id})
     return jsonify({
         'success': True,
         'suggestion_id': suggestion_id,

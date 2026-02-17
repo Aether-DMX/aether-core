@@ -2868,7 +2868,11 @@ session_factory = SessionFactory()
 
 def play_look(look_id: str, look_data: Dict, universes: List[int] = None,
               fade_ms: int = 0, fade_from: Dict[int, int] = None) -> str:
-    """Play a Look"""
+    """Play a Look (replaces any existing look/scene sessions)"""
+    # [HF06] Stop existing look/scene sessions before playing new one
+    # This prevents HTP stacking where old look channels persist
+    unified_engine.stop_type(PlaybackType.LOOK)
+    unified_engine.stop_type(PlaybackType.SCENE)
     session = session_factory.from_look(look_id, look_data, universes, fade_ms)
     return unified_engine.play(session, fade_from)
 

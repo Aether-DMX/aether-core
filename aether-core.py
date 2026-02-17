@@ -5349,7 +5349,7 @@ session_init(dmx_state, content_manager, get_whisper_model)
 system_init(app_settings, save_settings, AETHER_VERSION, AETHER_COMMIT,
             AETHER_FILE_PATH, AETHER_START_TIME, get_or_create_device_id, app)
 groups_init(get_db, SUPABASE_AVAILABLE, get_supabase_service, cloud_submit)
-ai_init(get_ai_advisor, get_render_pipeline)
+ai_init(get_ai_advisor, get_render_pipeline, get_db)
 fixtures_init(content_manager, get_db, rdm_manager)
 fixture_library_init(fixture_library, content_manager, channel_mapper, looks_sequences_manager, get_db)
 node_groups_init(get_db)
