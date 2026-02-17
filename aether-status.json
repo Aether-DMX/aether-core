@@ -1,14 +1,15 @@
 {
-  "updated": "2026-02-18T03:00:00Z",
+  "updated": "2026-02-18T03:15:00Z",
   "session": "active",
   "current_task": {
-    "flaw_id": "F16",
-    "title": "Persistent Audit Log — COMPLETE",
+    "flaw_id": "F17",
+    "title": "FPS Aligned — COMPLETE",
     "status": "fixed",
-    "component": "audit_log() + RotatingFileHandler + /api/audit",
-    "notes": "17/20 flaws resolved (85%). Remaining: F17, F19, F20"
+    "component": "UnifiedPlaybackEngine + DynamicEffectsEngine → 40fps",
+    "notes": "18/20 flaws resolved (90%). Remaining: F19, F20"
   },
   "recent_completions": [
+    {"flaw_id": "F17", "title": "FPS aligned — effects+playback 30→40fps, matches DMX refresh", "time": "03:15"},
     {"flaw_id": "F16", "title": "Persistent audit log — RotatingFileHandler + /api/audit endpoint", "time": "03:00"},
     {"flaw_id": "F11", "title": "API routing unified — 31 hardcoded :8891→:3000, catch-all proxy, Vite dev proxy", "time": "02:30"},
     {"flaw_id": "F10", "title": "Discovery security — 4-gate pipeline (subnet/rate/HMAC/format), heartbeat unpair blocked", "time": "02:00"},
@@ -31,14 +32,15 @@
     "F01": "fixed", "F02": "fixed", "F03": "fixed", "F04": "fixed", "F05": "fixed",
     "F06": "fixed", "F07": "fixed", "F08": "fixed", "F09": "fixed", "F10": "fixed",
     "F11": "fixed", "F12": "fixed", "F13": "fixed", "F14": "fixed", "F15": "fixed",
-    "F16": "fixed", "F17": "open", "F18": "fixed", "F19": "open", "F20": "open"
+    "F16": "fixed", "F17": "fixed", "F18": "fixed", "F19": "open", "F20": "open"
   },
   "sprint": {
     "current": "Sprint 4 — Remaining Flaws 🔧",
     "items": ["F03", "F10", "F11", "F16", "F17", "F19", "F20"],
-    "progress": "4/7"
+    "progress": "5/7"
   },
   "session_log": [
+    "03:15 — ✅ F17 FIXED: FPS aligned — effects+playback 30→40fps, matches DMX refresh loop",
     "03:00 — ✅ F16 FIXED: Persistent audit log — RotatingFileHandler (5MB×5), /api/audit endpoint, arb+panic+discovery events",
     "02:30 — ✅ F11 FIXED: API routing unified — all frontend calls through Express proxy, catch-all route added",
     "02:00 — ✅ F10 FIXED: Discovery security — 4-gate pipeline (subnet/rate/HMAC/format), heartbeat unpair blocked, IP pinning",

@@ -5920,7 +5920,7 @@ if __name__ == '__main__':
 
     unified_engine.set_dmx_state_reader(unified_dmx_state_reader)
     unified_engine.start()
-    print("✓ Unified Playback Engine started (30 fps)")
+    print("✓ Unified Playback Engine started (40 fps)")  # [F17] Aligned with DMX refresh
 
     # Initialize Operator Trust Enforcement (Phase 4 Lane 3)
     # TRUST RULES:

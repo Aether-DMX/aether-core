@@ -48,7 +48,7 @@ Architecture:
 - SSOT Integration: All output through single dispatcher
 
 Design Principles:
-1. Single timing model: Frame-based rendering at 30 FPS
+1. Single timing model: Frame-based rendering at 40 FPS (aligned with DMX refresh)
 2. Composable modifiers: Any playback type can have modifiers
 3. Consistent state: One source of truth for "what's playing"
 4. Priority-based mixing: Higher priority wins, with optional layering
@@ -400,14 +400,14 @@ class UnifiedPlaybackEngine:
     ╚════════════════════════════════════════════════════════════════════════╝
 
     Features:
-    - 30 FPS frame-based rendering
+    - 40 FPS frame-based rendering (aligned with DMX refresh)
     - Priority-based session management
     - Modifier composition for any playback type
     - Consistent timing with monotonic clock
     - SSOT-first output through callback
     """
 
-    def __init__(self, target_fps: int = 30):
+    def __init__(self, target_fps: int = 40):  # [F17] Aligned with DMX refresh (was 30)
         self.target_fps = target_fps
         self.frame_interval = 1.0 / target_fps
 

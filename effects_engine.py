@@ -38,7 +38,7 @@ class DynamicEffectsEngine:
     def __init__(self):
         self.running = {}  # {effect_id: stop_flag}
         self.threads = {}
-        self.fps = 30  # DMX refresh rate for smooth fades
+        self.fps = 40  # [F17] Aligned with DMX refresh (was 30)
         self.current_effect = None  # Track what's playing
         self._dmx_state = None  # Will be set by main module
         self._send_callback = None  # Will be set by main module
