@@ -375,7 +375,7 @@
 
       <!-- ========== SECTION: FLASK BACKEND ========== -->
       <rect class="section-bg" x="10" y="245" width="740" height="330"/>
-      <text class="section-label" font-size="9" x="22" y="259">FLASK BACKEND &mdash; aether-core.py (8,446 LOC) &mdash; SSOT</text>
+      <text class="section-label" font-size="9" x="22" y="259">FLASK BACKEND &mdash; aether-core.py (5,769 LOC + 28 blueprints) &mdash; SSOT</text>
       <text class="port-label" font-size="9" x="710" y="259">:8891</text>
 
       <!-- Row 1: API + State managers -->
@@ -1161,7 +1161,7 @@
 
       <!-- Flask Backend -->
       <rect class="section-bg" x="10" y="245" width="700" height="310"/>
-      <text class="section-label" font-size="9" x="22" y="259">FLASK BACKEND — aether-core.py (8,446 LOC) — SSOT</text>
+      <text class="section-label" font-size="9" x="22" y="259">FLASK BACKEND — aether-core.py (5,769 LOC + 28 blueprints) — SSOT</text>
       <text class="port-label" font-size="9" x="670" y="259">:8891</text>
       <!-- State managers row -->
       <rect x="22" y="268" width="100" height="32" rx="4" fill="#161b22" stroke="#30363d" stroke-width="1"/>
@@ -1276,9 +1276,9 @@
         <text class="flaw-badge" font-size="8" fill="#fff" text-anchor="middle" x="720" y="254">F01</text>
       </g>
 
-      <!-- FLAW-02: Monolithic God File — badge on the section title -->
+      <!-- FLAW-02: Monolithic God File — FIXED — badge on the section title -->
       <g class="redline-marker" onclick="showFlaw('F02')">
-        <circle cx="465" cy="259" r="12" fill="#ff4444"/>
+        <circle cx="465" cy="259" r="12" fill="#44cc44"/>
         <text class="flaw-badge" font-size="8" fill="#fff" text-anchor="middle" x="465" y="263">F02</text>
       </g>
 
@@ -1432,7 +1432,7 @@
         <circle cx="752" cy="298" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="302">F01  ✅ FIXED — systemd watchdog (30s) + graceful shutdown</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('F02')">
-        <circle cx="752" cy="316" r="6" fill="#ff4444"/><text font-size="9" fill="var(--text)" x="764" y="320">F02  8,446-LOC God File — 1 syntax error kills entire system</text>
+        <circle cx="752" cy="316" r="6" fill="#44cc44"/><text font-size="9" fill="var(--text)" x="764" y="320">F02  God File Decomposed ✅ — 28 blueprints extracted, 5,769 LOC kernel</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('F03')">
         <circle cx="752" cy="334" r="6" fill="#ff4444"/><text font-size="9" fill="var(--text)" x="764" y="338">F03  UDP Fire-and-Forget — blackout/panic can be silently dropped</text>
@@ -1539,7 +1539,7 @@ const info = {
   'local-intent': {title:'LocalIntentService', content:'<b>File:</b> backend/src/services/LocalIntentService.js<br><b>Purpose:</b> Offline fallback when Claude API is unreachable<br><b>Parses:</b> Basic intents from user text (play, stop, blackout, etc.)<br><b>Triggers:</b> Corresponding Flask API calls directly'},
   'express-routes': {title:'8 Express Route Files', content:'<b>proxy.js:</b> Main Flask proxy (70+ endpoints)<br><b>ai.js:</b> AI chat endpoints<br><b>dmx.js:</b> DMX routes (partially redundant)<br><b>chase.js:</b> Chase routes (partially redundant)<br><b>scene.js:</b> Scene routes (partially redundant)<br><b>groups.js:</b> Group management<br><b>nodes.js:</b> Node management<br><b>settings.js:</b> App settings'},
   'stt': {title:'Speech-to-Text', content:'<b>Endpoint:</b> POST /api/stt (Flask :8891)<br><b>Engine:</b> faster-whisper, tiny model, CPU int8<br><b>Loading:</b> Lazy-loaded on first use<br><b>Frontend:</b> useVoiceInput.js hook + VoiceMicButton component<br><b>Note:</b> HTTPS required for browser mic access'},
-  'flask-api': {title:'Flask API (186+ routes)', content:'<b>File:</b> aether-core.py (8,446 LOC)<br><b>Port:</b> 8891<br><b>Key endpoints:</b><br>/api/dmx/set — SSOT channel write<br>/api/looks, /api/sequences — CRUD<br>/api/scenes, /api/chases — Legacy CRUD<br>/api/shows — Timeline shows<br>/api/effects/* — Dynamic effects<br>/api/fixtures — Fixture management<br>/api/nodes — Node management<br>/api/playback/* — Playback control<br>/api/cue-stacks — Cue management<br>/api/health — Health check<br>/api/stt — Speech-to-text<br>/api/cloud/* — Supabase sync<br>/api/rdm/* — RDM device management'},
+  'flask-api': {title:'Flask API (186+ routes)', content:'<b>File:</b> aether-core.py (5,769 LOC + 28 blueprints)<br><b>Port:</b> 8891<br><b>Key endpoints:</b><br>/api/dmx/set — SSOT channel write<br>/api/looks, /api/sequences — CRUD<br>/api/scenes, /api/chases — Legacy CRUD<br>/api/shows — Timeline shows<br>/api/effects/* — Dynamic effects<br>/api/fixtures — Fixture management<br>/api/nodes — Node management<br>/api/playback/* — Playback control<br>/api/cue-stacks — Cue management<br>/api/health — Health check<br>/api/stt — Speech-to-text<br>/api/cloud/* — Supabase sync<br>/api/rdm/* — RDM device management'},
   'arbitration': {title:'ArbitrationManager', content:'<b>File:</b> aether-core.py:931<br><b>Priority ladder:</b><br>BLACKOUT=100, MANUAL=80, EFFECT=60,<br>LOOK=50, SEQUENCE=45, CHASE=40,<br>SCENE=20, IDLE=0<br><br><b>Methods:</b> acquire(), release(), can_write(), set_blackout(), get_status()<br><b>Diagnostics:</b> Tracks last 20 rejections, last 10 history entries, writes_per_service<br><br><span class="badge yellow">MITIGATED</span> Beta 1: added arb guards to RenderEngine + ChaseEngine fallback'},
   'dmx-state': {title:'DMXStateManager', content:'<b>File:</b> aether-core.py:351<br><b>Purpose:</b> SSOT for all DMX channel values across all universes<br><b>Thread safety:</b> self.lock (threading.Lock)<br><b>Features:</b> Fade interpolation, master dimmer, per-universe state<br><b>Key methods:</b> set_channels(), get_output_values(), get_universe(), blackout()<br><br>Written to by ContentManager. Read by 40Hz refresh loop for UDP dispatch.'},
   'content-mgr': {title:'ContentManager', content:'<b>File:</b> aether-core.py:3808<br><b>Purpose:</b> THE SSOT write point — all DMX changes flow through here<br><b>set_channels():</b><br>1. Updates DMXStateManager<br>2. Builds full 512-ch frame<br>3. Gets nodes from NodeManager<br>4. Sends UDPJSON to each node<br>5. Emits SocketIO event<br><br>Called by: all playback engines, faders, API, effects'},
@@ -1626,7 +1626,7 @@ function showChange(key) {
 /* ===== FLAW PANELS (redline tab) ===== */
 const flaws = {
   'F01': {title:'F01 — Systemd Watchdog ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'Flask app server (aether-core.py)', problem:'[FIXED] Added systemd Type=notify watchdog (WatchdogSec=30). App sends READY=1 on startup + WATCHDOG=1 pings every 10s. Graceful shutdown handler catches SIGTERM. Health endpoint enhanced with uptime tracking.', scenario:'Fixed. Watchdog auto-restarts within 30s if app hangs. Graceful shutdown saves state on SIGTERM. Commit 4e3deca.', fix:'RESOLVED: systemd watchdog + graceful shutdown + health endpoint improvements.'},
-  'F02': {title:'F02 — 8,446-LOC Monolithic God File (CRITICAL)', sev:'CRITICAL', sevColor:'#ff4444', component:'aether-core.py', problem:'15+ classes, 186+ routes, 87 bare except clauses, 35 thread spawns, ~167 get_db() calls — ALL in one file. Single syntax error prevents entire system from starting.', scenario:'Developer introduces bug in a rarely-used route. File fails to parse at import time. Entire Flask app cannot start. All DMX offline.', fix:'Decompose into Flask Blueprints:\n  routes/, engines/, managers/, models/\nEach module testable independently.'},
+  'F02': {title:'F02 — God File Decomposition ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'aether-core.py → 28 Flask Blueprints', problem:'[FIXED] Decomposed 11,434-LOC monolithic god file into 28 Flask Blueprints. Kernel (5,769 LOC) retains only classes, singletons, thread pools, and 5 health/status routes. Each blueprint is independently compile-checkable — a syntax error in one route file does not prevent the system from starting.', scenario:'Fixed. Routes distributed across blueprints/: trust, modifiers, migrate, settings, merge, scenes, chases, pixel, shows, schedules, cloud, session, system, groups, ai, fixtures, fixture_library, node_groups, rdm, preview, effects, nodes, looks, sequences, unified, cue_stacks, dmx, playback.', fix:'RESOLVED: 28 blueprints with dependency injection via init_app(). God file reduced from 11,434 → 5,769 LOC.'},
   'F03': {title:'F03 — UDP No Delivery Guarantee (CRITICAL)', sev:'CRITICAL', sevColor:'#ff4444', component:'NodeManager.send_udpjson() (L1948)', problem:'ALL DMX commands sent via UDP fire-and-forget. No ACK, no retry, no verification. WiFi packet loss 1-5% typical.', scenario:'Critical blackout/panic UDP packet dropped. Node continues outputting previous state. SSOT believes blackout was sent but physical output does not match. Safety failure.', fix:'1) Add ACK mode for critical commands (blackout, panic)\n2) Auto-retry with 25ms backoff for non-critical\n3) Track per-node delivery success rates'},
   'F04': {title:'F04 — SQLite Concurrent Access ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'get_db() and all DB operations', problem:'[FIXED] Thread-local connection pool via threading.local(). WAL journal mode for concurrent reads. _ThreadLocalConnection wrapper makes .close() a no-op. Atomic single-UPDATE for node cache refresh with 5-attempt retry.', scenario:'Fixed. "database is locked" errors eliminated. WAL allows concurrent readers + single writer. Commit chain: 5fc2a3b → 83a6bad → 1359eb1.', fix:'RESOLVED: Thread-local pool + WAL mode + atomic node cache refresh.'},
   'F05': {title:'F05 — CORS Wildcard ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'aether-core.py L305-332', problem:'[FIXED] Code computed ALLOWED_ORIGINS but used origins="*". Now uses ALLOWED_ORIGINS for both Flask-CORS and SocketIO.', scenario:'Fixed in commit 86589f1. Evil origins now blocked.', fix:'RESOLVED: origins=ALLOWED_ORIGINS on both Flask-CORS and SocketIO.'},
