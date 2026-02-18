@@ -240,13 +240,14 @@ def dmx_panic():
                     results['universes'].append({'universe': univ, 'node': node_ip, 'success': False, 'error': str(e)})
                     results['success'] = False
 
-    # Also clear SSOT state
-    for univ in universes_to_panic:
-        try:
-            _dmx_state.universes[univ] = [0] * 512
-            print(f"   ✓ SSOT cleared for universe {univ}", flush=True)
-        except Exception as e:
-            print(f"   ⚠️ Failed to clear SSOT for universe {univ}: {e}", flush=True)
+    # Also clear SSOT state (acquire lock to prevent race with render loop)
+    with _dmx_state.lock:
+        for univ in universes_to_panic:
+            try:
+                _dmx_state.universes[univ] = [0] * 512
+                print(f"   ✓ SSOT cleared for universe {univ}", flush=True)
+            except Exception as e:
+                print(f"   ⚠️ Failed to clear SSOT for universe {univ}: {e}", flush=True)
 
     print(f"🚨 PANIC complete: {len(results['universes'])} nodes commanded", flush=True)
     return jsonify(results)

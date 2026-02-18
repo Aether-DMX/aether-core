@@ -326,9 +326,9 @@ def cue_stack_stop(stack_id):
     # Release merge layer source
     _merge_layer.unregister_source(f"cue_stack_{stack_id}")
 
-    # Release arbitration
-    if _arbitration.current_owner == ('cue_stack', stack_id):
-        _arbitration.release()
+    # Release arbitration if we own it
+    if _arbitration.current_owner == 'cue_stack' and _arbitration.current_id == stack_id:
+        _arbitration.release('cue_stack')
 
     return jsonify(result)
 

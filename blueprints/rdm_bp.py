@@ -61,6 +61,7 @@ def rdm_set_label(uid):
     c = conn.cursor()
     c.execute('UPDATE rdm_devices SET device_label = ? WHERE uid = ?', (label, uid))
     conn.commit()
+    conn.close()
 
     return jsonify({'success': True, 'uid': uid, 'label': label})
 

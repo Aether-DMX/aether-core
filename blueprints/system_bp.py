@@ -151,7 +151,7 @@ def system_update():
     if '/aether-core-git/' not in _AETHER_FILE_PATH and '/aether-core/' not in _AETHER_FILE_PATH:
         git_dir = os.path.expanduser('~/aether-core-git/aether-core')
 
-    runtime_file = '/home/ramzt/aether-core.py'
+    runtime_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'aether-core.py')
 
     try:
         fetch_result = subprocess.run(
@@ -332,7 +332,7 @@ def _start_autosync_thread():
         git_dir = os.path.dirname(_AETHER_FILE_PATH)
         if '/aether-core-git/' not in _AETHER_FILE_PATH and '/aether-core/' not in _AETHER_FILE_PATH:
             git_dir = os.path.expanduser('~/aether-core-git/aether-core')
-        runtime_file = '/home/ramzt/aether-core.py'
+        runtime_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'aether-core.py')
 
         while getattr(_app, '_autosync_enabled', False):
             try:

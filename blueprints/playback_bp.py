@@ -76,9 +76,10 @@ def pause_playback():
 @playback_bp.route('/api/playback/resume', methods=['POST'])
 def resume_playback():
     """Resume paused playback via UnifiedPlaybackEngine (canonical authority)."""
-    return jsonify(_unified_resume())
-
-    return jsonify({'success': False, 'error': 'Nothing paused to resume'})
+    result = _unified_resume()
+    if not result or (isinstance(result, dict) and result.get('error')):
+        return jsonify(result or {'success': False, 'error': 'Nothing paused to resume'}), 400
+    return jsonify(result)
 
 
 # ─────────────────────────────────────────────────────────

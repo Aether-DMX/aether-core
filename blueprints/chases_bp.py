@@ -64,12 +64,7 @@ def stop_chase(chase_id):
     """Stop a specific chase - stops both old chase engine and unified engine sessions"""
     _chase_engine.stop_all()  # Stop old chase engine (legacy)
 
-    # Stop unified engine sessions that match this chase
-    for session_id in list(_unified_engine._sessions.keys()):
-        if chase_id in session_id:
-            _unified_engine.stop_session(session_id)
-
-    # Also stop all CHASE type sessions in unified engine
+    # Stop all CHASE type sessions in unified engine (uses internal lock)
     _unified_engine.stop_type(PlaybackType.CHASE)
 
     return jsonify({'success': True, 'chase_id': chase_id})

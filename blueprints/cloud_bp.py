@@ -86,8 +86,8 @@ def trigger_cloud_sync():
     looks_list = []
     sequences_list = []
     try:
-        looks_list = [l.to_dict() for l in _looks_sequences_manager.list_looks()]
-        sequences_list = [s.to_dict() for s in _looks_sequences_manager.list_sequences()]
+        looks_list = [l.to_dict() for l in _looks_sequences_manager.get_all_looks()]
+        sequences_list = [s.to_dict() for s in _looks_sequences_manager.get_all_sequences()]
     except Exception as e:
         print(f"⚠️ Failed to get looks/sequences for sync: {e}")
 
