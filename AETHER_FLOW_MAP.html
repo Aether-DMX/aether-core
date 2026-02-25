@@ -414,6 +414,29 @@
         <text class="node-sub" font-size="7" x="559" y="469">UDPJSON v2 dispatch</text>
       </g>
 
+      <!-- Row 5: Render Pipeline & Infrastructure (Phase 2 modules) -->
+      <text class="mini-label" font-size="8" x="22" y="494" fill="var(--text-dim)">Render Pipeline &amp; Infrastructure</text>
+      <g class="node-box" onclick="showInfo('core-registry')">
+        <rect class="node-rect" x="22" y="500" width="100" height="32" fill="#161b22" stroke="var(--accent)"/>
+        <text class="node-label" font-size="9" x="72" y="515">CoreRegistry</text>
+        <text class="node-sub" font-size="7" x="72" y="525">Module wiring</text>
+      </g>
+      <g class="node-box" onclick="showInfo('fixture-render')">
+        <rect class="node-rect" x="130" y="500" width="100" height="32" fill="#161b22" stroke="#30363d"/>
+        <text class="node-label" font-size="9" x="180" y="515">FixtureRender</text>
+        <text class="node-sub" font-size="7" x="180" y="525">Per-fixture output</text>
+      </g>
+      <g class="node-box" onclick="showInfo('render-pipeline')">
+        <rect class="node-rect" x="238" y="500" width="120" height="32" fill="#161b22" stroke="#30363d"/>
+        <text class="node-label" font-size="9" x="298" y="515">RenderPipeline</text>
+        <text class="node-sub" font-size="7" x="298" y="525">Final DMX output</text>
+      </g>
+      <g class="node-box" onclick="showInfo('operator-trust')">
+        <rect class="node-rect" x="366" y="500" width="100" height="32" fill="#161b22" stroke="#30363d"/>
+        <text class="node-label" font-size="9" x="416" y="515">OperatorTrust</text>
+        <text class="node-sub" font-size="7" x="416" y="525">Trust scoring</text>
+      </g>
+
       <!-- Key internal edges -->
       <line class="edge" x1="122" y1="286" x2="130" y2="286" marker-end="url(#a)"/><!-- Flask->Arb -->
       <line class="edge" x1="240" y1="286" x2="248" y2="286" marker-end="url(#a)"/><!-- Arb->DMX -->
@@ -1379,6 +1402,10 @@ const info = {
   'schedules': {title:'Scheduler + Timers', content:'<b>ScheduleRunner:</b> Cron-style schedule execution (aether-core.py:1039)<br><b>TimerRunner:</b> Countdown/interval timers (aether-core.py:1181)<br><b>Tables:</b> schedules, timers'},
   'rdm': {title:'RDM (Full Implementation)', content:'<b>Module:</b> rdm_manager_module.py (~400 LOC)<br><b>Status:</b> Fully implemented with DB persistence<br><b>Features:</b> Live inventory tracking, UDPJSON command dispatch, device discovery<br><b>DB Tables:</b> rdm_devices, rdm_personalities<br><b>Endpoints:</b> /api/nodes/&lt;id&gt;/rdm/discover, /api/rdm/devices, etc.<br><b>ESP32:</b> Firmware has RDM commands (discover, identify, set_address)'},
   'ai-helpers': {title:'AI Helpers', content:'<b>ai_fixture_advisor.py (908 LOC):</b> AI-driven fixture suggestions<br><b>ai_ssot.py (~200 LOC):</b> AI context helpers<br><b>ai_ops_registry.py (~50 LOC):</b> AI operation registration'},
+  'core-registry': {title:'CoreRegistry', content:'<b>File:</b> core_registry.py (49 LOC)<br><b>Purpose:</b> Module wiring — global singleton refs for all 10 extracted modules<br><b>Pattern:</b> Simple attribute assignment, imported as "reg" throughout<br><b>Registers:</b> chase_engine, show_engine, effects_engine, playback_manager, merge_layer, arbitration, content_manager, dmx_state, node_manager, channel_classifier, socketio, db'},
+  'fixture-render': {title:'FixtureRender', content:'<b>File:</b> fixture_render.py<br><b>Purpose:</b> Per-fixture DMX rendering with channel map awareness<br><b>Features:</b> Maps logical channels (R/G/B/W/Dimmer) to physical DMX addresses, applies fixture profiles for correct output'},
+  'render-pipeline': {title:'RenderPipeline', content:'<b>File:</b> final_render_pipeline.py<br><b>Purpose:</b> Final DMX output pipeline — last step before UDP dispatch<br><b>Features:</b> Merges all sources (playback, effects, manual), applies master dimmer, outputs to 40Hz refresh loop'},
+  'operator-trust': {title:'OperatorTrust', content:'<b>File:</b> operator_trust.py<br><b>Purpose:</b> Trust scoring system for AI operator actions<br><b>Features:</b> Tracks success/failure of AI operations, adjusts trust level, gates which operations AI can perform autonomously'},
   'refresh-loop': {title:'40Hz Refresh Loop', content:'<b>Location:</b> aether-core.py:2246<br><b>Rate:</b> 40Hz (matches DMX512 spec)<br><b>Process:</b> Reads dmx_state.get_output_values(universe) for each universe, builds UDPJSON v2 packet, sends via NodeManager.send_udpjson(ip, 6455, payload)<br><b>Protocol:</b> {"v":2,"type":"set","u":N,"seq":M,"ch":[[ch,val],...]}'},
   'supabase-service': {title:'SupabaseService', content:'<b>File:</b> services/supabase_service.py (1,492 LOC)<br><b>Singleton, feature-gated:</b> ENABLE_SUPABASE env var<br><b>Behavior:</b> Non-blocking, fail-soft. Flask remains SSOT.<br><b>Sync tables:</b> 11 cloud tables<br><b>ID mapping:</b> Deterministic UUID v5<br><b>Queue:</b> PendingSyncQueue (disk-persisted JSON)<br><br><span class="badge green">FIXED</span> Beta 1: UUID-safe retry, permanent failure detection, _clear_stale_pending pruning'},
   'pending-queue': {title:'PendingSyncQueue', content:'<b>File:</b> supabase_service.py:129<br><b>Storage:</b> ~/aether-pending-sync.json (disk-persisted)<br><b>Methods:</b> add(), get_pending(), mark_complete(), mark_failed(), clear(), count()<br><br><span class="badge green">FIXED</span> Beta 1: Permanent failure detection for Postgres error codes 23505/23503/23502/42P01'},
