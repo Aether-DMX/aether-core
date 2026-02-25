@@ -1,34 +1,21 @@
 {
-  "updated": "2026-02-18T03:45:00Z",
-  "session": "complete",
+  "updated": "2026-02-24T22:00:00Z",
+  "session": "refactoring",
   "current_task": {
-    "flaw_id": "ALL",
-    "title": "🏆 ALL 20 FLAWS RESOLVED — Architecture Remediation COMPLETE",
-    "status": "fixed",
-    "component": "aether-core.py + 28 blueprints + unified_playback.py + effects_engine.py + supabase_service.py + portal-os",
-    "notes": "20/20 flaws resolved (100%). Sprints 1-4 complete. System hardened across all severity levels."
+    "flaw_id": "REFACTOR",
+    "title": "🔧 Architecture Refactoring — Phase 2b/4/6 Complete",
+    "status": "in_progress",
+    "component": "aether-core.py → 10 modules + Socket.IO push + TypeScript foundation",
+    "notes": "Phase 1: Dead code cleanup script. Phase 2: aether-core.py broken from 6,157→2,156 lines across 10 extracted modules. Phase 4: Socket.IO push-based state sync (replaces 2s polling). Phase 6: TypeScript foundation with tsconfig.json + 2 TS stores + type definitions."
   },
   "recent_completions": [
+    {"flaw_id": "P6", "title": "TypeScript foundation — tsconfig.json, types/aether.ts, toastStore.ts, uiStore.ts", "time": "22:00"},
+    {"flaw_id": "P4", "title": "Socket.IO push — useSocket.js hook, dmxStore/nodeStore/fixtureStore wired to push events", "time": "21:30"},
+    {"flaw_id": "P2b", "title": "aether-core.py wired to use 10 extracted modules via core_registry (6,157→2,156 LOC)", "time": "21:00"},
+    {"flaw_id": "P2a", "title": "10 extracted module files created and compile-verified", "time": "20:30"},
+    {"flaw_id": "P1", "title": "Dead code cleanup script (cleanup_dead_code.ps1) — 31 tmpclaude + 18 scripts", "time": "20:00"},
     {"flaw_id": "F20", "title": "Stale node escalation — SocketIO alert, DMX skip offline, auto-probe every 90s", "time": "03:45"},
-    {"flaw_id": "F19", "title": "Supabase conflict + rate limit — updated_at stamps, 50ms throttle, auto retry", "time": "03:30"},
-    {"flaw_id": "F17", "title": "FPS aligned — effects+playback 30→40fps, matches DMX refresh", "time": "03:15"},
-    {"flaw_id": "F16", "title": "Persistent audit log — RotatingFileHandler + /api/audit endpoint", "time": "03:00"},
-    {"flaw_id": "F11", "title": "API routing unified — 31 hardcoded :8891→:3000, catch-all proxy, Vite dev proxy", "time": "02:30"},
-    {"flaw_id": "F10", "title": "Discovery security — 4-gate pipeline (subnet/rate/HMAC/format), heartbeat unpair blocked", "time": "02:00"},
-    {"flaw_id": "F03", "title": "UDP reliable send for safety commands — ACK/retry/per-node stats", "time": "01:30"},
-    {"flaw_id": "F02", "title": "God file decomposed — 28 Flask Blueprints, 11,434→5,769 LOC kernel", "time": "23:15"},
-    {"flaw_id": "F08", "title": "Arbitration TOCTOU race — token-based validation, stale writes rejected", "time": "19:40"},
-    {"flaw_id": "F06", "title": "Playback consolidation — looks/chases/sequences → UnifiedPlaybackEngine", "time": "19:25"},
-    {"flaw_id": "F13", "title": "Thread pool + memory monitoring — bounded pools, health endpoint enhanced", "time": "19:04"},
-    {"flaw_id": "F07", "title": "ESP32 sole fade authority — Python interpolation for UI only", "time": "16:00"},
-    {"flaw_id": "F09", "title": "Crash recovery: immediate state persistence + enriched sessions", "time": "15:50"},
-    {"flaw_id": "F01", "title": "Systemd watchdog (30s) + graceful shutdown + health endpoint", "time": "15:40"},
-    {"flaw_id": "F04", "title": "SQLite thread-local pool + WAL mode + atomic writes — 92% fewer lock errors", "time": "15:15"},
-    {"flaw_id": "F18", "title": "Dead frontend code verified clean", "time": "00:25"},
-    {"flaw_id": "F14", "title": "Custom cron parser → croniter library", "time": "00:20"},
-    {"flaw_id": "F15", "title": "ShowEngine timeline: monotonic clock + tempo math fix", "time": "00:10"},
-    {"flaw_id": "F12", "title": "Input validation: clamp 0-255 + universe 1-64", "time": "23:15"},
-    {"flaw_id": "F05", "title": "CORS wildcard fixed", "time": "23:10"}
+    {"flaw_id": "F19", "title": "Supabase conflict + rate limit — updated_at stamps, 50ms throttle, auto retry", "time": "03:30"}
   ],
   "flaws": {
     "F01": "fixed", "F02": "fixed", "F03": "fixed", "F04": "fixed", "F05": "fixed",
@@ -36,31 +23,38 @@
     "F11": "fixed", "F12": "fixed", "F13": "fixed", "F14": "fixed", "F15": "fixed",
     "F16": "fixed", "F17": "fixed", "F18": "fixed", "F19": "fixed", "F20": "fixed"
   },
+  "refactoring": {
+    "phase1_dead_code": "complete",
+    "phase2a_extracted_modules": "complete",
+    "phase2b_wiring": "complete",
+    "phase3_playback_consolidation": "pending",
+    "phase4_socketio_push": "complete",
+    "phase5_api_routing": "pending",
+    "phase6_typescript": "complete"
+  },
+  "extracted_modules": {
+    "core_registry.py": "48 lines — shared instance registry",
+    "arbitration_manager.py": "171 lines — priority-based arbitration",
+    "dmx_state_manager.py": "286 lines — SSOT for channel values",
+    "playback_state.py": "55 lines — playback state tracking",
+    "schedulers.py": "212 lines — ScheduleRunner + TimerRunner",
+    "node_manager_module.py": "1235 lines — UDPJSON + node management",
+    "content_manager_module.py": "697 lines — SSOT dispatch point",
+    "chase_engine_module.py": "340 lines — deprecated chase engine",
+    "show_engine_module.py": "398 lines — timeline shows",
+    "rdm_manager_module.py": "~400 lines — RDM device management"
+  },
   "sprint": {
-    "current": "Sprint 4 — Remaining Flaws 🔧",
-    "items": ["F03", "F10", "F11", "F16", "F17", "F19", "F20"],
-    "progress": "7/7 ✅ ALL COMPLETE"
+    "current": "Refactoring Sprint — Architecture Cleanup 🔧",
+    "items": ["P1", "P2a", "P2b", "P3", "P4", "P5", "P6"],
+    "progress": "5/7 ✅ (P3/P5 pending)"
   },
   "session_log": [
-    "03:45 — 🏆 ALL 20/20 FLAWS RESOLVED — Architecture remediation COMPLETE",
-    "03:45 — ✅ F20 FIXED: Stale node escalation — SocketIO alert, DMX skip, auto-probe",
-    "03:30 — ✅ F19 FIXED: Supabase conflict + rate limit — updated_at, 50ms throttle, auto-retry every 60s",
-    "03:15 — ✅ F17 FIXED: FPS aligned — effects+playback 30→40fps, matches DMX refresh loop",
-    "03:00 — ✅ F16 FIXED: Persistent audit log — RotatingFileHandler (5MB×5), /api/audit endpoint, arb+panic+discovery events",
-    "02:30 — ✅ F11 FIXED: API routing unified — all frontend calls through Express proxy, catch-all route added",
-    "02:00 — ✅ F10 FIXED: Discovery security — 4-gate pipeline (subnet/rate/HMAC/format), heartbeat unpair blocked, IP pinning",
-    "01:30 — ✅ F03 FIXED: UDP reliable send — send_udpjson_reliable() with ACK/retry for panic/reset/ping, per-node delivery stats",
-    "23:15 — ✅ F02 FIXED: God file decomposed — 28 Flask Blueprints extracted, kernel 5,769 LOC, 5 health/status routes remain",
-    "23:10 — 📦 Phase 4d: looks, sequences, unified, cue-stacks, dmx, playback (56 routes) — commit 8206a44",
-    "23:05 — 📦 Phase 4c: nodes blueprint (17 routes) — commit 0593684",
-    "22:50 — 📦 Phase 4b: node-groups, rdm, preview, effects (50 routes) — commit ce6dbb8",
-    "22:30 — 📦 Phase 4a: fixtures, fixture-library (19 routes) — commit 5ea0905",
-    "22:00 — 📦 Phase 3: cloud, session, system, groups, ai (33 routes)",
-    "21:30 — 📦 Phase 2: shows, schedules, scenes, chases, pixel (49 routes)",
-    "21:00 — 📦 Phase 1: trust, modifiers, migrate, settings, merge (25 routes)",
-    "19:40 — ✅ F08 FIXED: Token-based TOCTOU prevention",
-    "19:25 — ✅ F06 FIXED: Playback consolidated — unified engine",
-    "19:04 — ✅ F13 FIXED: Bounded thread pools + memory monitoring",
-    "19:04 — 🚀 Sprint 3 started: Architecture Hardening"
+    "22:00 — ✅ P6 COMPLETE: TypeScript foundation — tsconfig.json (allowJs), types/aether.ts (160+ lines), 2 stores converted",
+    "21:30 — ✅ P4 COMPLETE: Socket.IO push — useSocket.js hook, dmxStore push (replaces 2s poll), nodeStore push, fixtureStore push",
+    "21:00 — ✅ P2b COMPLETE: aether-core-slim.py — 10 class defs removed, imports + core_registry wiring added, 6,157→2,156 lines",
+    "20:30 — ✅ P2a COMPLETE: 10 extracted modules compile-verified, all use core_registry pattern",
+    "20:00 — ✅ P1 COMPLETE: Dead code cleanup script created (Taylor to run on Windows)",
+    "03:45 — 🏆 ALL 20/20 FLAWS RESOLVED — Architecture remediation COMPLETE"
   ]
 }

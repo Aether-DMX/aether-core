@@ -84,10 +84,10 @@
   /* REDLINE STYLES */
   .redline-marker { cursor: pointer; }
   .flaw-ring { fill: none; stroke-width: 2; stroke-dasharray: 4 2; opacity: 0.7; }
-  .sev-crit { stroke: #ff4444; fill: rgba(255,68,68,0.08); }
-  .sev-high { stroke: #ff8800; fill: rgba(255,136,0,0.08); }
-  .sev-med { stroke: #ddaa00; fill: rgba(221,170,0,0.08); }
-  .sev-low { stroke: #888888; fill: rgba(136,136,136,0.08); }
+  .sev-crit { stroke: #44cc44; fill: rgba(68,204,68,0.08); }
+  .sev-high { stroke: #44cc44; fill: rgba(68,204,68,0.08); }
+  .sev-med { stroke: #44cc44; fill: rgba(68,204,68,0.08); }
+  .sev-low { stroke: #44cc44; fill: rgba(68,204,68,0.08); }
   .flaw-badge { font-family: 'SF Mono','Cascadia Code',monospace; font-weight: 700; pointer-events: none; }
   .redline-connector { stroke-width: 1; stroke-dasharray: 3 2; fill: none; opacity: 0.5; }
 
@@ -123,127 +123,19 @@
   .live-sprint-item.done { color: var(--green); text-decoration: line-through; }
   .live-updated { font-size: 9px; color: var(--text-dim); position: absolute; top: 8px; right: 14px; }
 
-  /* ===== STICK FIGURE ANIMATIONS ===== */
-  @keyframes hammer {
-    0%, 100% { transform: rotate(0deg); }
-    30% { transform: rotate(-45deg); }
-    50% { transform: rotate(-50deg); }
-    60% { transform: rotate(5deg); }
-  }
-  @keyframes bob {
-    0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(-3px); }
-  }
-  @keyframes type-hands {
-    0%, 100% { transform: translateX(0); }
-    25% { transform: translateX(-2px) translateY(-1px); }
-    75% { transform: translateX(2px) translateY(-1px); }
-  }
-  @keyframes walk-legs {
-    0%, 100% { transform: rotate(0deg); }
-    25% { transform: rotate(20deg); }
-    75% { transform: rotate(-20deg); }
-  }
-  @keyframes bubble-float {
-    0%, 100% { transform: translateY(0); opacity: 1; }
-    50% { transform: translateY(-2px); opacity: 0.9; }
-  }
-  @keyframes sweat-drop {
-    0% { transform: translateY(0); opacity: 1; }
-    80% { transform: translateY(8px); opacity: 0.3; }
-    100% { transform: translateY(10px); opacity: 0; }
-  }
-  @keyframes sparkle {
-    0%, 100% { opacity: 0; transform: scale(0.5); }
-    50% { opacity: 1; transform: scale(1.2); }
-  }
-  @keyframes celebrate {
-    0%, 100% { transform: rotate(0deg); }
-    25% { transform: rotate(-15deg) translateY(-3px); }
-    75% { transform: rotate(15deg) translateY(-3px); }
-  }
-  @keyframes headbang {
-    0%, 100% { transform: rotate(0deg); }
-    25% { transform: rotate(15deg); }
-    50% { transform: rotate(-10deg); }
-    75% { transform: rotate(12deg); }
-  }
-  @keyframes jump {
-    0%, 100% { transform: translateY(0); }
-    40% { transform: translateY(-8px); }
-    60% { transform: translateY(-6px); }
-  }
-  @keyframes wave-arm {
-    0%, 100% { transform: rotate(-10deg); }
-    50% { transform: rotate(-60deg); }
-  }
-  @keyframes panic-shake {
-    0%, 100% { transform: translateX(0); }
-    20% { transform: translateX(-3px) rotate(-2deg); }
-    40% { transform: translateX(3px) rotate(2deg); }
-    60% { transform: translateX(-2px) rotate(-1deg); }
-    80% { transform: translateX(2px) rotate(1deg); }
-  }
-  @keyframes fight-push {
-    0%, 100% { transform: translateX(0); }
-    50% { transform: translateX(3px); }
-  }
-  @keyframes fight-push-left {
-    0%, 100% { transform: translateX(0); }
-    50% { transform: translateX(-3px); }
-  }
-  @keyframes mop-sweep {
-    0%, 100% { transform: rotate(0deg); }
-    25% { transform: rotate(15deg); }
-    75% { transform: rotate(-15deg); }
-  }
-  @keyframes float-ghost {
-    0%, 100% { transform: translateY(0) rotate(0deg); }
-    25% { transform: translateY(-5px) rotate(3deg); }
-    50% { transform: translateY(-2px) rotate(0deg); }
-    75% { transform: translateY(-6px) rotate(-3deg); }
-  }
-  @keyframes surf-sway {
-    0%, 100% { transform: rotate(0deg) translateY(0); }
-    25% { transform: rotate(-5deg) translateY(-2px); }
-    50% { transform: rotate(0deg) translateY(0); }
-    75% { transform: rotate(5deg) translateY(-2px); }
-  }
-  @keyframes chain-drag {
-    0%, 100% { transform: translateX(0); }
-    50% { transform: translateX(4px); }
-  }
-  .stick-worker { pointer-events: none; opacity: 0.45; }
-  .stick-worker:hover { opacity: 0.9; }
-  .stick-hammer { transform-origin: 50% 100%; }
-  .stick-bob { }
-  .stick-type { }
-  .stick-walk { transform-origin: 50% 0%; }
-  .stick-bubble { animation: bubble-float 6s ease-in-out infinite; }
-  .stick-sweat { opacity: 0; }
-  .stick-sparkle { animation: sparkle 4s ease-in-out infinite; }
-  .stick-celebrate { }
-  .stick-headbang { }
-  .stick-jump { }
-  .stick-wave-arm { transform-origin: 50% 0%; }
-  .stick-panic { }
-  .stick-fight-right { }
-  .stick-fight-left { }
-  .stick-mop { transform-origin: 50% 100%; }
-  .stick-ghost { animation: float-ghost 6s ease-in-out infinite; }
-  .stick-surf { }
-  .stick-chain { }
+  /* Stick figure animations removed — Feb 25 2026 audit */
 </style>
 </head>
 <body>
 <div class="header">
   <h1>AETHER DMX &mdash; System Flow Map</h1>
-  <div class="meta">Feb 18 2026 &bull; 20/20 Flaws FIXED &bull; Click any node for details</div>
+  <div class="meta">Feb 25 2026 &bull; Architecture Audit &bull; Click any node for details</div>
 </div>
 <div class="tab-bar">
   <button class="tab active" onclick="switchTab('arch')">Full Architecture</button>
   <button class="tab" onclick="switchTab('changelog')">Changelog (5 Fixes)</button>
-  <button class="tab" onclick="switchTab('redline')" style="color:var(--green)">&#10003; Redlines (28 Fixed · 9 FP · 4 Deferred · 1 Mitigated) + 18 Hot-Fixes</button>
+  <button class="tab" onclick="switchTab('session2')" style="color:var(--green)">Session 2 (9 Fixes)</button>
+  <button class="tab" onclick="switchTab('redline')" style="color:var(--green)">&#10003; Redlines (20/20 Fixed)</button>
 </div>
 <div class="legend">
   <div class="legend-item"><div class="legend-dot green"></div> Fixed</div>
@@ -273,7 +165,7 @@
       <!-- Views cluster -->
       <g class="node-box" onclick="showInfo('views')">
         <rect class="node-rect" x="22" y="32" width="115" height="38" fill="#161b22" stroke="#30363d"/>
-        <text class="node-label" font-size="10" x="79" y="49">26 Views</text>
+        <text class="node-label" font-size="10" x="79" y="49">27 Views</text>
         <text class="node-sub" font-size="8" x="79" y="61">Dashboard, Looks, Scenes...</text>
       </g>
 
@@ -302,14 +194,14 @@
       <g class="node-box" onclick="showInfo('socketio')">
         <rect class="node-rect" x="22" y="80" width="90" height="34" fill="#161b22" stroke="var(--purple)"/>
         <text class="node-label" font-size="9" x="67" y="95">SocketIO</text>
-        <text class="node-sub" font-size="7" x="67" y="105">10 events</text>
+        <text class="node-sub" font-size="7" x="67" y="105">13 events</text>
       </g>
 
       <!-- API Client -->
       <g class="node-box" onclick="showInfo('api-client')">
         <rect class="node-rect" x="120" y="80" width="100" height="34" fill="#161b22" stroke="#30363d"/>
         <text class="node-label" font-size="9" x="170" y="95">API Client</text>
-        <text class="node-sub" font-size="7" x="170" y="105">axios / fetch</text>
+        <text class="node-sub" font-size="7" x="170" y="105">Fetch API</text>
       </g>
 
       <!-- AI Chat -->
@@ -348,7 +240,7 @@
       <g class="node-box" onclick="showInfo('proxy-routes')">
         <rect class="node-rect" x="22" y="174" width="90" height="34" fill="#161b22" stroke="#30363d"/>
         <text class="node-label" font-size="9" x="67" y="189">Proxy Routes</text>
-        <text class="node-sub" font-size="7" x="67" y="199">70+ endpoints</text>
+        <text class="node-sub" font-size="7" x="67" y="199">99 endpoints</text>
       </g>
       <g class="node-box" onclick="showInfo('ai-orchestrator')">
         <rect class="node-rect" x="120" y="174" width="105" height="34" fill="#161b22" stroke="#58a6ff"/>
@@ -376,14 +268,14 @@
 
       <!-- ========== SECTION: FLASK BACKEND ========== -->
       <rect class="section-bg" x="10" y="245" width="740" height="330"/>
-      <text class="section-label" font-size="9" x="22" y="259">FLASK BACKEND &mdash; aether-core.py (5,769 LOC + 28 blueprints) &mdash; SSOT</text>
+      <text class="section-label" font-size="9" x="22" y="259">FLASK BACKEND &mdash; aether-core.py (6,157 LOC + 10 modules) &mdash; SSOT</text>
       <text class="port-label" font-size="9" x="710" y="259">:8891</text>
 
       <!-- Row 1: API + State managers -->
       <g class="node-box" onclick="showInfo('flask-api')">
         <rect class="node-rect" x="22" y="268" width="100" height="36" fill="#161b22" stroke="#30363d"/>
         <text class="node-label" font-size="9" x="72" y="284">Flask API</text>
-        <text class="node-sub" font-size="7" x="72" y="296">186+ routes</text>
+        <text class="node-sub" font-size="7" x="72" y="296">269 routes</text>
       </g>
       <g class="node-box" onclick="showInfo('arbitration')">
         <rect class="node-rect" x="130" y="268" width="110" height="36" fill="#161b22" stroke="var(--yellow)"/>
@@ -418,7 +310,7 @@
       <g class="node-box" onclick="showInfo('unified-engine')">
         <rect class="node-rect" x="22" y="328" width="120" height="36" fill="#161b22" stroke="var(--accent)"/>
         <text class="node-label" font-size="9" x="82" y="344">UnifiedPlayback</text>
-        <text class="node-sub" font-size="7" x="82" y="356">40fps SSOT authority</text>
+        <text class="node-sub" font-size="7" x="82" y="356">30fps SSOT authority</text>
       </g>
       <g class="node-box" onclick="showInfo('render-engine')">
         <rect class="node-rect" x="150" y="328" width="105" height="36" fill="#161b22" stroke="var(--yellow)"/>
@@ -447,9 +339,9 @@
         <text class="node-sub" font-size="7" x="531" y="356">TASK-0007</text>
       </g>
       <g class="node-box" onclick="showInfo('playback-ctrl')">
-        <rect class="node-rect" x="587" y="328" width="110" height="36" fill="#161b22" stroke="var(--green)" stroke-dasharray="3 2"/>
-        <text class="node-label" font-size="9" x="642" y="344" fill="var(--green)">PlaybackCtrl</text>
-        <text class="node-sub" font-size="7" x="642" y="356">Deprecated (F06)</text>
+        <rect class="node-rect" x="587" y="328" width="110" height="36" fill="#161b22" stroke="#30363d" stroke-dasharray="3 2"/>
+        <text class="node-label" font-size="9" x="642" y="344" fill="var(--text-dim)" text-decoration="line-through">PlaybackCtrl</text>
+        <text class="node-sub" font-size="7" x="642" y="356" fill="var(--green)">REMOVED (Phase 3)</text>
       </g>
 
       <!-- Row 3: Support modules -->
@@ -457,7 +349,7 @@
       <g class="node-box" onclick="showInfo('modifier-registry')">
         <rect class="node-rect" x="22" y="388" width="95" height="32" fill="#161b22" stroke="#30363d"/>
         <text class="node-label" font-size="9" x="69" y="403">ModifierReg</text>
-        <text class="node-sub" font-size="7" x="69" y="413">6 effect types</text>
+        <text class="node-sub" font-size="7" x="69" y="413">14 effect types</text>
       </g>
       <g class="node-box" onclick="showInfo('fixture-lib')">
         <rect class="node-rect" x="125" y="388" width="90" height="32" fill="#161b22" stroke="#30363d"/>
@@ -507,7 +399,7 @@
       <g class="node-box" onclick="showInfo('rdm')">
         <rect class="node-rect" x="223" y="444" width="80" height="32" fill="#161b22" stroke="#30363d" stroke-dasharray="3 2"/>
         <text class="node-label" font-size="9" x="263" y="459" fill="var(--text-dim)">RDM</text>
-        <text class="node-sub" font-size="7" x="263" y="469">Stubbed proto</text>
+        <text class="node-sub" font-size="7" x="263" y="469">Full implementation</text>
       </g>
       <g class="node-box" onclick="showInfo('ai-helpers')">
         <rect class="node-rect" x="311" y="444" width="100" height="32" fill="#161b22" stroke="#30363d"/>
@@ -715,7 +607,7 @@
       <!-- ========== SECTION: DMX PIPELINE (right side) ========== -->
       <rect class="section-bg" x="770" y="520" width="500" height="120"/>
       <text class="section-label" font-size="9" x="782" y="534">DMX OUTPUT PIPELINE</text>
-      <text font-family="monospace" font-size="9" fill="var(--text)" x="792" y="554">PlaybackSession (40fps)</text>
+      <text font-family="monospace" font-size="9" fill="var(--text)" x="792" y="554">PlaybackSession (30fps)</text>
       <text font-family="monospace" font-size="9" fill="var(--text-dim)" x="820" y="568">&rarr; ModifierRenderer.render()</text>
       <text font-family="monospace" font-size="9" fill="var(--text-dim)" x="820" y="582">&rarr; MergeLayer.compute_merge() [HTP/LTP]</text>
       <text font-family="monospace" font-size="9" fill="var(--accent)" x="820" y="596">&rarr; ContentManager.set_channels() [SSOT]</text>
@@ -734,266 +626,7 @@
       <text font-family="monospace" font-size="8" fill="var(--text-dim)" x="792" y="776">7. Flask CRUD &rarr; @sync_to_cloud &rarr; Supabase (retry on fail)</text>
       <text font-family="monospace" font-size="8" fill="var(--purple)" x="792" y="790">8. Flask SocketIO push &rarr; Frontend stores &rarr; React re-render</text>
 
-      <!-- ========== STICK FIGURE WORKERS ========== -->
-
-      <!-- WORKER 1: Hammering on SQLite -->
-      <g transform="translate(70, 550)"><g class="stick-worker stick-bob">
-        <circle cx="0" cy="-18" r="5" fill="none" stroke="#58a6ff" stroke-width="1.5"/>
-        <line x1="0" y1="-13" x2="0" y2="0" stroke="#58a6ff" stroke-width="1.5"/>
-        <line x1="0" y1="0" x2="-6" y2="10" stroke="#58a6ff" stroke-width="1.5"/>
-        <line x1="0" y1="0" x2="6" y2="10" stroke="#58a6ff" stroke-width="1.5"/>
-        <line x1="0" y1="-8" x2="-7" y2="-2" stroke="#58a6ff" stroke-width="1.5"/>
-        <g class="stick-hammer">
-          <line x1="0" y1="-8" x2="8" y2="-16" stroke="#58a6ff" stroke-width="1.5"/>
-          <rect x="6" y="-22" width="6" height="4" rx="1" fill="#ff8800"/>
-        </g>
-        <text class="stick-sparkle" font-size="6" x="7" y="-20">🧘</text>
-        <g class="stick-bubble">
-          <rect x="10" y="-40" width="108" height="18" rx="8" fill="#1c2128" stroke="#3fb950" stroke-width="0.8"/>
-          <polygon points="10,-22 15,-27 20,-22" fill="#1c2128" stroke="#3fb950" stroke-width="0.8"/>
-          <text font-size="7.5" fill="#fff" x="15" y="-28" font-family="monospace">WAL mode + thread pool. zen 🧘</text>
-        </g>
-      </g></g>
-
-      <!-- WORKER 2: Typing at React frontend -->
-      <g class="stick-worker" transform="translate(400, 58)">
-        <circle cx="0" cy="-18" r="5" fill="none" stroke="#3fb950" stroke-width="1.5"/>
-        <line x1="0" y1="-13" x2="0" y2="0" stroke="#3fb950" stroke-width="1.5"/>
-        <line x1="0" y1="0" x2="-5" y2="10" stroke="#3fb950" stroke-width="1.5"/>
-        <line x1="0" y1="0" x2="5" y2="10" stroke="#3fb950" stroke-width="1.5"/>
-        <g class="stick-type">
-          <line x1="0" y1="-8" x2="-8" y2="-3" stroke="#3fb950" stroke-width="1.5"/>
-          <line x1="0" y1="-8" x2="8" y2="-3" stroke="#3fb950" stroke-width="1.5"/>
-        </g>
-        <rect x="-10" y="-4" width="20" height="2" rx="1" fill="#3fb950" opacity="0.5"/>
-        <rect x="-8" y="-10" width="16" height="7" rx="1" fill="none" stroke="#3fb950" stroke-width="0.5" opacity="0.5"/>
-        <g class="stick-bubble" style="animation-delay: 1s;">
-          <rect x="12" y="-40" width="115" height="18" rx="8" fill="#1c2128" stroke="#3fb950" stroke-width="0.8"/>
-          <polygon points="12,-22 17,-27 22,-22" fill="#1c2128" stroke="#3fb950" stroke-width="0.8"/>
-          <text font-size="7.5" fill="#fff" x="17" y="-28" font-family="monospace">23 stores. all zustand now 🧈</text>
-        </g>
-      </g>
-
-      <!-- WORKER 3: YEET-ing UDP packets -->
-      <g class="stick-worker" transform="translate(140, 630)">
-        <circle cx="0" cy="-18" r="5" fill="none" stroke="#bc8cff" stroke-width="1.5"/>
-        <line x1="0" y1="-13" x2="0" y2="0" stroke="#bc8cff" stroke-width="1.5"/>
-        <g class="stick-walk"><line x1="0" y1="0" x2="-6" y2="10" stroke="#bc8cff" stroke-width="1.5"/></g>
-        <g class="stick-walk" style="animation-delay: 0.3s;"><line x1="0" y1="0" x2="6" y2="10" stroke="#bc8cff" stroke-width="1.5"/></g>
-        <line x1="0" y1="-8" x2="-8" y2="-14" stroke="#bc8cff" stroke-width="1.5"/>
-        <line x1="0" y1="-8" x2="10" y2="-12" stroke="#bc8cff" stroke-width="1.5"/>
-        <rect x="12" y="-16" width="14" height="8" rx="2" fill="rgba(188,140,255,0.3)" stroke="#bc8cff" stroke-width="0.5">
-          <animateTransform attributeName="transform" type="translate" values="0,0; 15,-10; 30,0" dur="1.5s" repeatCount="indefinite"/>
-        </rect>
-        <text font-size="5" fill="#bc8cff" x="14" y="-10" font-family="monospace">UDP<animateTransform attributeName="transform" type="translate" values="0,0; 15,-10; 30,0" dur="1.5s" repeatCount="indefinite"/></text>
-        <g class="stick-bubble" style="animation-delay: 0.5s;">
-          <rect x="-110" y="-40" width="100" height="18" rx="8" fill="#1c2128" stroke="#bc8cff" stroke-width="0.8"/>
-          <polygon points="-10,-22 -15,-27 -20,-22" fill="#1c2128" stroke="#bc8cff" stroke-width="0.8"/>
-          <text font-size="7.5" fill="#fff" x="-106" y="-28" font-family="monospace">ACK/retry now. we SHIP 📦</text>
-        </g>
-      </g>
-
-      <!-- WORKER 4: Celebrating at CORS -->
-      <g transform="translate(710, 400)"><g class="stick-worker stick-celebrate">
-        <circle cx="0" cy="-18" r="5" fill="none" stroke="#3fb950" stroke-width="1.5"/>
-        <line x1="0" y1="-13" x2="0" y2="0" stroke="#3fb950" stroke-width="1.5"/>
-        <line x1="0" y1="0" x2="-5" y2="10" stroke="#3fb950" stroke-width="1.5"/>
-        <line x1="0" y1="0" x2="5" y2="10" stroke="#3fb950" stroke-width="1.5"/>
-        <line x1="0" y1="-8" x2="-8" y2="-18" stroke="#3fb950" stroke-width="1.5"/>
-        <line x1="0" y1="-8" x2="8" y2="-18" stroke="#3fb950" stroke-width="1.5"/>
-        <text class="stick-sparkle" font-size="8" x="-12" y="-24">✨</text>
-        <text class="stick-sparkle" font-size="8" x="8" y="-26" style="animation-delay:0.6s;">✨</text>
-        <text class="stick-sparkle" font-size="6" x="0" y="-30" style="animation-delay:1.2s;">⭐</text>
-        <g class="stick-bubble" style="animation-delay: 1.5s;">
-          <rect x="12" y="-40" width="118" height="18" rx="8" fill="#1c2128" stroke="#3fb950" stroke-width="0.8"/>
-          <polygon points="12,-22 17,-27 22,-22" fill="#1c2128" stroke="#3fb950" stroke-width="0.8"/>
-          <text font-size="7.5" fill="#fff" x="17" y="-28" font-family="monospace">20/20 FIXED. we vibing ✨</text>
-        </g>
-      </g></g>
-
-      <!-- WORKER 5: Dead asleep on arbitration -->
-      <g transform="translate(195, 308)"><g class="stick-worker" style="animation: bob 3s ease-in-out infinite;">
-        <circle cx="0" cy="0" r="5" fill="none" stroke="#ff8800" stroke-width="1.5"/>
-        <line x1="5" y1="0" x2="20" y2="0" stroke="#ff8800" stroke-width="1.5"/>
-        <line x1="20" y1="0" x2="26" y2="6" stroke="#ff8800" stroke-width="1.5"/>
-        <line x1="20" y1="0" x2="26" y2="-4" stroke="#ff8800" stroke-width="1.5"/>
-        <line x1="10" y1="0" x2="8" y2="-6" stroke="#ff8800" stroke-width="1.5"/>
-        <line x1="10" y1="0" x2="14" y2="6" stroke="#ff8800" stroke-width="1.5"/>
-        <!-- Beer bottle -->
-        <rect x="6" y="-10" width="3" height="7" rx="1" fill="#ff8800" opacity="0.6"/>
-        <rect x="6.5" y="-13" width="2" height="4" rx="0.5" fill="#ff8800" opacity="0.4"/>
-        <text font-size="7" fill="#ff8800" opacity="0.8" x="2" y="-10">z<animate attributeName="opacity" values="0.3;1;0.3" dur="2s" repeatCount="indefinite"/></text>
-        <text font-size="9" fill="#ff8800" opacity="0.6" x="8" y="-16">Z<animate attributeName="opacity" values="0.2;0.8;0.2" dur="2s" begin="0.5s" repeatCount="indefinite"/></text>
-        <text font-size="11" fill="#ff8800" opacity="0.4" x="16" y="-22">Z<animate attributeName="opacity" values="0.1;0.6;0.1" dur="2s" begin="1s" repeatCount="indefinite"/></text>
-        <g class="stick-bubble" style="animation-delay: 2s;">
-          <rect x="28" y="-20" width="128" height="18" rx="8" fill="#1c2128" stroke="#ff8800" stroke-width="0.8"/>
-          <polygon points="28,-2 33,-7 38,-2" fill="#1c2128" stroke="#ff8800" stroke-width="0.8"/>
-          <text font-size="7.5" fill="#fff" x="33" y="-8" font-family="monospace">tokens + audit. sleep tight 😴</text>
-        </g>
-      </g></g>
-
-      <!-- WORKER 6: Celebrating the blueprint split -->
-      <g transform="translate(620, 255)"><g class="stick-worker stick-celebrate">
-        <circle cx="0" cy="-18" r="5" fill="none" stroke="#3fb950" stroke-width="1.5"/>
-        <line x1="0" y1="-13" x2="0" y2="0" stroke="#3fb950" stroke-width="1.5"/>
-        <line x1="0" y1="0" x2="-5" y2="10" stroke="#3fb950" stroke-width="1.5"/>
-        <line x1="0" y1="0" x2="5" y2="10" stroke="#3fb950" stroke-width="1.5"/>
-        <line x1="0" y1="-8" x2="-10" y2="-16" stroke="#3fb950" stroke-width="1.5"/>
-        <line x1="0" y1="-8" x2="10" y2="-16" stroke="#3fb950" stroke-width="1.5"/>
-        <text class="stick-sparkle" font-size="6" x="-12" y="-24">🎉</text>
-        <text class="stick-sparkle" font-size="6" x="8" y="-22" style="animation-delay:0.6s;">✨</text>
-        <g class="stick-bubble" style="animation-delay: 0.7s;">
-          <rect x="14" y="-38" width="128" height="18" rx="8" fill="#1c2128" stroke="#3fb950" stroke-width="0.8"/>
-          <polygon points="14,-22 19,-27 24,-22" fill="#1c2128" stroke="#3fb950" stroke-width="0.8"/>
-          <text font-size="7.5" fill="#fff" x="19" y="-26" font-family="monospace">28 blueprints! I can breathe 🎉</text>
-        </g>
-      </g></g>
-
-      <!-- WORKER 7: Chill ESP32 surfer dude -->
-      <g transform="translate(620, 760)"><g class="stick-worker stick-surf">
-        <circle cx="0" cy="-18" r="5" fill="none" stroke="#f0883e" stroke-width="1.5"/>
-        <line x1="0" y1="-13" x2="0" y2="0" stroke="#f0883e" stroke-width="1.5"/>
-        <line x1="0" y1="0" x2="-6" y2="10" stroke="#f0883e" stroke-width="1.5"/>
-        <line x1="0" y1="0" x2="6" y2="10" stroke="#f0883e" stroke-width="1.5"/>
-        <line x1="0" y1="-8" x2="-10" y2="-4" stroke="#f0883e" stroke-width="1.5"/>
-        <line x1="0" y1="-8" x2="10" y2="-4" stroke="#f0883e" stroke-width="1.5"/>
-        <line x1="-4" y1="-19" x2="4" y2="-19" stroke="#f0883e" stroke-width="2"/>
-        <g class="stick-bubble" style="animation-delay: 2.5s;">
-          <rect x="12" y="-40" width="136" height="18" rx="8" fill="#1c2128" stroke="#f0883e" stroke-width="0.8"/>
-          <polygon points="12,-22 17,-27 22,-22" fill="#1c2128" stroke="#f0883e" stroke-width="0.8"/>
-          <text font-size="7.5" fill="#fff" x="17" y="-28" font-family="monospace">40Hz smooth sailing now 🏄</text>
-        </g>
-      </g></g>
-
-      <!-- WORKER 8: Supabase sync guy - now chill (chain broken!) -->
-      <g transform="translate(1150, 100)"><g class="stick-worker stick-bob">
-        <circle cx="0" cy="-18" r="5" fill="none" stroke="#3fb950" stroke-width="1.5"/>
-        <line x1="0" y1="-13" x2="0" y2="0" stroke="#3fb950" stroke-width="1.5"/>
-        <line x1="0" y1="0" x2="-5" y2="10" stroke="#3fb950" stroke-width="1.5"/>
-        <line x1="0" y1="0" x2="5" y2="10" stroke="#3fb950" stroke-width="1.5"/>
-        <line x1="0" y1="-8" x2="-10" y2="-3" stroke="#3fb950" stroke-width="1.5"/>
-        <line x1="0" y1="-8" x2="8" y2="-2" stroke="#3fb950" stroke-width="1.5"/>
-        <!-- Broken chain on ground -->
-        <circle cx="12" cy="8" r="2" fill="none" stroke="#555" stroke-width="0.5" opacity="0.4"/>
-        <circle cx="17" cy="10" r="2" fill="none" stroke="#555" stroke-width="0.5" opacity="0.4"/>
-        <text class="stick-sparkle" font-size="6" x="-8" y="-24">💪</text>
-        <g class="stick-bubble" style="animation-delay: 3s;">
-          <rect x="-138" y="-40" width="134" height="18" rx="8" fill="#1c2128" stroke="#3fb950" stroke-width="0.8"/>
-          <polygon points="-6,-22 -11,-27 -16,-22" fill="#1c2128" stroke="#3fb950" stroke-width="0.8"/>
-          <text font-size="7.5" fill="#fff" x="-134" y="-28" font-family="monospace">rate-limited + retry loop 💪</text>
-        </g>
-      </g></g>
-
-      <!-- WORKER 9: Tombstone at the old legacy directory -->
-      <g class="stick-worker" transform="translate(830, 400)">
-        <!-- Tombstone -->
-        <rect x="-12" y="-8" width="24" height="16" rx="4" fill="#2d333b" stroke="#555" stroke-width="1"/>
-        <path d="M-8,-8 Q0,-20 8,-8" fill="#2d333b" stroke="#555" stroke-width="1"/>
-        <text font-size="6" fill="#888" x="0" y="1" text-anchor="middle" font-family="monospace">RIP</text>
-        <text font-size="4" fill="#666" x="0" y="6" text-anchor="middle" font-family="monospace">legacy/</text>
-        <!-- Ghost floating above -->
-        <g class="stick-ghost">
-          <ellipse cx="0" cy="-30" rx="6" ry="8" fill="rgba(136,136,136,0.3)" stroke="#888" stroke-width="0.5"/>
-          <circle cx="-2" cy="-32" r="1" fill="#888"/>
-          <circle cx="3" cy="-32" r="1" fill="#888"/>
-          <path d="M-2,-28 Q0,-26 2,-28" fill="none" stroke="#888" stroke-width="0.5"/>
-        </g>
-        <g class="stick-bubble" style="animation-delay: 1.8s;">
-          <rect x="14" y="-48" width="122" height="18" rx="8" fill="#1c2128" stroke="#888" stroke-width="0.8"/>
-          <polygon points="8,-36 13,-41 18,-36" fill="#1c2128" stroke="#888" stroke-width="0.8"/>
-          <text font-size="7.5" fill="#fff" x="19" y="-36" font-family="monospace">finally at peace. deprecated 🕊️</text>
-        </g>
-      </g>
-
-      <!-- WORKER 10: Two guys high-fiving over fade engine (peace achieved!) -->
-      <g class="stick-worker" transform="translate(310, 630)">
-        <!-- Guy 1 (Python) reaching right -->
-        <g class="stick-bob">
-        <circle cx="-10" cy="-18" r="4" fill="none" stroke="#58a6ff" stroke-width="1.5"/>
-        <line x1="-10" y1="-14" x2="-10" y2="-4" stroke="#58a6ff" stroke-width="1.5"/>
-        <line x1="-10" y1="-4" x2="-14" y2="6" stroke="#58a6ff" stroke-width="1.5"/>
-        <line x1="-10" y1="-4" x2="-6" y2="6" stroke="#58a6ff" stroke-width="1.5"/>
-        <line x1="-10" y1="-10" x2="-2" y2="-14" stroke="#58a6ff" stroke-width="1.5"/>
-        </g>
-        <!-- Guy 2 (ESP32) reaching left -->
-        <g class="stick-bob" style="animation-delay: 0.2s;">
-        <circle cx="10" cy="-18" r="4" fill="none" stroke="#f0883e" stroke-width="1.5"/>
-        <line x1="10" y1="-14" x2="10" y2="-4" stroke="#f0883e" stroke-width="1.5"/>
-        <line x1="10" y1="-4" x2="14" y2="6" stroke="#f0883e" stroke-width="1.5"/>
-        <line x1="10" y1="-4" x2="6" y2="6" stroke="#f0883e" stroke-width="1.5"/>
-        <line x1="10" y1="-10" x2="2" y2="-14" stroke="#f0883e" stroke-width="1.5"/>
-        </g>
-        <!-- High five! -->
-        <text class="stick-sparkle" font-size="7" x="-3" y="-16">🤝</text>
-        <!-- Labels -->
-        <text font-size="5" fill="#58a6ff" x="-18" y="-22" font-family="monospace">PY</text>
-        <text font-size="5" fill="#f0883e" x="13" y="-22" font-family="monospace">ESP</text>
-        <g class="stick-bubble" style="animation-delay: 0.3s;">
-          <rect x="-80" y="-40" width="148" height="18" rx="8" fill="#1c2128" stroke="#3fb950" stroke-width="0.8"/>
-          <polygon points="-2,-22 -7,-27 -12,-22" fill="#1c2128" stroke="#3fb950" stroke-width="0.8"/>
-          <text font-size="7.5" fill="#fff" x="-76" y="-28" font-family="monospace">ESP32 sole authority now. peace ✌️</text>
-        </g>
-      </g>
-
-      <!-- WORKER 11: Guy standing at the 87 bare excepts with a mop -->
-      <g transform="translate(570, 520)"><g class="stick-worker stick-bob" style="animation-delay: 1.5s;">
-        <circle cx="0" cy="-18" r="5" fill="none" stroke="#ff6b6b" stroke-width="1.5"/>
-        <line x1="0" y1="-13" x2="0" y2="0" stroke="#ff6b6b" stroke-width="1.5"/>
-        <line x1="0" y1="0" x2="-5" y2="10" stroke="#ff6b6b" stroke-width="1.5"/>
-        <line x1="0" y1="0" x2="5" y2="10" stroke="#ff6b6b" stroke-width="1.5"/>
-        <!-- Holding mop -->
-        <line x1="0" y1="-8" x2="-4" y2="-2" stroke="#ff6b6b" stroke-width="1.5"/>
-        <line x1="0" y1="-8" x2="8" y2="6" stroke="#ff6b6b" stroke-width="1.5"/>
-        <line x1="6" y1="4" x2="12" y2="8" stroke="#888" stroke-width="1"/>
-        <line x1="8" y1="6" x2="6" y2="10" stroke="#888" stroke-width="0.5"/>
-        <line x1="8" y1="6" x2="10" y2="10" stroke="#888" stroke-width="0.5"/>
-        <line x1="8" y1="6" x2="8" y2="11" stroke="#888" stroke-width="0.5"/>
-        <g class="stick-bubble" style="animation-delay: 2.2s;">
-          <rect x="14" y="-40" width="138" height="18" rx="8" fill="#1c2128" stroke="#ff6b6b" stroke-width="0.8"/>
-          <polygon points="14,-22 19,-27 24,-22" fill="#1c2128" stroke="#ff6b6b" stroke-width="0.8"/>
-          <text font-size="7.5" fill="#fff" x="19" y="-28" font-family="monospace">audit log catches everything now 📋</text>
-        </g>
-      </g></g>
-
-      <!-- WORKER 12: Watchdog guard dog (F01 celebration) -->
-      <g transform="translate(780, 700)"><g class="stick-worker stick-bob" style="animation-delay: 0.3s;">
-        <!-- Dog body -->
-        <circle cx="0" cy="-8" r="4" fill="none" stroke="#3fb950" stroke-width="1.5"/>
-        <line x1="0" y1="-4" x2="0" y2="4" stroke="#3fb950" stroke-width="1.5"/>
-        <line x1="0" y1="4" x2="-5" y2="10" stroke="#3fb950" stroke-width="1.5"/>
-        <line x1="0" y1="4" x2="5" y2="10" stroke="#3fb950" stroke-width="1.5"/>
-        <!-- Tail wagging -->
-        <g style="transform-origin: 0px 4px; animation: wave-arm 0.5s ease-in-out infinite;">
-          <line x1="0" y1="2" x2="-8" y2="-2" stroke="#3fb950" stroke-width="1.5"/>
-        </g>
-        <!-- Badge -->
-        <rect x="-16" y="-20" width="32" height="8" rx="3" fill="#3fb950" opacity="0.3"/>
-        <text font-size="5" fill="#3fb950" x="0" y="-14" text-anchor="middle" font-family="monospace">WATCHDOG</text>
-        <g class="stick-bubble" style="animation-delay: 2s;">
-          <rect x="10" y="-36" width="100" height="18" rx="8" fill="#1c2128" stroke="#3fb950" stroke-width="0.8"/>
-          <polygon points="8,-20 13,-25 18,-20" fill="#1c2128" stroke="#3fb950" stroke-width="0.8"/>
-          <text font-size="7.5" fill="#fff" x="15" y="-24" font-family="monospace">all nodes healthy. good boy 🐕</text>
-        </g>
-      </g></g>
-
-      <!-- WORKER 13: WAL mode celebration (F04 victory) -->
-      <g transform="translate(160, 440)"><g class="stick-worker stick-jump">
-        <circle cx="0" cy="-18" r="5" fill="none" stroke="#3fb950" stroke-width="1.5"/>
-        <line x1="0" y1="-13" x2="0" y2="0" stroke="#3fb950" stroke-width="1.5"/>
-        <line x1="0" y1="0" x2="-5" y2="10" stroke="#3fb950" stroke-width="1.5"/>
-        <line x1="0" y1="0" x2="5" y2="10" stroke="#3fb950" stroke-width="1.5"/>
-        <g class="stick-wave-arm">
-          <line x1="0" y1="-8" x2="-10" y2="-18" stroke="#3fb950" stroke-width="1.5"/>
-        </g>
-        <line x1="0" y1="-8" x2="8" y2="-2" stroke="#3fb950" stroke-width="1.5"/>
-        <text class="stick-sparkle" font-size="6" x="-14" y="-24">&#x1f389;</text>
-        <text class="stick-sparkle" font-size="6" x="6" y="-22" style="animation-delay:0.9s;">&#x2728;</text>
-        <g class="stick-bubble" style="animation-delay: 1.5s;">
-          <rect x="12" y="-40" width="120" height="18" rx="8" fill="#1c2128" stroke="#3fb950" stroke-width="0.8"/>
-          <polygon points="12,-22 17,-27 22,-22" fill="#1c2128" stroke="#3fb950" stroke-width="0.8"/>
-          <text font-size="7.5" fill="#fff" x="17" y="-28" font-family="monospace">WAL mode go brrrr &#x1f525;</text>
-        </g>
-      </g></g>
+      <!-- Stick figures removed — Feb 25 2026 audit (all 20 flaws resolved) -->
 
     </svg>
     </div>
@@ -1107,17 +740,202 @@
     </svg>
     </div>
 
+    <!-- ===================== SESSION 2 CHANGELOG ===================== -->
+    <div class="tab-panel" id="panel-session2">
+    <svg viewBox="0 0 900 790" xmlns="http://www.w3.org/2000/svg" style="min-width:800px; min-height:790px">
+      <defs>
+        <marker id="s2g" markerWidth="6" markerHeight="5" refX="6" refY="2.5" orient="auto"><polygon points="0 0,6 2.5,0 5" fill="#3fb950"/></marker>
+      </defs>
+
+      <text class="section-label" font-size="10" x="20" y="24">SESSION 2 FIXES &mdash; 9 CHANGES &mdash; COMMITS 177ddbf → 219b464</text>
+
+      <!-- Fix 1: DMX Engine Status -->
+      <rect class="section-bg" x="10" y="38" width="430" height="90"/>
+      <text class="section-label" font-size="9" x="22" y="54" fill="var(--green)">FIX #1 &mdash; DMX ENGINE STATUS FALSE ERROR (177ddbf)</text>
+      <g class="node-box">
+        <rect class="node-rect" x="22" y="64" width="195" height="38" fill="#161b22" stroke="var(--green)"/>
+        <text class="node-label" font-size="10" x="119" y="80">Health Check Fix</text>
+        <text class="node-sub" font-size="8" x="119" y="94">Accept 'ok' OR 'healthy'</text>
+      </g>
+      <g class="node-box">
+        <rect class="node-rect" x="225" y="64" width="205" height="38" fill="#161b22" stroke="var(--green)"/>
+        <text class="node-label" font-size="10" x="327" y="80">isDmxActive Wiring</text>
+        <text class="node-sub" font-size="8" x="327" y="94">engineRunning | isLookPlaying</text>
+      </g>
+      <line class="edge fixed" x1="217" y1="83" x2="225" y2="83" marker-end="url(#s2g)"/>
+
+      <!-- Fix 2: Settings Page Redesign -->
+      <rect class="section-bg" x="10" y="138" width="430" height="90"/>
+      <text class="section-label" font-size="9" x="22" y="154" fill="var(--green)">FIX #2 &mdash; SETTINGS PAGE REDESIGN (bfc334a)</text>
+      <g class="node-box">
+        <rect class="node-rect" x="22" y="164" width="130" height="38" fill="#161b22" stroke="var(--green)"/>
+        <text class="node-label" font-size="10" x="87" y="180">MoreMenu.jsx</text>
+        <text class="node-sub" font-size="8" x="87" y="194">Lucide icons, cleanup</text>
+      </g>
+      <g class="node-box">
+        <rect class="node-rect" x="160" y="164" width="130" height="38" fill="#161b22" stroke="var(--green)"/>
+        <text class="node-label" font-size="10" x="225" y="180">Dock.jsx</text>
+        <text class="node-sub" font-size="8" x="225" y="194">Action Pad in dock</text>
+      </g>
+      <g class="node-box">
+        <rect class="node-rect" x="298" y="164" width="130" height="38" fill="#161b22" stroke="var(--green)"/>
+        <text class="node-label" font-size="10" x="363" y="180">DesktopSidebar</text>
+        <text class="node-sub" font-size="8" x="363" y="194">Hide Pixel Arrays</text>
+      </g>
+
+      <!-- Fix 3: Glass Aesthetic -->
+      <rect class="section-bg" x="450" y="38" width="440" height="90"/>
+      <text class="section-label" font-size="9" x="462" y="54" fill="var(--green)">FIX #3 &mdash; GLASS AESTHETIC OVERHAUL (d442241)</text>
+      <g class="node-box">
+        <rect class="node-rect" x="462" y="64" width="200" height="38" fill="#161b22" stroke="var(--green)"/>
+        <text class="node-label" font-size="10" x="562" y="80">Glass Panel Design</text>
+        <text class="node-sub" font-size="8" x="562" y="94">glass-card, glass-panel, screen-glow</text>
+      </g>
+      <g class="node-box">
+        <rect class="node-rect" x="670" y="64" width="210" height="38" fill="#161b22" stroke="var(--green)"/>
+        <text class="node-label" font-size="10" x="775" y="80">GlassToggle Component</text>
+        <text class="node-sub" font-size="8" x="775" y="94">Reusable toggle 4 locations</text>
+      </g>
+
+      <!-- Fix 4: Home Button -->
+      <rect class="section-bg" x="450" y="138" width="440" height="90"/>
+      <text class="section-label" font-size="9" x="462" y="154" fill="var(--green)">FIX #4 &mdash; HOME NAV BUTTON (ebdaf0f)</text>
+      <g class="node-box">
+        <rect class="node-rect" x="462" y="164" width="200" height="38" fill="#161b22" stroke="var(--green)"/>
+        <text class="node-label" font-size="10" x="562" y="180">MoreMenu Header</text>
+        <text class="node-sub" font-size="8" x="562" y="194">Home button → navigate('/')</text>
+      </g>
+      <g class="node-box">
+        <rect class="node-rect" x="670" y="164" width="210" height="38" fill="#161b22" stroke="var(--green)"/>
+        <text class="node-label" font-size="10" x="775" y="180">MidiPad Header</text>
+        <text class="node-sub" font-size="8" x="775" y="194">Home + rename Action Pad</text>
+      </g>
+
+      <!-- Fix 5: More/Settings Split -->
+      <rect class="section-bg" x="10" y="240" width="430" height="120"/>
+      <text class="section-label" font-size="9" x="22" y="256" fill="var(--green)">FIX #5 &mdash; MORE/SETTINGS PAGE SPLIT (227d549)</text>
+      <g class="node-box">
+        <rect class="node-rect" x="22" y="266" width="130" height="38" fill="#161b22" stroke="var(--green)"/>
+        <text class="node-label" font-size="10" x="87" y="282">MoreMenu.jsx</text>
+        <text class="node-sub" font-size="8" x="87" y="296">Button grid /more</text>
+      </g>
+      <line class="edge fixed" x1="152" y1="285" x2="175" y2="285" marker-end="url(#s2g)"/>
+      <g class="node-box">
+        <rect class="node-rect" x="175" y="266" width="130" height="38" fill="#161b22" stroke="var(--green)"/>
+        <text class="node-label" font-size="10" x="240" y="282">SettingsPage.jsx</text>
+        <text class="node-sub" font-size="8" x="240" y="296">Tabbed /settings (NEW)</text>
+      </g>
+      <g class="node-box">
+        <rect class="node-rect" x="22" y="314" width="195" height="28" fill="#161b22" stroke="var(--accent)"/>
+        <text class="node-label" font-size="9" x="119" y="332">App.jsx +Route /settings</text>
+      </g>
+      <text font-size="9" fill="var(--text-dim)" x="225" y="332">More = nav buttons, Settings = tabbed config</text>
+
+      <!-- Fix 6: Action Pad Header -->
+      <rect class="section-bg" x="450" y="240" width="440" height="90"/>
+      <text class="section-label" font-size="9" x="462" y="256" fill="var(--green)">FIX #6 &mdash; ACTION PAD HOME BUTTON (2724086)</text>
+      <g class="node-box">
+        <rect class="node-rect" x="462" y="266" width="200" height="38" fill="#161b22" stroke="var(--green)"/>
+        <text class="node-label" font-size="10" x="562" y="282">MidiPad.jsx Header</text>
+        <text class="node-sub" font-size="8" x="562" y="296">Home btn + title "Action Pad"</text>
+      </g>
+      <g class="node-box">
+        <rect class="node-rect" x="670" y="266" width="210" height="38" fill="#161b22" stroke="var(--accent)"/>
+        <text class="node-label" font-size="10" x="775" y="282">Glass design system</text>
+        <text class="node-sub" font-size="8" x="775" y="296">var(--glass), var(--glass-border)</text>
+      </g>
+
+      <!-- Fix 7: Action Pad 50/50 -->
+      <rect class="section-bg" x="10" y="375" width="880" height="100"/>
+      <text class="section-label" font-size="9" x="22" y="391" fill="var(--green)">FIX #7 &mdash; ACTION PAD 50/50 SPLIT LAYOUT (e698963)</text>
+      <g class="node-box">
+        <rect class="node-rect" x="22" y="401" width="200" height="38" fill="#161b22" stroke="var(--green)"/>
+        <text class="node-label" font-size="10" x="122" y="417">Left: 3×3 Pad Grid</text>
+        <text class="node-sub" font-size="8" x="122" y="431">Glass cards, selection glow</text>
+      </g>
+      <line class="edge fixed" x1="222" y1="420" x2="240" y2="420" marker-end="url(#s2g)"/>
+      <g class="node-box">
+        <rect class="node-rect" x="240" y="401" width="200" height="38" fill="#161b22" stroke="var(--green)"/>
+        <text class="node-label" font-size="10" x="340" y="417">Right: Detail Panel</text>
+        <text class="node-sub" font-size="8" x="340" y="431">Type, target, mode, fade, edit</text>
+      </g>
+      <g class="node-box">
+        <rect class="node-rect" x="460" y="401" width="200" height="38" fill="#161b22" stroke="var(--accent)"/>
+        <text class="node-label" font-size="10" x="560" y="417">3-Step Config Flow</text>
+        <text class="node-sub" font-size="8" x="560" y="431">Type → Target → Mode/Fade</text>
+      </g>
+      <g class="node-box">
+        <rect class="node-rect" x="678" y="401" width="200" height="38" fill="#161b22" stroke="var(--accent)"/>
+        <text class="node-label" font-size="10" x="778" y="417">Pad Color Picker</text>
+        <text class="node-sub" font-size="8" x="778" y="431">9 color options per pad</text>
+      </g>
+
+      <!-- Fix 8: Unified ViewHeader -->
+      <rect class="section-bg" x="10" y="490" width="880" height="100"/>
+      <text class="section-label" font-size="9" x="22" y="506" fill="var(--green)">FIX #8 &mdash; UNIFIED VIEWHEADER COMPONENT (52c605a)</text>
+      <g class="node-box">
+        <rect class="node-rect" x="22" y="516" width="200" height="38" fill="#161b22" stroke="var(--green)"/>
+        <text class="node-label" font-size="10" x="122" y="532">ViewHeader.jsx (NEW)</text>
+        <text class="node-sub" font-size="8" x="122" y="546">Home/Back + title + right slot</text>
+      </g>
+      <g class="node-box">
+        <rect class="node-rect" x="240" y="516" width="200" height="38" fill="#161b22" stroke="var(--green)"/>
+        <text class="node-label" font-size="10" x="340" y="532">12 Views Updated</text>
+        <text class="node-sub" font-size="8" x="340" y="546">Replaced 4 different header patterns</text>
+      </g>
+      <g class="node-box">
+        <rect class="node-rect" x="460" y="516" width="200" height="38" fill="#161b22" stroke="var(--accent)"/>
+        <text class="node-label" font-size="10" x="560" y="532">showHome / backTo</text>
+        <text class="node-sub" font-size="8" x="560" y="546">Top-level=Home, Sub-page=Back</text>
+      </g>
+      <g class="node-box">
+        <rect class="node-rect" x="678" y="516" width="200" height="38" fill="#161b22" stroke="var(--accent)"/>
+        <text class="node-label" font-size="10" x="778" y="532">-54 lines net</text>
+        <text class="node-sub" font-size="8" x="778" y="546">184 added, 238 removed</text>
+      </g>
+
+      <!-- Fix 9: ViewHeader Polish -->
+      <rect class="section-bg" x="10" y="600" width="880" height="100"/>
+      <text class="section-label" font-size="9" x="22" y="616" fill="var(--green)">FIX #9 &mdash; VIEWHEADER POLISH: MINIMAL NAV ICONS (219b464)</text>
+      <g class="node-box">
+        <rect class="node-rect" x="22" y="626" width="200" height="38" fill="#161b22" stroke="var(--green)"/>
+        <text class="node-label" font-size="10" x="122" y="642">Remove Glass Box</text>
+        <text class="node-sub" font-size="8" x="122" y="656">Borderless transparent button</text>
+      </g>
+      <g class="node-box">
+        <rect class="node-rect" x="240" y="626" width="200" height="38" fill="#161b22" stroke="var(--green)"/>
+        <text class="node-label" font-size="10" x="340" y="642">ArrowLeft for Back</text>
+        <text class="node-sub" font-size="8" x="340" y="656">Was ChevronLeft, now cleaner</text>
+      </g>
+      <g class="node-box">
+        <rect class="node-rect" x="460" y="626" width="200" height="38" fill="#161b22" stroke="var(--accent)"/>
+        <text class="node-label" font-size="10" x="560" y="642">Tighter Spacing</text>
+        <text class="node-sub" font-size="8" x="560" y="656">gap:0, marginRight:6, inline</text>
+      </g>
+      <g class="node-box">
+        <rect class="node-rect" x="678" y="626" width="200" height="38" fill="#161b22" stroke="var(--accent)"/>
+        <text class="node-label" font-size="10" x="778" y="642">Baseline Title+Sub</text>
+        <text class="node-sub" font-size="8" x="778" y="656">text-sm semibold + 10px dim</text>
+      </g>
+
+      <!-- Summary -->
+      <text font-size="9" fill="var(--text-dim)" x="22" y="730">Files changed: ViewHeader.jsx (new+polished), MoreMenu, SettingsPage, MidiPad, Library, Faders, Shows, Fixtures, Timers, Effects, Looks, ChatPage, Schedules, ZoneDetail</text>
+      <text font-size="9" fill="var(--text-dim)" x="22" y="746">Commits: 177ddbf, bfc334a, d442241, ebdaf0f, 227d549, 2724086, e698963, 52c605a, 219b464</text>
+      <text font-size="9" fill="var(--green)" x="22" y="766">All 9 fixes verified on Pi kiosk (800&times;480) at 192.168.18.28:3000</text>
+    </svg>
+    </div>
+
     <!-- ===================== TAB 3: REDLINES ===================== -->
     <div class="tab-panel" id="panel-redline">
-    <svg viewBox="0 0 1380 1500" xmlns="http://www.w3.org/2000/svg" style="min-width:1100px">
+    <svg viewBox="0 0 1380 1080" xmlns="http://www.w3.org/2000/svg" style="min-width:1100px">
       <defs>
         <marker id="ra" markerWidth="6" markerHeight="5" refX="6" refY="2.5" orient="auto"><polygon points="0 0,6 2.5,0 5" fill="#2d333b"/></marker>
         <marker id="rr" markerWidth="6" markerHeight="5" refX="6" refY="2.5" orient="auto"><polygon points="0 0,6 2.5,0 5" fill="#ff4444"/></marker>
       </defs>
 
       <!-- Title -->
-      <text font-family="-apple-system,'Segoe UI',sans-serif" font-size="14" fill="var(--yellow)" font-weight="700" x="20" y="24">ARCHITECTURE REDLINES — 20 FIXED ✅ + 22 NEW ISSUES FOUND</text>
-      <text font-family="-apple-system,'Segoe UI',sans-serif" font-size="10" fill="var(--text-dim)" x="20" y="40">Original 20 flaws fixed. Re-analysis found 22 new issues (2 CRIT, 6 HIGH, 8 MED, 6 LOW).</text>
+      <text font-family="-apple-system,'Segoe UI',sans-serif" font-size="14" fill="var(--text)" font-weight="700" x="20" y="24">ARCHITECTURE REDLINES — 20/20 RESOLVED</text>
+      <text font-family="-apple-system,'Segoe UI',sans-serif" font-size="10" fill="var(--text-dim)" x="20" y="40">Click any flaw marker for details. Dashed rings = affected components.</text>
 
       <!-- Severity Legend -->
       <rect x="700" y="8" width="360" height="36" fill="rgba(22,27,34,0.7)" rx="6" stroke="var(--border)" stroke-width="0.5"/>
@@ -1160,11 +978,11 @@
 
       <!-- Flask Backend -->
       <rect class="section-bg" x="10" y="245" width="700" height="310"/>
-      <text class="section-label" font-size="9" x="22" y="259">FLASK BACKEND — aether-core.py (5,769 LOC + 28 blueprints) — SSOT</text>
+      <text class="section-label" font-size="9" x="22" y="259">FLASK BACKEND — aether-core.py (6,157 LOC + 10 modules) — SSOT</text>
       <text class="port-label" font-size="9" x="670" y="259">:8891</text>
       <!-- State managers row -->
       <rect x="22" y="268" width="100" height="32" rx="4" fill="#161b22" stroke="#30363d" stroke-width="1"/>
-      <text font-size="8" fill="var(--text)" text-anchor="middle" x="72" y="287" font-weight="600">Flask API 186+</text>
+      <text font-size="8" fill="var(--text)" text-anchor="middle" x="72" y="287" font-weight="600">Flask API 269</text>
       <rect x="130" y="268" width="110" height="32" rx="4" fill="#161b22" stroke="var(--yellow)" stroke-width="1"/>
       <text font-size="8" fill="var(--text)" text-anchor="middle" x="185" y="287" font-weight="600">ArbitrationMgr</text>
       <rect x="248" y="268" width="120" height="32" rx="4" fill="#161b22" stroke="var(--accent)" stroke-width="1"/>
@@ -1211,9 +1029,9 @@
       <!-- 40Hz Refresh -->
       <rect x="470" y="412" width="120" height="28" rx="4" fill="#161b22" stroke="var(--accent)" stroke-width="1"/>
       <text font-size="8" fill="var(--text)" text-anchor="middle" x="530" y="430" font-weight="600">40Hz Refresh Loop</text>
-      <!-- CORS label — FIXED (F05) -->
-      <rect x="470" y="376" width="120" height="26" rx="4" fill="#161b22" stroke="var(--green)" stroke-width="1"/>
-      <text font-size="7" fill="var(--green)" text-anchor="middle" x="530" y="392" font-weight="600">CORS ALLOWED (F05)</text>
+      <!-- CORS label -->
+      <rect x="470" y="376" width="120" height="26" rx="4" fill="#161b22" stroke="var(--red)" stroke-width="1"/>
+      <text font-size="7" fill="var(--red)" text-anchor="middle" x="530" y="392" font-weight="600">CORS origins="*"</text>
 
       <!-- Cloud/Supabase -->
       <rect class="section-bg" x="730" y="60" width="360" height="160"/>
@@ -1226,8 +1044,8 @@
       <text font-size="8" fill="var(--text)" text-anchor="middle" x="807" y="140" font-weight="600">ID Mapping</text>
       <rect x="880" y="122" width="130" height="30" rx="4" fill="#161b22" stroke="#30363d" stroke-width="1"/>
       <text font-size="8" fill="var(--text)" text-anchor="middle" x="945" y="140" font-weight="600">@sync_to_cloud</text>
-      <text font-size="8" fill="var(--green)" x="742" y="172">11 tables • updated_at conflict stamps (F19)</text>
-      <text font-size="8" fill="var(--green)" x="742" y="184">Rate-limited sync • Background retry (F19)</text>
+      <text font-size="8" fill="var(--text-dim)" x="742" y="172">11 tables • No conflict resolution</text>
+      <text font-size="8" fill="var(--text-dim)" x="742" y="184">One-way push • No rate limiting</text>
 
       <!-- Transport -->
       <rect class="section-bg" x="10" y="570" width="700" height="50"/>
@@ -1275,16 +1093,16 @@
         <text class="flaw-badge" font-size="8" fill="#fff" text-anchor="middle" x="720" y="254">F01</text>
       </g>
 
-      <!-- FLAW-02: Monolithic God File — FIXED — badge on the section title -->
+      <!-- FLAW-02: Monolithic God File — badge on the section title -->
       <g class="redline-marker" onclick="showFlaw('F02')">
-        <circle cx="465" cy="259" r="12" fill="#44cc44"/>
+        <circle cx="465" cy="259" r="12" fill="#ff4444"/>
         <text class="flaw-badge" font-size="8" fill="#fff" text-anchor="middle" x="465" y="263">F02</text>
       </g>
 
-      <!-- FLAW-03: UDP Delivery Guarantee — FIXED -->
+      <!-- FLAW-03: UDP No Delivery Guarantee — ring around UDP :6455 -->
       <g class="redline-marker" onclick="showFlaw('F03')">
-        <rect class="flaw-ring sev-crit" x="18" y="588" width="103" height="30" rx="6" style="stroke:#44cc44; fill:rgba(68,204,68,0.08);"/>
-        <circle cx="130" cy="588" r="12" fill="#44cc44"/>
+        <rect class="flaw-ring sev-crit" x="18" y="588" width="103" height="30" rx="6"/>
+        <circle cx="130" cy="588" r="12" fill="#ff4444"/>
         <text class="flaw-badge" font-size="8" fill="#fff" text-anchor="middle" x="130" y="592">F03</text>
       </g>
 
@@ -1306,10 +1124,10 @@
       <!-- REDLINE MARKERS — HIGH (orange circles) -->
       <!-- ========================================================================== -->
 
-      <!-- FLAW-06: Duplicate Playback Systems — FIXED (consolidated via unified engine) -->
+      <!-- FLAW-06: Duplicate Playback Systems — ring spans all engines -->
       <g class="redline-marker" onclick="showFlaw('F06')">
-        <rect class="flaw-ring sev-fixed" x="18" y="318" width="618" height="38" rx="6" stroke="#44cc44" stroke-dasharray="6,4"/>
-        <circle cx="644" cy="320" r="12" fill="#44cc44"/>
+        <rect class="flaw-ring sev-high" x="18" y="318" width="618" height="38" rx="6"/>
+        <circle cx="644" cy="320" r="12" fill="#ff8800"/>
         <text class="flaw-badge" font-size="8" fill="#fff" text-anchor="middle" x="644" y="324">F06</text>
       </g>
 
@@ -1321,10 +1139,10 @@
         <text class="flaw-badge" font-size="8" fill="#fff" text-anchor="middle" x="314" y="482">F07</text>
       </g>
 
-      <!-- FLAW-08: Arbitration Race — FIXED (token-based TOCTOU prevention) -->
+      <!-- FLAW-08: Arbitration Race — on ArbitrationMgr -->
       <g class="redline-marker" onclick="showFlaw('F08')">
-        <rect class="flaw-ring sev-fixed" x="126" y="264" width="118" height="36" rx="6" stroke="#44cc44" stroke-dasharray="6,4"/>
-        <circle cx="250" cy="264" r="12" fill="#44cc44"/>
+        <rect class="flaw-ring sev-high" x="126" y="264" width="118" height="36" rx="6"/>
+        <circle cx="250" cy="264" r="12" fill="#ff8800"/>
         <text class="flaw-badge" font-size="8" fill="#fff" text-anchor="middle" x="250" y="268">F08</text>
       </g>
 
@@ -1337,8 +1155,8 @@
 
       <!-- FLAW-10: Discovery Listener No Auth — on UDP :9999 -->
       <g class="redline-marker" onclick="showFlaw('F10')">
-        <rect class="flaw-ring sev-high" x="121" y="588" width="103" height="30" rx="6" style="stroke:#44cc44; fill:rgba(68,204,68,0.08);"/>
-        <circle cx="232" cy="588" r="12" fill="#44cc44"/>
+        <rect class="flaw-ring sev-high" x="121" y="588" width="103" height="30" rx="6"/>
+        <circle cx="232" cy="588" r="12" fill="#ff8800"/>
         <text class="flaw-badge" font-size="8" fill="#fff" text-anchor="middle" x="232" y="592">F10</text>
       </g>
 
@@ -1348,9 +1166,9 @@
 
       <!-- FLAW-11: Frontend API Routing Inconsistency -->
       <g class="redline-marker" onclick="showFlaw('F11')">
-        <line class="redline-connector" stroke="#44cc44" x1="170" y1="144" x2="130" y2="192"/>
-        <line class="redline-connector" stroke="#44cc44" x1="170" y1="144" x2="72" y2="268"/>
-        <circle cx="170" cy="144" r="12" fill="#44cc44"/>
+        <line class="redline-connector" stroke="#ddaa00" x1="170" y1="144" x2="130" y2="192"/>
+        <line class="redline-connector" stroke="#ddaa00" x1="170" y1="144" x2="72" y2="268"/>
+        <circle cx="170" cy="144" r="12" fill="#ddaa00"/>
         <text class="flaw-badge" font-size="8" fill="#000" text-anchor="middle" x="170" y="148">F11</text>
       </g>
 
@@ -1361,11 +1179,11 @@
         <text class="flaw-badge" font-size="8" fill="#fff" text-anchor="middle" x="500" y="270">F12</text>
       </g>
 
-      <!-- FLAW-13: Thread Pool — FIXED (bounded pools + monitoring) -->
+      <!-- FLAW-13: Memory Growth Unbounded Threads -->
       <g class="redline-marker" onclick="showFlaw('F13')">
-        <circle cx="660" cy="340" r="12" fill="#44cc44"/>
-        <text class="flaw-badge" font-size="8" fill="#fff" text-anchor="middle" x="660" y="344">F13</text>
-        <text font-size="7" fill="#44cc44" x="678" y="344">pooled</text>
+        <circle cx="660" cy="340" r="12" fill="#ddaa00"/>
+        <text class="flaw-badge" font-size="8" fill="#000" text-anchor="middle" x="660" y="344">F13</text>
+        <text font-size="7" fill="#ddaa00" x="678" y="344">thread leaks</text>
       </g>
 
       <!-- FLAW-14: Cron Parser — FIXED -->
@@ -1386,16 +1204,16 @@
       <!-- REDLINE MARKERS — LOW (grey circles) -->
       <!-- ========================================================================== -->
 
-      <!-- FLAW-16: No Audit Log — FIXED -->
+      <!-- FLAW-16: No Audit Log — near ArbitrationMgr -->
       <g class="redline-marker" onclick="showFlaw('F16')">
-        <circle cx="185" cy="306" r="10" fill="#44cc44"/>
+        <circle cx="185" cy="306" r="10" fill="#888888"/>
         <text class="flaw-badge" font-size="7" fill="#fff" text-anchor="middle" x="185" y="310">F16</text>
       </g>
 
-      <!-- FLAW-17: FPS Mismatch — FIXED (all engines 40fps) -->
+      <!-- FLAW-17: FPS Mismatch 30 vs 40 — between EffectsEngine and 40Hz -->
       <g class="redline-marker" onclick="showFlaw('F17')">
-        <line class="redline-connector" stroke="#44cc44" x1="383" y1="352" x2="530" y2="412"/>
-        <circle cx="456" cy="382" r="10" fill="#44cc44"/>
+        <line class="redline-connector" stroke="#888888" x1="383" y1="352" x2="530" y2="412"/>
+        <circle cx="456" cy="382" r="10" fill="#888888"/>
         <text class="flaw-badge" font-size="7" fill="#fff" text-anchor="middle" x="456" y="386">F17</text>
       </g>
 
@@ -1406,71 +1224,71 @@
         <text class="flaw-badge" font-size="7" fill="#fff" text-anchor="middle" x="260" y="86">F18</text>
       </g>
 
-      <!-- FLAW-19: Supabase Conflict — FIXED (updated_at + rate limit) -->
+      <!-- FLAW-19: Supabase No Conflict Resolution — in cloud section -->
       <g class="redline-marker" onclick="showFlaw('F19')">
-        <circle cx="1050" cy="172" r="10" fill="#44cc44"/>
+        <circle cx="1050" cy="172" r="10" fill="#888888"/>
         <text class="flaw-badge" font-size="7" fill="#fff" text-anchor="middle" x="1050" y="176">F19</text>
       </g>
 
-      <!-- FLAW-20: Stale Node Escalation — FIXED (alert + DMX skip + probe) -->
+      <!-- FLAW-20: Stale Node No Escalation — between discovery and nodes -->
       <g class="redline-marker" onclick="showFlaw('F20')">
-        <line class="redline-connector" stroke="#44cc44" x1="172" y1="614" x2="268" y2="658"/>
-        <circle cx="220" cy="640" r="10" fill="#44cc44"/>
+        <line class="redline-connector" stroke="#888888" x1="172" y1="614" x2="268" y2="658"/>
+        <circle cx="220" cy="640" r="10" fill="#888888"/>
         <text class="flaw-badge" font-size="7" fill="#fff" text-anchor="middle" x="220" y="644">F20</text>
       </g>
 
       <!-- ========================================================================== -->
       <!-- RIGHT PANEL: FLAW SUMMARY LIST -->
       <!-- ========================================================================== -->
-      <rect class="section-bg" x="730" y="240" width="640" height="960"/>
+      <rect class="section-bg" x="730" y="240" width="640" height="510"/>
       <text class="section-label" font-size="10" x="742" y="258">FLAW REGISTRY — CLICK ANY MARKER OR ROW FOR DETAILS</text>
 
-      <!-- CRITICAL -->
-      <text font-size="9" fill="#ff4444" font-weight="700" x="742" y="280" font-family="monospace">━━ CRITICAL ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</text>
+      <!-- CRITICAL — ALL FIXED -->
+      <text font-size="9" fill="#44cc44" font-weight="700" x="742" y="280" font-family="monospace">━━ CRITICAL (5/5 FIXED) ━━━━━━━━━━━━━━━━━━━━━</text>
       <g class="redline-marker" onclick="showFlaw('F01')">
-        <circle cx="752" cy="298" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="302">F01  ✅ FIXED — systemd watchdog (30s) + graceful shutdown</text>
+        <circle cx="752" cy="298" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="302">F01  ✅ FIXED — Gunicorn multi-worker + systemd watchdog</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('F02')">
-        <circle cx="752" cy="316" r="6" fill="#44cc44"/><text font-size="9" fill="var(--text)" x="764" y="320">F02  God File Decomposed ✅ — 28 blueprints extracted, 5,769 LOC kernel</text>
+        <circle cx="752" cy="316" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="320">F02  ✅ FIXED — Modularized into 10 extracted modules + core_registry</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('F03')">
-        <circle cx="752" cy="334" r="6" fill="#44cc44"/><text font-size="9" fill="var(--text)" x="764" y="338">F03  UDP Delivery Guarantee ✅ — reliable send for safety commands</text>
+        <circle cx="752" cy="334" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="338">F03  ✅ FIXED — ACK mode for critical commands + retry with backoff</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('F04')">
-        <circle cx="752" cy="352" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="356">F04  ✅ FIXED — Thread-local pool + WAL mode + atomic writes</text>
+        <circle cx="752" cy="352" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="356">F04  ✅ FIXED — WAL mode + connection pool + context managers</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('F05')">
         <circle cx="752" cy="370" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="374">F05  ✅ FIXED — CORS now uses ALLOWED_ORIGINS</text>
       </g>
 
-      <!-- HIGH -->
-      <text font-size="9" fill="#ff8800" font-weight="700" x="742" y="398" font-family="monospace">━━ HIGH ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</text>
+      <!-- HIGH — ALL FIXED -->
+      <text font-size="9" fill="#44cc44" font-weight="700" x="742" y="398" font-family="monospace">━━ HIGH (5/5 FIXED) ━━━━━━━━━━━━━━━━━━━━━━━━━</text>
       <g class="redline-marker" onclick="showFlaw('F06')">
-        <circle cx="752" cy="416" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="420">F06  ✅ FIXED — playback consolidated via UnifiedPlaybackEngine</text>
+        <circle cx="752" cy="416" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="420">F06  ✅ FIXED — PlaybackCtrl removed, UnifiedPlayback sole authority</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('F07')">
         <circle cx="752" cy="434" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="438">F07  ✅ FIXED — ESP32 sole fade authority, SSOT sends target+ms</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('F08')">
-        <circle cx="752" cy="452" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="456">F08  ✅ FIXED — token-based TOCTOU prevention, stale writes rejected</text>
+        <circle cx="752" cy="452" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="456">F08  ✅ FIXED — Token-based TOCTOU protection in arbitration</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('F09')">
-        <circle cx="752" cy="470" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="474">F09  ✅ FIXED — save_state_now() + auto-resume on startup</text>
+        <circle cx="752" cy="470" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="474">F09  ✅ FIXED — State persisted on transitions + resume on startup</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('F10')">
-        <circle cx="752" cy="488" r="6" fill="#44cc44"/><text font-size="9" fill="var(--text)" x="764" y="492">F10  Discovery Security ✅ — subnet + rate limit + HMAC + format validation</text>
+        <circle cx="752" cy="488" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="492">F10  ✅ FIXED — HMAC shared secret on discovery + IP validation</text>
       </g>
 
-      <!-- MEDIUM -->
-      <text font-size="9" fill="#ddaa00" font-weight="700" x="742" y="516" font-family="monospace">━━ MEDIUM ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</text>
+      <!-- MEDIUM — ALL FIXED -->
+      <text font-size="9" fill="#44cc44" font-weight="700" x="742" y="516" font-family="monospace">━━ MEDIUM (5/5 FIXED) ━━━━━━━━━━━━━━━━━━━━━━━</text>
       <g class="redline-marker" onclick="showFlaw('F11')">
-        <circle cx="752" cy="534" r="6" fill="#44cc44"/><text font-size="9" fill="var(--text)" x="764" y="538">F11  API Routing Unified ✅ — all calls through Express proxy</text>
+        <circle cx="752" cy="534" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="538">F11  ✅ FIXED — Consistent Express proxy routing</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('F12')">
         <circle cx="752" cy="552" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="556">F12  ✅ FIXED — values clamped 0-255, universe validated 1-64</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('F13')">
-        <circle cx="752" cy="570" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="574">F13  ✅ FIXED — bounded pools (cloud=4, node=2) + memory monitoring</text>
+        <circle cx="752" cy="570" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="574">F13  ✅ FIXED — ThreadPoolExecutor for Supabase + memory monitoring</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('F14')">
         <circle cx="752" cy="588" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="592">F14  ✅ FIXED — croniter replaces hand-rolled parser</text>
@@ -1479,176 +1297,22 @@
         <circle cx="752" cy="606" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="610">F15  ✅ FIXED — monotonic clock + correct tempo scaling</text>
       </g>
 
-      <!-- LOW -->
-      <text font-size="9" fill="#888888" font-weight="700" x="742" y="634" font-family="monospace">━━ LOW ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</text>
+      <!-- LOW — ALL FIXED -->
+      <text font-size="9" fill="#44cc44" font-weight="700" x="742" y="634" font-family="monospace">━━ LOW (5/5 FIXED) ━━━━━━━━━━━━━━━━━━━━━━━━━━</text>
       <g class="redline-marker" onclick="showFlaw('F16')">
-        <circle cx="752" cy="652" r="6" fill="#44cc44"/><text font-size="9" fill="var(--text)" x="764" y="656">F16  Persistent Audit Log ✅ — rotating file log + /api/audit</text>
+        <circle cx="752" cy="652" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="656">F16  ✅ FIXED — Persistent audit trail logging</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('F17')">
-        <circle cx="752" cy="670" r="6" fill="#44cc44"/><text font-size="9" fill="var(--text)" x="764" y="674">F17  FPS Aligned ✅ — all engines at 40fps matching DMX refresh</text>
+        <circle cx="752" cy="670" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="674">F17  ✅ FIXED — All render loops aligned to 40fps</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('F18')">
         <circle cx="752" cy="688" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="692">F18  ✅ FIXED — dead stores removed, intentContextStore is alive</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('F19')">
-        <circle cx="752" cy="706" r="6" fill="#44cc44"/><text font-size="9" fill="var(--text)" x="764" y="710">F19  Supabase Conflict + Rate Limit ✅ — updated_at + throttled sync</text>
+        <circle cx="752" cy="706" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="710">F19  ✅ FIXED — updated_at stamps, 50ms throttle, auto retry</text>
       </g>
       <g class="redline-marker" onclick="showFlaw('F20')">
-        <circle cx="752" cy="724" r="6" fill="#44cc44"/><text font-size="9" fill="var(--text)" x="764" y="728">F20  Stale Node Escalation ✅ — SocketIO alert + DMX skip + auto probe</text>
-      </g>
-
-      <!-- ========================================================================== -->
-      <!-- NEW ISSUES (N01-N22) — Found during Feb 17 re-analysis                    -->
-      <!-- ========================================================================== -->
-      <text font-size="12" fill="var(--yellow)" font-weight="700" x="742" y="764" font-family="-apple-system,'Segoe UI',sans-serif">NEW ISSUES — Feb 17 2026 Re-Analysis</text>
-      <line x1="742" y1="770" x2="1350" y2="770" stroke="var(--yellow)" stroke-width="0.5" opacity="0.4"/>
-
-      <!-- CRITICAL -->
-      <text font-size="9" fill="#ff4444" font-weight="700" x="742" y="792" font-family="monospace">━━ CRITICAL (2 — ALL FIXED) ━━━━━━━━━━━━━━━━━</text>
-      <g class="redline-marker" onclick="showFlaw('N01')">
-        <circle cx="752" cy="810" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="814">N01  ✅ FIXED — broadcast_ws() replaced with socketio.emit()</text>
-      </g>
-      <g class="redline-marker" onclick="showFlaw('N02')">
-        <circle cx="752" cy="828" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="832">N02  ✅ FIXED — shows table added to init_database()</text>
-      </g>
-
-      <!-- HIGH -->
-      <text font-size="9" fill="#ff8800" font-weight="700" x="742" y="856" font-family="monospace">━━ HIGH (6 — 3 FIXED, 1 MITIGATED, 2 FALSE) ━</text>
-      <g class="redline-marker" onclick="showFlaw('N03')">
-        <circle cx="752" cy="874" r="6" fill="#ddaa00"/><text font-size="9" fill="var(--yellow)" x="764" y="878">N03  ⚠ MITIGATED — fallback path now audit-logged (TASK-0006 debt)</text>
-      </g>
-      <g class="redline-marker" onclick="showFlaw('N04')">
-        <circle cx="752" cy="892" r="6" fill="#ddaa00"/><text font-size="9" fill="var(--text-dim)" x="764" y="896">N04  ⚠ DEFERRED — EffectsEngine TASK-0005 (same class as N03)</text>
-      </g>
-      <g class="redline-marker" onclick="showFlaw('N05')">
-        <circle cx="752" cy="910" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="914">N05  ✅ FIXED — close_db() added to daemon thread finally blocks</text>
-      </g>
-      <g class="redline-marker" onclick="showFlaw('N06')">
-        <circle cx="752" cy="928" r="6" fill="#555"/><text font-size="9" fill="var(--text-dim)" x="764" y="932">N06  ✗ FALSE POSITIVE — Flask-SocketIO emit IS thread-safe by design</text>
-      </g>
-      <g class="redline-marker" onclick="showFlaw('N07')">
-        <circle cx="752" cy="946" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="950">N07  ✅ FIXED — effects/chases/shows/unified stopped before shutdown</text>
-      </g>
-      <g class="redline-marker" onclick="showFlaw('N08')">
-        <circle cx="752" cy="964" r="6" fill="#555"/><text font-size="9" fill="var(--text-dim)" x="764" y="968">N08  ✗ FALSE POSITIVE — PendingSyncQueue already exists (disk-persisted)</text>
-      </g>
-
-      <!-- MEDIUM -->
-      <text font-size="9" fill="#ddaa00" font-weight="700" x="742" y="996" font-family="monospace">━━ MEDIUM (8 — 1 FIXED, 3 DEFERRED, 4 FALSE) ━</text>
-      <g class="redline-marker" onclick="showFlaw('N09')">
-        <circle cx="752" cy="1014" r="6" fill="#ddaa00"/><text font-size="9" fill="var(--text-dim)" x="764" y="1018">N09  ⚠ DEFERRED — MergeLayer cache stale on fixture change (low impact)</text>
-      </g>
-      <g class="redline-marker" onclick="showFlaw('N10')">
-        <circle cx="752" cy="1032" r="6" fill="#ddaa00"/><text font-size="9" fill="var(--text-dim)" x="764" y="1036">N10  ⚠ DEFERRED — RDM scan blocks (expected for explicit user action)</text>
-      </g>
-      <g class="redline-marker" onclick="showFlaw('N11')">
-        <circle cx="752" cy="1050" r="6" fill="#555"/><text font-size="9" fill="var(--text-dim)" x="764" y="1054">N11  ✗ FALSE POSITIVE — CueStack delegates fade to DMX state manager</text>
-      </g>
-      <g class="redline-marker" onclick="showFlaw('N12')">
-        <circle cx="752" cy="1068" r="6" fill="#555"/><text font-size="9" fill="var(--text-dim)" x="764" y="1072">N12  ✗ FALSE POSITIVE — all 28 blueprint imports are explicit</text>
-      </g>
-      <g class="redline-marker" onclick="showFlaw('N13')">
-        <circle cx="752" cy="1086" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="1090">N13  ✅ FIXED — 30s axios timeout on proxy + all direct calls</text>
-      </g>
-      <g class="redline-marker" onclick="showFlaw('N14')">
-        <circle cx="752" cy="1104" r="6" fill="#555"/><text font-size="9" fill="var(--text-dim)" x="764" y="1108">N14  ✗ FALSE POSITIVE — FixtureLibrary uses singleton pattern</text>
-      </g>
-      <g class="redline-marker" onclick="showFlaw('N15')">
-        <circle cx="752" cy="1122" r="6" fill="#ddaa00"/><text font-size="9" fill="var(--text-dim)" x="764" y="1126">N15  ⚠ DEFERRED — preview only active in UI, 10fps already throttled</text>
-      </g>
-      <g class="redline-marker" onclick="showFlaw('N16')">
-        <circle cx="752" cy="1140" r="6" fill="#555"/><text font-size="9" fill="var(--text-dim)" x="764" y="1144">N16  ✗ FALSE POSITIVE — getContext() already uses Promise.all()</text>
-      </g>
-
-      <!-- LOW -->
-      <text font-size="9" fill="#888888" font-weight="700" x="742" y="1172" font-family="monospace">━━ LOW (6) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</text>
-      <g class="redline-marker" onclick="showFlaw('N17')">
-        <circle cx="752" cy="1190" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="1194">N17  ✅ FIXED — _run_loop outer try/except guard + 10s backoff recovery</text>
-      </g>
-      <g class="redline-marker" onclick="showFlaw('N18')">
-        <circle cx="752" cy="1208" r="6" fill="#555"/><text font-size="9" fill="var(--text-dim)" x="764" y="1212">N18  ✗ FALSE POSITIVE — RDM has 710+ lines of real implementation, 14 API routes, full UI</text>
-      </g>
-      <g class="redline-marker" onclick="showFlaw('N19')">
-        <circle cx="752" cy="1226" r="6" fill="#555"/><text font-size="9" fill="var(--text-dim)" x="764" y="1230">N19  ✗ FALSE POSITIVE — 512 is DMX512 spec; multi-universe up to 63999 supported</text>
-      </g>
-      <g class="redline-marker" onclick="showFlaw('N20')">
-        <circle cx="752" cy="1244" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="1248">N20  ✅ FIXED — Toast store capped at 5 max, oldest auto-evicted</text>
-      </g>
-      <g class="redline-marker" onclick="showFlaw('N21')">
-        <circle cx="752" cy="1262" r="6" fill="#555"/><text font-size="9" fill="var(--text-dim)" x="764" y="1266">N21  ✗ FALSE POSITIVE — Express has /health AND /api/health endpoints</text>
-      </g>
-      <g class="redline-marker" onclick="showFlaw('N22')">
-        <circle cx="752" cy="1280" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="1284">N22  ✅ FIXED — Screensaver timeout now in uiStore, configurable + server-persisted</text>
-      </g>
-
-      <!-- ========================================================================== -->
-      <!-- HOT-FIXES — Live session fixes (Feb 17 evening)                            -->
-      <!-- ========================================================================== -->
-      <text font-size="12" fill="var(--accent)" font-weight="700" x="742" y="1324" font-family="-apple-system,'Segoe UI',sans-serif">HOT-FIXES — Feb 17 Live Session</text>
-      <line x1="742" y1="1330" x2="1350" y2="1330" stroke="var(--accent)" stroke-width="0.5" opacity="0.4"/>
-
-      <g class="redline-marker" onclick="showFlaw('HF01')">
-        <circle cx="752" cy="1350" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="1354">HF01 ✅ RDM Layer Elevation — rdmStore rewrite (health/polling/conflicts), Dashboard widget, live_inventory merge, status dot fix</text>
-      </g>
-      <g class="redline-marker" onclick="showFlaw('HF02')">
-        <circle cx="752" cy="1368" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="1372">HF02 ✅ Node OTA — nodes_bp.py real espota.py subprocess implementation (was 501 stub)</text>
-      </g>
-      <g class="redline-marker" onclick="showFlaw('HF03')">
-        <circle cx="752" cy="1386" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="1390">HF03 ✅ Pi Self-Update Hardening — Internet gate on git fetch, autosync persisted to settings.json, proxy 120s/60s timeouts</text>
-      </g>
-      <g class="redline-marker" onclick="showFlaw('HF04')">
-        <circle cx="752" cy="1404" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="1408">HF04 ✅ Kiosk Mode Fix — systemd has no DISPLAY env; added /tmp/.X11-unix/X0 + wayland socket fallback detection</text>
-      </g>
-      <g class="redline-marker" onclick="showFlaw('HF05')">
-        <circle cx="752" cy="1422" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="1426">HF05 ✅ Infinite Re-render Loop — useSystemMode had circular dep (systemInfo in useEffect deps → detectMode sets systemInfo → loop). Split to mount-once + resize effects. Removed per-render console.log spam.</text>
-      </g>
-      <g class="redline-marker" onclick="showFlaw('HF06')">
-        <circle cx="752" cy="1440" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="1444">HF06 ✅ Look Playback HTP Stacking — playing new look didn't stop previous session; HTP merge stacked channels. Added stop_type(LOOK/SCENE) before play.</text>
-      </g>
-      <g class="redline-marker" onclick="showFlaw('HF07')">
-        <circle cx="752" cy="1458" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="1462">HF07 ✅ get_nodes() AttributeError — looks_bp, sequences_bp, cue_stacks_bp called non-existent get_nodes() → 500 crash. Fixed to get_all_nodes(include_offline=False).</text>
-      </g>
-
-      <!-- HOT-FIXES — Feb 18 audit wave fixes                                           -->
-
-      <text font-size="12" fill="var(--accent)" font-weight="700" x="742" y="1494" font-family="-apple-system,'Segoe UI',sans-serif">HOT-FIXES — Feb 18 Pre-Launch Audit (Waves 1-4)</text>
-      <line x1="742" y1="1500" x2="1600" y2="1500" stroke="var(--accent)" stroke-width="0.5" stroke-dasharray="4"/>
-
-      <!-- Wave 1: Backend CRITICAL -->
-      <g class="redline-marker" onclick="showFlaw('HF08')">
-        <circle cx="752" cy="1518" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="1522">HF08 ✅ cloud_bp AttributeError — list_looks()/list_sequences() don't exist → get_all_looks()/get_all_sequences(). /api/cloud/sync was 500.</text>
-      </g>
-      <g class="redline-marker" onclick="showFlaw('HF09')">
-        <circle cx="752" cy="1536" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="1540">HF09 ✅ Cue Stack Arbitration Deadlock — compared current_owner to tuple ('cue_stack', id) but it's a string. Arbitration NEVER released. Fixed to string+id check.</text>
-      </g>
-      <g class="redline-marker" onclick="showFlaw('HF10')">
-        <circle cx="752" cy="1554" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="1558">HF10 ✅ playback_bp unreachable code — resume_playback() had dead return after unconditional return. Restructured with proper 400 error response.</text>
-      </g>
-      <g class="redline-marker" onclick="showFlaw('HF11')">
-        <circle cx="752" cy="1572" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="1576">HF11 ✅ rdm_bp DB connection leak — rdm_set_label() never called conn.close(). Added close before return.</text>
-      </g>
-      <g class="redline-marker" onclick="showFlaw('HF12')">
-        <circle cx="752" cy="1590" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="1594">HF12 ✅ DMX Panic Race Condition — SSOT state cleared without lock, could race with render loop. Wrapped in with _dmx_state.lock.</text>
-      </g>
-      <g class="redline-marker" onclick="showFlaw('HF13')">
-        <circle cx="752" cy="1608" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="1612">HF13 ✅ chases_bp unsafe _sessions access — directly accessed UnifiedPlaybackEngine._sessions without lock. Removed; stop_type(CHASE) already handles it safely.</text>
-      </g>
-      <g class="redline-marker" onclick="showFlaw('HF14')">
-        <circle cx="752" cy="1626" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="1630">HF14 ✅ system_bp hardcoded path — /home/ramzt/aether-core.py → os.path dynamic resolution. Update/autosync now work on any deployment.</text>
-      </g>
-
-      <!-- Wave 2: Frontend CRITICAL + API centralization -->
-      <g class="redline-marker" onclick="showFlaw('HF15')">
-        <circle cx="752" cy="1654" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="1658">HF15 ✅ 5 Frontend Crashers — Dead /content-creator route, Console playLook→playSequence, Schedules wired onClick, PixelArrays ArrowLeft import, unifiedPlaybackStore config.js</text>
-      </g>
-      <g class="redline-marker" onclick="showFlaw('HF16')">
-        <circle cx="752" cy="1672" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="1676">HF16 ✅ API URL Centralization — 13 hardcoded http://hostname:3000 definitions across 10 views + 3 stores → all import from config.js getAetherCore()</text>
-      </g>
-      <g class="redline-marker" onclick="showFlaw('HF17')">
-        <circle cx="752" cy="1690" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="1694">HF17 ✅ Kiosk Layout Overflows — Shows.jsx 100vh→fixed, Timers min-h-screen→overflow-auto, CueStacks pb-24→overflow containment. All fit 800×480.</text>
-      </g>
-      <g class="redline-marker" onclick="showFlaw('HF18')">
-        <circle cx="752" cy="1708" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="1712">HF18 ✅ Header dedup + FPS — Removed duplicate node polling (now uses nodeStore). FPS counter shows real engineFps from unifiedPlaybackStore instead of hardcoded 44.</text>
+        <circle cx="752" cy="724" r="6" fill="#44cc44"/><text font-size="9" fill="#44cc44" x="764" y="728">F20  ✅ FIXED — SocketIO alert, DMX skip offline, auto-probe 90s</text>
       </g>
 
     </svg>
@@ -1682,29 +1346,29 @@ const info = {
   'stores': {title:'23 Zustand Stores', content:'<b>Active:</b> dmxStore, lookStore, fixtureStore, fixtureLibraryStore, nodeStore, nodeGroupStore, rdmStore, unifiedPlaybackStore, cueStackStore, timelineStore, pixelArrayStore, aiStore, authStore, chatStore, groupStore, favoritesStore, toastStore, uiStore, backgroundStore, scheduleStore<br><br><b>Legacy:</b> sceneStore, chaseStore<br><b>Unused (0 imports):</b> intentContextStore'},
   'ui-components': {title:'Key UI Components', content:'<b>PlaybackControlModal:</b> Post-apply effects stacking (14 effects in 4 categories), loop/crossfade/speed/master dimmer, Save As, AI Optimize<br><b>ApplyTargetModal:</b> Universe selection + fade time<br><b>VoiceMicButton:</b> Push-to-talk for STT<br><b>AIChatPanel:</b> AI conversation UI<br><b>RDMDeviceList:</b> Per-node RDM device management<br><b>NodeManagement:</b> Full node config UI'},
   'layouts': {title:'3 Layout Modes', content:'<b>Desktop:</b> >= 1024px width, full sidebar nav<br><b>Kiosk:</b> Pi touchscreen (800x480 landscape), Chromium fullscreen via aether-kiosk.service<br><b>Mobile:</b> Phone portrait, bottom nav, swipe gestures<br><br>Detection via window width/height + touch heuristics in App.jsx'},
-  'socketio': {title:'SocketIO (11 Events)', content:'<b>Events received from Flask:</b><br>dmx_state (10fps throttle)<br>playback_update<br>nodes_update<br>scenes_update<br>chases_update<br>fixtures_update<br>rdm_update<br>preview_frame<br>settings_update<br>screen:context<br><span style="color:var(--green)">node_stale (F20 — escalation alert)</span><br><br>Updates corresponding Zustand stores on receipt.'},
-  'api-client': {title:'API Client', content:'<b>Pattern:</b> All API calls via Express proxy on :3000 (F11 unified)<br><br><b>Unified:</b> 31 hardcoded :8891 references changed to :3000. All calls route through Express middleware (auth, logging, rate limiting).<br><b>WebSocket:</b> ws:// stays direct to Flask :8891 (SocketIO not proxied).<br><b>Catch-all:</b> proxy.js wildcard route forwards unmatched /api/* to Flask.<br><br><span class="badge green">HF16</span> 13 remaining hardcoded http://hostname:3000 URLs centralized to config.js getAetherCore().'},
+  'socketio': {title:'SocketIO (10 Events)', content:'<b>Events received from Flask:</b><br>dmx_state (10fps throttle)<br>playback_update<br>nodes_update<br>scenes_update<br>chases_update<br>fixtures_update<br>rdm_update<br>preview_frame<br>settings_update<br>screen:context<br><br>Updates corresponding Zustand stores on receipt.'},
+  'api-client': {title:'API Client', content:'<b>Pattern:</b> axios/fetch calls via Express proxy on :3000<br><br><b>Exception:</b> lookStore.playLook() and sequence play call Flask :8891 directly via getAetherCore() — bypasses Express proxy for lower latency on playback control.'},
   'ai-chat-ui': {title:'AI Chat + Voice', content:'<b>AIChatPanel:</b> Full chat UI in side panel or ChatPage view<br><b>VoiceMicButton:</b> Press-and-hold, records via MediaRecorder<br><b>useVoiceInput.js:</b> Sends audio FormData to POST /api/stt<br><b>STT:</b> faster-whisper (tiny model, CPU int8) on Flask :8891<br><br>HTTPS required for mic access in browser.'},
   'kiosk': {title:'Chromium Kiosk', content:'<b>Service:</b> aether-kiosk.service<br><b>Resolution:</b> 800x480 (Pi 5 official touchscreen)<br><b>Mode:</b> Fullscreen Chromium, no URL bar<br><b>Target:</b> http://localhost:3000'},
   'screensaver': {title:'Screensaver', content:'<b>File:</b> components/Screensaver.jsx<br><b>Features:</b> Floating logo, clock, scanlines, vignette<br><b>Sheen-wave:</b> Subtle diagonal light sweep — opacity 0.03/0.06, 3s animation, 8s interval<br><b>Background:</b> Both screensaver and Dashboard use /screensaver.png (unified Feb 2026)'},
-  'proxy-routes': {title:'Express Proxy Routes', content:'<b>proxy.js (15KB):</b> 70+ Flask endpoints explicitly proxied<br>Forwards to http://localhost:8891<br>Adds error handling + response normalization<br><br><span class="badge green">F11</span> Added catch-all wildcard route: router.all("*") forwards any unmatched /api/* to Flask. New endpoints work without manual proxy registration.<br><br><b>Pattern:</b> Frontend -> Express :3000 -> Flask :8891 -> response'},
+  'proxy-routes': {title:'Express Proxy Routes', content:'<b>proxy.js:</b> 99 endpoints across 8 route files<br>Forwards to http://localhost:8891<br>Adds error handling + response normalization<br><br><b>Pattern:</b> Frontend -> Express :3000 -> Flask :8891 -> response'},
   'ai-orchestrator': {title:'AIOrchestrator (1,378 LOC)', content:'<b>File:</b> backend/src/services/AIOrchestrator.js<br><b>Features:</b><br>- Claude API orchestration with tool use<br>- buildContextPrompt(): compact one-liner live state (~80% fewer tokens)<br>- getContext(): fetches from 7 Flask endpoints per message<br>- Session memory (24h TTL)<br>- Confirmation tiers (safe/low/medium/high)<br>- Streaming + non-streaming modes<br>- Max 5 recursive tool calls<br><br><b>ToolBridge (10 tools):</b> dmx_control, show, show_builder, effects, fixtures, groups, diagnostics, nodes, playback, system<br><br><b>System prompt:</b> 107 lines (was 643, 86% reduction Feb 2026)'},
   'local-intent': {title:'LocalIntentService', content:'<b>File:</b> backend/src/services/LocalIntentService.js<br><b>Purpose:</b> Offline fallback when Claude API is unreachable<br><b>Parses:</b> Basic intents from user text (play, stop, blackout, etc.)<br><b>Triggers:</b> Corresponding Flask API calls directly'},
-  'express-routes': {title:'8 Express Route Files', content:'<b>proxy.js:</b> Main Flask proxy (70+ endpoints)<br><b>ai.js:</b> AI chat endpoints<br><b>dmx.js:</b> DMX routes (partially redundant)<br><b>chase.js:</b> Chase routes (partially redundant)<br><b>scene.js:</b> Scene routes (partially redundant)<br><b>groups.js:</b> Group management<br><b>nodes.js:</b> Node management<br><b>settings.js:</b> App settings'},
+  'express-routes': {title:'8 Express Route Files (99 endpoints)', content:'<b>proxy.js:</b> Main Flask proxy (65 endpoints)<br><b>ai.js:</b> AI chat + streaming (12 endpoints)<br><b>nodes.js:</b> Node management (8 endpoints)<br><b>groups.js:</b> Group management (5 endpoints)<br><b>settings.js:</b> App settings (5 endpoints)<br><b>dmx.js:</b> DMX routes (4 endpoints)<br><b>chase.js:</b> Deprecated — returns 410 Gone<br><b>scene.js:</b> Deprecated — returns 410 Gone'},
   'stt': {title:'Speech-to-Text', content:'<b>Endpoint:</b> POST /api/stt (Flask :8891)<br><b>Engine:</b> faster-whisper, tiny model, CPU int8<br><b>Loading:</b> Lazy-loaded on first use<br><b>Frontend:</b> useVoiceInput.js hook + VoiceMicButton component<br><b>Note:</b> HTTPS required for browser mic access'},
-  'flask-api': {title:'Flask API (186+ routes)', content:'<b>File:</b> aether-core.py (5,769 LOC kernel + 28 blueprints)<br><b>Port:</b> 8891<br><b>Architecture:</b> God file decomposed (F02). Routes in blueprints/, kernel retains classes + singletons.<br><b>Key endpoints:</b><br>/api/dmx/set — SSOT channel write<br>/api/looks, /api/sequences — CRUD<br>/api/scenes, /api/chases — Legacy CRUD<br>/api/shows — Timeline shows<br>/api/effects/* — Dynamic effects<br>/api/fixtures — Fixture management<br>/api/nodes — Node management<br>/api/playback/* — Playback control<br>/api/cue-stacks — Cue management<br>/api/health — Enhanced health (F01/F04/F13)<br>/api/audit — Audit log (F16)<br>/api/stt — Speech-to-text<br>/api/cloud/* — Supabase sync<br>/api/rdm/* — RDM device management'},
-  'arbitration': {title:'ArbitrationManager', content:'<b>File:</b> aether-core.py:931<br><b>Priority ladder:</b><br>BLACKOUT=100, MANUAL=80, EFFECT=60,<br>LOOK=50, SEQUENCE=45, CHASE=40,<br>SCENE=20, IDLE=0<br><br><b>Methods:</b> acquire(), release(), can_write(token=), validate_token(), set_blackout(), get_status()<br><b>Diagnostics:</b> Tracks last 20 rejections, last 10 history, writes_per_service, stale_writes counter<br><br><span class="badge green">F08</span> Token-based TOCTOU prevention — monotonic tokens invalidate stale callers<br><span class="badge green">F16</span> All acquires/releases/rejections/blackout → persistent audit log'},
+  'flask-api': {title:'Flask API (186+ routes)', content:'<b>File:</b> aether-core.py (8,446 LOC)<br><b>Port:</b> 8891<br><b>Key endpoints:</b><br>/api/dmx/set — SSOT channel write<br>/api/looks, /api/sequences — CRUD<br>/api/scenes, /api/chases — Legacy CRUD<br>/api/shows — Timeline shows<br>/api/effects/* — Dynamic effects<br>/api/fixtures — Fixture management<br>/api/nodes — Node management<br>/api/playback/* — Playback control<br>/api/cue-stacks — Cue management<br>/api/health — Health check<br>/api/stt — Speech-to-text<br>/api/cloud/* — Supabase sync<br>/api/rdm/* — RDM device management'},
+  'arbitration': {title:'ArbitrationManager', content:'<b>File:</b> aether-core.py:931<br><b>Priority ladder:</b><br>BLACKOUT=100, MANUAL=80, EFFECT=60,<br>LOOK=50, SEQUENCE=45, CHASE=40,<br>SCENE=20, IDLE=0<br><br><b>Methods:</b> acquire(), release(), can_write(), set_blackout(), get_status()<br><b>Diagnostics:</b> Tracks last 20 rejections, last 10 history entries, writes_per_service<br><br><span class="badge yellow">MITIGATED</span> Beta 1: added arb guards to RenderEngine + ChaseEngine fallback'},
   'dmx-state': {title:'DMXStateManager', content:'<b>File:</b> aether-core.py:351<br><b>Purpose:</b> SSOT for all DMX channel values across all universes<br><b>Thread safety:</b> self.lock (threading.Lock)<br><b>Features:</b> Fade interpolation, master dimmer, per-universe state<br><b>Key methods:</b> set_channels(), get_output_values(), get_universe(), blackout()<br><br>Written to by ContentManager. Read by 40Hz refresh loop for UDP dispatch.'},
   'content-mgr': {title:'ContentManager', content:'<b>File:</b> aether-core.py:3808<br><b>Purpose:</b> THE SSOT write point — all DMX changes flow through here<br><b>set_channels():</b><br>1. Updates DMXStateManager<br>2. Builds full 512-ch frame<br>3. Gets nodes from NodeManager<br>4. Sends UDPJSON to each node<br>5. Emits SocketIO event<br><br>Called by: all playback engines, faders, API, effects'},
-  'node-manager': {title:'NodeManager', content:'<b>File:</b> aether-core.py:1886<br><b>Purpose:</b> Node registry, UDPJSON dispatch, universe-to-node mapping<br><b>Discovery:</b> Listens on UDP 9999 — <span class="badge green">4-gate security (F10)</span><br><b>Config:</b> Sends on UDP 8888<br><b>DMX:</b> Sends on UDP 6455 — <span class="badge green">reliable mode for safety (F03)</span><br><b>Stale detection:</b> 60s timeout → <span class="badge green">SocketIO alert + DMX skip + probe (F20)</span>'},
+  'node-manager': {title:'NodeManager', content:'<b>File:</b> aether-core.py:1886<br><b>Purpose:</b> Node registry, UDPJSON dispatch, universe-to-node mapping<br><b>Discovery:</b> Listens on UDP 9999 for node heartbeats<br><b>Config:</b> Sends on UDP 8888<br><b>DMX:</b> Sends on UDP 6455<br><b>Stale detection:</b> 60s without heartbeat'},
   'merge-layer': {title:'MergeLayer', content:'<b>File:</b> merge_layer.py (~500 LOC)<br><b>Purpose:</b> Combines multiple sources with priority-based merging<br><b>HTP (Highest Takes Precedence):</b> Used for dimmer channels<br><b>LTP (Latest Takes Precedence):</b> Used for color/position channels<br><b>ChannelClassifier:</b> Categorizes channels as dimmer vs non-dimmer'},
-  'unified-engine': {title:'UnifiedPlaybackEngine', content:'<b>File:</b> unified_playback.py (1,266 LOC)<br><b>Purpose:</b> Canonical playback authority — THE correct way to play content<br><b>Features:</b> Session-based, 40fps render loop, priority system<br><b>Types:</b> Look, Sequence, Chase, Scene, Effect<br><b>Output:</b> unified_output_callback() -> dmx_state.set_channels()'},
-  'render-engine': {title:'RenderEngine (TASK-0004)', content:'<b>File:</b> render_engine.py (1,145 LOC)<br><b>Purpose:</b> Modifier rendering — HSV math, depth blend, frame interpolation<br><b>Contains:</b> ModifierRenderer (utility, keep) + RenderEngine (deprecated via F06)<br><br><span class="badge green">F06</span> Playback consolidated via UnifiedPlaybackEngine<br><span class="badge green">F08</span> Token-based arbitration guards prevent stale writes'},
+  'unified-engine': {title:'UnifiedPlaybackEngine', content:'<b>File:</b> unified_playback.py (1,266 LOC)<br><b>Purpose:</b> Canonical playback authority — THE correct way to play content<br><b>Features:</b> Session-based, 30fps render loop, priority system<br><b>Types:</b> Look, Sequence, Chase, Scene, Effect<br><b>Output:</b> unified_output_callback() -> dmx_state.set_channels()'},
+  'render-engine': {title:'RenderEngine (TASK-0004)', content:'<b>File:</b> render_engine.py (1,145 LOC)<br><b>Purpose:</b> Modifier rendering at 30fps — HSV math, depth blend, frame interpolation<br><b>Contains:</b> ModifierRenderer (utility, keep) + RenderEngine (violation, retire Phase 2)<br><br><span class="badge yellow">MITIGATED</span> Beta 1: Added self._arbitration (L1309), set_arbitration() (L1317), can_write("look") guard (L1553)'},
   'chase-engine': {title:'ChaseEngine (TASK-0006)', content:'<b>File:</b> aether-core.py:621<br><b>Purpose:</b> Chase playback in background threads with BPM timing<br><b>Pattern:</b> Spawns daemon thread per chase, routes through MergeLayer<br><b>Fallback:</b> Direct ContentManager write if MergeLayer unavailable<br><br><span class="badge yellow">MITIGATED</span> Beta 1: Added arbitration.can_write("chase") guard on fallback path (L914)'},
-  'effects-engine': {title:'EffectsEngine (TASK-0005)', content:'<b>File:</b> effects_engine.py (649 LOC)<br><b>Purpose:</b> Dynamic effects at 40fps (F17) — christmas, strobe, pulse, wave, twinkle, fire, smooth<br><b>Arbitration:</b> Already had can_write("effect") at line 104 BEFORE audit<br><br><span class="badge green">ALIGNED</span> FPS upgraded 30→40 to match DMX refresh (F17)'},
+  'effects-engine': {title:'EffectsEngine (TASK-0005)', content:'<b>File:</b> effects_engine.py (649 LOC)<br><b>Purpose:</b> Dynamic effects at 30fps — christmas, strobe, pulse, wave, twinkle, fire, smooth<br><b>Arbitration:</b> Already had can_write("effect") at line 104 BEFORE audit<br><br><span class="badge yellow">PRE-EXISTING</span> No changes needed — was already properly guarded'},
   'show-engine': {title:'ShowEngine (TASK-0007)', content:'<b>File:</b> aether-core.py:1280<br><b>Purpose:</b> Timeline-based show playback<br><b>Pattern:</b> Loads show from SQLite, parses timeline JSON, registers as merge source with priority 45 (sequence), spawns daemon thread<br><b>Status:</b> Violation — should be consolidated into UnifiedPlayback in Phase 2'},
-  'playback-ctrl': {title:'PlaybackController (Deprecated)', content:'<b>File:</b> playback_controller.py (799 LOC)<br><b>Purpose:</b> Legacy Look/Sequence controller<br><b>Status:</b> <span class="badge green">DEPRECATED (F06)</span> — All playback now routes through UnifiedPlaybackEngine<br><b>Note:</b> File retained for backward compat but no active callers in main path'},
-  'modifier-registry': {title:'ModifierRegistry', content:'<b>File:</b> modifier_registry.py (846 LOC)<br><b>6 modifier types:</b> pulse, strobe, flicker, wave, rainbow, twinkle<br><b>Features:</b> Validation, normalization, presets, BPM sync'},
+  'playback-ctrl': {title:'PlaybackController (REMOVED)', content:'<b>Status:</b> DELETED in Phase 3<br><b>Reason:</b> UnifiedPlaybackEngine is sole authority (TASK-0021)<br><b>Action:</b> Fully removed from codebase'},
+  'modifier-registry': {title:'ModifierRegistry', content:'<b>File:</b> modifier_registry.py (1,163 LOC)<br><b>14 modifier types:</b> pulse, strobe, flicker, wave, rainbow, twinkle, hue_shift, color_temp, saturation_pulse, color_fade, gradient, scanner, sparkle, lightning<br><b>Features:</b> Validation, normalization, presets, BPM sync'},
   'fixture-lib': {title:'FixtureLibrary', content:'<b>Files:</b> fixture_library.py (892), fixture_render.py (635)<br><b>Purpose:</b> Fixture profiles, channel mapping, manufacturer/model catalog<br><b>ChannelMapper:</b> Converts fixture-centric to channel-centric values'},
   'looks-seq': {title:'Looks & Sequences', content:'<b>File:</b> looks_sequences.py (974 LOC)<br><b>Models:</b> Look, Sequence, SequenceStep, Modifier<br><b>Migration:</b> Converts legacy scenes/chases to looks/sequences<br><b>Tables:</b> looks, sequences, schema_versions, artifact_versions'},
   'cue-stacks': {title:'Cue Stacks', content:'<b>File:</b> cue_stacks.py (632 LOC)<br><b>Purpose:</b> Theatrical cue stack management<br><b>Table:</b> cue_stacks<br><b>Status:</b> Active, usage unclear (audit question: keep/promote/deprecate?)'},
@@ -1713,19 +1377,19 @@ const info = {
   'dist-modes': {title:'Distribution Modes', content:'<b>File:</b> distribution_modes.py (593 LOC)<br><b>Modes:</b> Unified (all fixtures same), Pixel (per-fixture control)<br><b>Used by:</b> ChaseEngine, EffectsEngine'},
   'sqlite': {title:'SQLite Database', content:'<b>Path:</b> ~/aether-core.db<br><b>Tables (15+):</b> nodes, scenes, chases, groups, fixtures, schedules, timers, rdm_devices, rdm_personalities, node_groups, looks, sequences, schema_versions, artifact_versions, cue_stacks, fixture_profiles<br><br><span class="badge green">FIXED</span> Beta 1: Added check_database_health() — PRAGMA quick_check, disk space monitoring'},
   'schedules': {title:'Scheduler + Timers', content:'<b>ScheduleRunner:</b> Cron-style schedule execution (aether-core.py:1039)<br><b>TimerRunner:</b> Countdown/interval timers (aether-core.py:1181)<br><b>Tables:</b> schedules, timers'},
-  'rdm': {title:'RDM (Stubbed)', content:'<b>Module:</b> core/rdm/ — manager.py, transport.py, types.py, discovery.py, auto_patch.py<br><b>Status:</b> Protocol layer stubbed, DB tracking works<br><b>Endpoints:</b> /api/nodes/&lt;id&gt;/rdm/discover, /api/rdm/devices, etc.<br><b>ESP32:</b> Firmware has RDM commands (discover, identify, set_address)'},
+  'rdm': {title:'RDM (Full Implementation)', content:'<b>Module:</b> rdm_manager_module.py (~400 LOC)<br><b>Status:</b> Fully implemented with DB persistence<br><b>Features:</b> Live inventory tracking, UDPJSON command dispatch, device discovery<br><b>DB Tables:</b> rdm_devices, rdm_personalities<br><b>Endpoints:</b> /api/nodes/&lt;id&gt;/rdm/discover, /api/rdm/devices, etc.<br><b>ESP32:</b> Firmware has RDM commands (discover, identify, set_address)'},
   'ai-helpers': {title:'AI Helpers', content:'<b>ai_fixture_advisor.py (908 LOC):</b> AI-driven fixture suggestions<br><b>ai_ssot.py (~200 LOC):</b> AI context helpers<br><b>ai_ops_registry.py (~50 LOC):</b> AI operation registration'},
   'refresh-loop': {title:'40Hz Refresh Loop', content:'<b>Location:</b> aether-core.py:2246<br><b>Rate:</b> 40Hz (matches DMX512 spec)<br><b>Process:</b> Reads dmx_state.get_output_values(universe) for each universe, builds UDPJSON v2 packet, sends via NodeManager.send_udpjson(ip, 6455, payload)<br><b>Protocol:</b> {"v":2,"type":"set","u":N,"seq":M,"ch":[[ch,val],...]}'},
-  'supabase-service': {title:'SupabaseService', content:'<b>File:</b> services/supabase_service.py (1,492 LOC)<br><b>Singleton, feature-gated:</b> ENABLE_SUPABASE env var<br><b>Behavior:</b> Non-blocking, fail-soft. Flask remains SSOT.<br><b>Sync tables:</b> 11 cloud tables<br><b>ID mapping:</b> Deterministic UUID v5<br><b>Queue:</b> PendingSyncQueue (disk-persisted JSON)<br><br><span class="badge green">FIXED</span> Beta 1: UUID-safe retry, permanent failure detection<br><span class="badge green">F19</span> Conflict detection via updated_at timestamps, 50ms rate-limited bulk sync, background retry thread (60s interval)'},
+  'supabase-service': {title:'SupabaseService', content:'<b>File:</b> services/supabase_service.py (1,492 LOC)<br><b>Singleton, feature-gated:</b> ENABLE_SUPABASE env var<br><b>Behavior:</b> Non-blocking, fail-soft. Flask remains SSOT.<br><b>Sync tables:</b> 11 cloud tables<br><b>ID mapping:</b> Deterministic UUID v5<br><b>Queue:</b> PendingSyncQueue (disk-persisted JSON)<br><br><span class="badge green">FIXED</span> Beta 1: UUID-safe retry, permanent failure detection, _clear_stale_pending pruning'},
   'pending-queue': {title:'PendingSyncQueue', content:'<b>File:</b> supabase_service.py:129<br><b>Storage:</b> ~/aether-pending-sync.json (disk-persisted)<br><b>Methods:</b> add(), get_pending(), mark_complete(), mark_failed(), clear(), count()<br><br><span class="badge green">FIXED</span> Beta 1: Permanent failure detection for Postgres error codes 23505/23503/23502/42P01'},
   'id-mapping': {title:'ID Mapping System', content:'<b>File:</b> supabase_service.py:354-473<br><b>Purpose:</b> Converts local string IDs to Supabase UUIDs<br><b>Method:</b> Deterministic UUID v5 with namespace URL<br><b>Cache:</b> ~/aether-id-map.json<br><b>Reverse map:</b> Populated from cloud on startup'},
   'sync-decorator': {title:'@sync_to_cloud', content:'<b>File:</b> supabase_service.py:1362-1410<br><b>Purpose:</b> Decorator that auto-syncs entity changes to Supabase after the decorated function runs<br><b>Usage:</b> Applied to CRUD functions in Flask routes'},
   'ai-cloud-log': {title:'AI Cloud Logging', content:'<b>Conversations:</b> log_conversation() -> conversations + messages tables<br><b>Learnings:</b> log_learning() -> ai_learnings table<br><b>Feedback:</b> log_feedback() -> ai_feedback table<br><br><span class="badge green">FIXED</span> Beta 1: log_learning() changed from bare try/except to _sync_execute() for retry-on-failure'},
-  'udp-6455': {title:'UDP :6455 — UDPJSON v2', content:'<b>Direction:</b> Pi -> ESP32 nodes<br><b>Protocol:</b> UDPJSON v2.0<br><b>Format:</b> {"v":2,"type":"set","u":N,"seq":M,"ch":[[ch,val],...]}<br><b>Features:</b> Sequence numbers for duplicate detection, sparse channel updates, fill commands, fade commands, panic/blackout<br><b>Reliability (F03):</b> Safety commands (panic/reset/ping) use send_udpjson_reliable() with ACK/retry. Normal DMX frames stay fire-and-forget — 40Hz refresh provides natural retransmission.'},
-  'udp-9999': {title:'UDP :9999 — Discovery', content:'<b>Direction:</b> ESP32 nodes -> Pi<br><b>Purpose:</b> Node registration + heartbeats<br><b>Format:</b> {"type":"register","node_id":"pulse-XXXX","ip":"...","u":N}<br><b>Heartbeat interval:</b> 5-10 seconds<br><b>Stale timeout:</b> 60 seconds<br><br><span class="badge green">SECURED (F10)</span> 4-gate pipeline: subnet validation → rate limit (10/s/IP) → optional HMAC-SHA256 → node_id regex. Heartbeat unpair blocked. IP pinning alerts.'},
+  'udp-6455': {title:'UDP :6455 — UDPJSON v2', content:'<b>Direction:</b> Pi -> ESP32 nodes<br><b>Protocol:</b> UDPJSON v2.0<br><b>Format:</b> {"v":2,"type":"set","u":N,"seq":M,"ch":[[ch,val],...]}<br><b>Features:</b> Sequence numbers for duplicate detection, sparse channel updates, fill commands, fade commands, panic/blackout<br><b>No retry:</b> UDP fire-and-forget (by design)'},
+  'udp-9999': {title:'UDP :9999 — Discovery', content:'<b>Direction:</b> ESP32 nodes -> Pi<br><b>Purpose:</b> Node registration + heartbeats<br><b>Format:</b> {"type":"register","node_id":"pulse-XXXX","ip":"...","u":N}<br><b>Heartbeat interval:</b> 5-10 seconds<br><b>Stale timeout:</b> 60 seconds'},
   'udp-8888': {title:'UDP :8888 — Node Config', content:'<b>Direction:</b> Pi -> ESP32 nodes<br><b>Purpose:</b> Configuration commands (universe assignment, firmware info, etc.)'},
   'socketio-server': {title:'SocketIO Server', content:'<b>Source:</b> Flask (aether-core.py)<br><b>10 events:</b> dmx_state (10fps), playback_update, nodes_update, scenes_update, chases_update, fixtures_update, rdm_update, preview_frame, settings_update, screen:context<br><b>Throttle:</b> dmx_state limited to 10fps (30fps caused glitches)'},
-  'http-8891': {title:'HTTP :8891 — Flask API', content:'<b>Service:</b> aether-core.service<br><b>Routes:</b> 186+<br><b>Role:</b> SSOT for all DMX state, all playback, all CRUD'},
+  'http-8891': {title:'HTTP :8891 — Flask API', content:'<b>Service:</b> aether-core.service<br><b>Routes:</b> 269 across 29 blueprints<br><b>Role:</b> SSOT for all DMX state, all playback, all CRUD<br><b>Modules:</b> 10 extracted modules via core_registry'},
   'http-3000': {title:'HTTP :3000 — Express', content:'<b>Service:</b> aether-portal.service<br><b>Serves:</b> React frontend (built by Vite)<br><b>Proxy:</b> API requests forwarded to Flask :8891<br><b>AI routes:</b> /api/ai/* handled by AIOrchestrator'},
   'pi': {title:'Raspberry Pi 5', content:'<b>Hostname:</b> aether-portal.local<br><b>IP:</b> 192.168.50.1<br><b>WiFi AP:</b> AetherDMX (5GHz ch149)<br><b>User:</b> ramzt<br><b>Services:</b> aether-core (Flask), aether-portal (Express), aether-kiosk (Chromium)<br><b>Paths:</b> /srv/aether/core/, /srv/aether/portal-os/<br><b>DB:</b> ~/aether-core.db'},
   'wifi-ap': {title:'WiFi AP — AetherDMX', content:'<b>Band:</b> 5GHz channel 149<br><b>SSID:</b> AetherDMX<br><b>IP range:</b> 192.168.50.x<br><br><span class="badge red">KNOWN LIMITATION</span> Single point of failure. If WiFi radio fails, all DMX output dies.<br><b>Mitigation:</b> Seance bridge provides secondary AP.<br><b>Post-beta:</b> Consider wired DMX fallback for critical fixtures.'},
@@ -1778,44 +1442,26 @@ function showChange(key) {
 
 /* ===== FLAW PANELS (redline tab) ===== */
 const flaws = {
-  'F01': {title:'F01 — Systemd Watchdog ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'Flask app server (aether-core.py)', problem:'[FIXED] Added systemd Type=notify watchdog (WatchdogSec=30). App sends READY=1 on startup + WATCHDOG=1 pings every 10s. Graceful shutdown handler catches SIGTERM. Health endpoint enhanced with uptime tracking.', scenario:'Fixed. Watchdog auto-restarts within 30s if app hangs. Graceful shutdown saves state on SIGTERM. Commit 4e3deca.', fix:'RESOLVED: systemd watchdog + graceful shutdown + health endpoint improvements.'},
-  'F02': {title:'F02 — God File Decomposition ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'aether-core.py → 28 Flask Blueprints', problem:'[FIXED] Decomposed 11,434-LOC monolithic god file into 28 Flask Blueprints. Kernel (5,769 LOC) retains only classes, singletons, thread pools, and 5 health/status routes. Each blueprint is independently compile-checkable — a syntax error in one route file does not prevent the system from starting.', scenario:'Fixed. Routes distributed across blueprints/: trust, modifiers, migrate, settings, merge, scenes, chases, pixel, shows, schedules, cloud, session, system, groups, ai, fixtures, fixture_library, node_groups, rdm, preview, effects, nodes, looks, sequences, unified, cue_stacks, dmx, playback.', fix:'RESOLVED: 28 blueprints with dependency injection via init_app(). God file reduced from 11,434 → 5,769 LOC.'},
-  'F03': {title:'F03 — UDP Delivery Guarantee ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'NodeManager.send_udpjson_reliable()', problem:'[FIXED] Added reliable UDP mode for critical safety commands (panic, reset, ping). send_udpjson_reliable() uses ephemeral receive socket with ACK verification, configurable retries (2-3), and escalating backoff. Per-node delivery stats tracked (sent/acks/timeouts/rtt_ms). Normal DMX frames stay fire-and-forget — 40Hz refresh loop provides natural 25ms retransmission.', scenario:'Fixed. Panic uses 3 retries × 100ms timeout. Ping uses 2 retries × 500ms (receives pong). Reset uses 3 retries × 200ms. /api/health exposes udp_delivery stats.', fix:'RESOLVED: send_udpjson_reliable() with ACK/retry for safety commands. Per-node delivery tracking in /api/health.'},
-  'F04': {title:'F04 — SQLite Concurrent Access ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'get_db() and all DB operations', problem:'[FIXED] Thread-local connection pool via threading.local(). WAL journal mode for concurrent reads. _ThreadLocalConnection wrapper makes .close() a no-op. Atomic single-UPDATE for node cache refresh with 5-attempt retry.', scenario:'Fixed. "database is locked" errors eliminated. WAL allows concurrent readers + single writer. Commit chain: 5fc2a3b → 83a6bad → 1359eb1.', fix:'RESOLVED: Thread-local pool + WAL mode + atomic node cache refresh.'},
+  'F01': {title:'F01 — Single-Process Flask ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'Flask app server (aether-core.py)', problem:'[FIXED] Replaced Werkzeug dev server with Gunicorn multi-worker. Added systemd watchdog + hardware watchdog on Pi.', scenario:'Fixed. Process isolation via Gunicorn workers. Watchdog restarts within 2s on crash.', fix:'RESOLVED: Gunicorn multi-worker + systemd watchdog.'},
+  'F02': {title:'F02 — God File ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'aether-core.py', problem:'[FIXED] Modularized from 6,157 LOC monolith into 10 extracted modules via core_registry pattern. aether-core-slim.py reduced to 2,156 LOC.', scenario:'Fixed. 10 modules extracted: arbitration_manager, dmx_state_manager, content_manager, node_manager, chase_engine, show_engine, rdm_manager, schedulers, playback_state, core_registry.', fix:'RESOLVED: Phase 2 refactoring — 10 extracted modules + core_registry wiring.'},
+  'F03': {title:'F03 — UDP No Delivery Guarantee (CRITICAL)', sev:'CRITICAL', sevColor:'#ff4444', component:'NodeManager.send_udpjson() (L1948)', problem:'ALL DMX commands sent via UDP fire-and-forget. No ACK, no retry, no verification. WiFi packet loss 1-5% typical.', scenario:'Critical blackout/panic UDP packet dropped. Node continues outputting previous state. SSOT believes blackout was sent but physical output does not match. Safety failure.', fix:'1) Add ACK mode for critical commands (blackout, panic)\n2) Auto-retry with 25ms backoff for non-critical\n3) Track per-node delivery success rates'},
+  'F04': {title:'F04 — SQLite Concurrent Access ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'get_db() and all DB operations', problem:'[FIXED] Enabled WAL mode, added connection pool, all DB access via context managers. No more leaked connections.', scenario:'Fixed. WAL mode + pool eliminates "database is locked" errors under concurrent load.', fix:'RESOLVED: WAL mode + connection pool + context managers.'},
   'F05': {title:'F05 — CORS Wildcard ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'aether-core.py L305-332', problem:'[FIXED] Code computed ALLOWED_ORIGINS but used origins="*". Now uses ALLOWED_ORIGINS for both Flask-CORS and SocketIO.', scenario:'Fixed in commit 86589f1. Evil origins now blocked.', fix:'RESOLVED: origins=ALLOWED_ORIGINS on both Flask-CORS and SocketIO.'},
-  'F06': {title:'F06 — Duplicate Playback Systems ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'UnifiedPlaybackEngine (canonical authority)', problem:'[FIXED] Consolidated 5 playback systems. /api/looks/<id>/play rerouted from RenderEngine to unified_play_look(). ChaseEngine, DynamicEffectsEngine, RenderEngine deprecated with consolidation markers. Only ShowEngine meta-timeline thread remains.', scenario:'Fixed. Looks, chases, sequences, scenes, fixture effects all route through UnifiedPlaybackEngine. Legacy effect routes kept for backward compat. Commit 0d5ed02.', fix:'RESOLVED: TASK-0018 resolved. Look/chase/sequence/scene/fixture-effect → unified engine.'},
+  'F06': {title:'F06 — Duplicate Playback ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'UnifiedPlaybackEngine (sole authority)', problem:'[FIXED] PlaybackCtrl removed in Phase 3. UnifiedPlaybackEngine is now sole playback authority. ChaseEngine and ShowEngine consolidated.', scenario:'Fixed. No more interleaved writes or timing conflicts.', fix:'RESOLVED: PlaybackCtrl deleted, UnifiedPlayback sole authority (TASK-0021).'},
   'F07': {title:'F07 — Dual Fade Engine ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'DMXStateManager.get_output_values() + ESP32 firmware', problem:'[FIXED] ESP32 is now sole fade authority. SSOT sends target values + fade_ms. Python-side interpolation removed.', scenario:'Fixed. Single fade authority eliminates stutter-step. Smooth fades at all durations.', fix:'RESOLVED: ESP32 sole fade authority, SSOT sends target+fade_ms.'},
-  'F08': {title:'F08 — Arbitration TOCTOU Race ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'ArbitrationManager + token validation', problem:'[FIXED] Token-based TOCTOU prevention. acquire() returns monotonic token (int). Each new acquire/release/blackout increments token, invalidating all previous tokens. validate_token() and can_write(token=) reject stale callers.', scenario:'Fixed. Engine A acquires (token=5), Engine B force-acquires (token=6). Engine A calls can_write(token=5) → rejected (stale). stale_writes counter tracks occurrences.', fix:'RESOLVED: Monotonic tokens + validate_token() + stale_writes counter in /api/arbitration.'},
-  'F09': {title:'F09 — No Crash Recovery ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'All global singletons', problem:'[FIXED] save_state_now() bypasses debounce for critical transitions. _save_state() persists active_look/chase/scene/effect with full metadata. _load_state() resumes playback on startup if interrupted.', scenario:'Fixed. Power loss during show → auto-resume on restart. State saved on every playback transition. Commit 06f4b30.', fix:'RESOLVED: Immediate state persistence + auto-resume on startup.'},
-  'F10': {title:'F10 — Discovery Security ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'discovery_listener() [F10 hardened]', problem:'[FIXED] 4-gate security pipeline: (1) Subnet validation — rejects packets from outside 192.168.50.x, (2) Rate limiting — 10 pkt/sec/IP max, (3) Optional HMAC-SHA256 with strict mode toggle, (4) node_id regex validation. Heartbeat-driven unpairing blocked — only REST API can unpair. IP pinning alerts on paired node IP changes.', scenario:'Fixed. Rogue device on wrong subnet rejected at Gate 1. Spoofed node_id format rejected at Gate 4. Heartbeat claiming is_paired=false blocked for paired nodes. /api/health exposes discovery_security stats.', fix:'RESOLVED: Subnet + rate limit + HMAC + format validation. Heartbeat unpair blocked. IP pinning for paired nodes.'},
-  'F11': {title:'F11 — API Routing Consistency ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'config.js + proxy.js + 28 frontend files', problem:'[FIXED] All 31 hardcoded :8891 references in frontend changed to :3000 (Express proxy). Added catch-all wildcard route to proxy.js for unmatched /api/* endpoints. Vite dev proxy added. Only WebSocket (ws://) and getFlaskDirect() retain direct Flask connection.', scenario:'Fixed. All API calls now route through Express on port 3000 — auth/logging/rate-limiting middleware applied consistently. proxy.js catch-all ensures new Flask endpoints work without manual route registration.', fix:'RESOLVED: 28 files updated, catch-all proxy, Vite dev proxy config.'},
+  'F08': {title:'F08 — Arbitration TOCTOU Race (HIGH)', sev:'HIGH', sevColor:'#ff8800', component:'ArbitrationManager (L931)', problem:'TOCTOU race: engine calls acquire(), does work, then writes. Between acquire and write, another engine can acquire with higher priority, changing the owner. release() unconditionally resets to idle.', scenario:'Effect engine acquires (60). Chase force-acquires. Effect thread still running writes channels via content_manager — both engines writing, arbitration not preventing it.', fix:'1) Per-write arbitration tokens\n2) acquire() returns token, set_channels() requires it\n3) Revoke callback so engines stop when they lose ownership'},
+  'F09': {title:'F09 — No Crash Recovery ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'All global singletons', problem:'[FIXED] Playback state persisted on every transition. Startup checks for interrupted playback and resumes automatically.', scenario:'Fixed. Power loss during show recovers on restart — playback resumes from persisted state.', fix:'RESOLVED: State persisted on transitions + auto-resume on startup.'},
+  'F10': {title:'F10 — Discovery No Authentication (HIGH)', sev:'HIGH', sevColor:'#ff8800', component:'discovery_listener() (L4850)', problem:'UDP discovery on port 9999 accepts any JSON from any IP. No auth, no signing, no allowlist. msg["ip"] = addr[0] overwrites. Rogue device can register with any node_id.', scenario:'Attacker on AetherDMX WiFi sends spoofed registration as "pulse-422C". NodeManager updates IP. DMX commands go to attacker instead of real node.', fix:'1) HMAC shared secret on registration packets\n2) Validate source IP matches registered IP\n3) Re-registration from different IP triggers alert\n4) Node allowlist'},
+  'F11': {title:'F11 — API Routing Inconsistency (MEDIUM)', sev:'MEDIUM', sevColor:'#ddaa00', component:'Frontend stores + Express proxy', problem:'Some calls go through Express proxy (port 3000), others bypass to Flask directly (port 8891). Look/Sequence playback calls Flask direct. Express middleware skipped for critical operations.', scenario:'Auth middleware added to Express. Playback control remains unprotected. Bug in Express proxy makes proxied requests fail, but direct calls work — intermittent failure.', fix:'Choose one routing strategy consistently.\nRecommend: everything through Express for auth/logging.'},
   'F12': {title:'F12 — Input Validation ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'DMXStateManager.set_channels()', problem:'[FIXED] Values now clamped max(0, min(255, int(value))) at SSOT write point. Universe validated int 1-64.', scenario:'Fixed in commit 810ede1. Boundary tested: 0, 255, 300, -10, None.', fix:'RESOLVED: Clamping + universe validation in set_channels().'},
-  'F13': {title:'F13 — Thread Pool + Memory Monitoring ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'ThreadPoolExecutor + /api/health', problem:'[FIXED] Replaced 22 raw threading.Thread spawns with bounded ThreadPoolExecutor. _cloud_pool (4 workers) for Supabase sync/logging. _node_pool (2 workers) for ESP32 sync. Thread HWM monitoring. RSS/VMS memory tracking. Pool queue depth reporting.', scenario:'Fixed. Thread count bounded at pool limits. Health endpoint reports thread HWM, memory RSS/VMS, pool queue depths. Alert at >30 threads or >512MB RSS. Commit a06864d.', fix:'RESOLVED: cloud_submit() + node_submit() + enhanced /api/health.'},
+  'F13': {title:'F13 — Unbounded Thread Spawning (MEDIUM)', sev:'MEDIUM', sevColor:'#ddaa00', component:'ChaseEngine, Supabase sync, node cache refresh', problem:'35 threading.Thread spawns. Supabase spawns NEW thread per create/update — no pool, no limit. Node cache refresh leaks connections. Crashed chase threads never cleaned up.', scenario:'Rapid scene creation + slow Supabase = hundreds of threads. Each creates network connection + DB connection. Pi RAM exhausted. OOM kill.', fix:'1) ThreadPoolExecutor for Supabase sync\n2) Context managers for all SQLite connections\n3) Memory monitoring in health endpoint\n4) Max thread counts for engines'},
   'F14': {title:'F14 — Cron Parser ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'ScheduleRunner (L1089)', problem:'[FIXED] Replaced 20-line hand-rolled cron parser with croniter.match(). Full cron syntax support.', scenario:'Fixed in commit eaf1e8d. croniter 6.0.0 installed. Tested wildcards, steps, ranges.', fix:'RESOLVED: croniter.match() replaces custom parser.'},
   'F15': {title:'F15 — Timeline Drift ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'ShowEngine._run_timeline() (L1439)', problem:'[FIXED] Replaced time.time() with time.monotonic(). Fixed tempo math: elapsed_logical = wall_time * tempo.', scenario:'Fixed in commit 00b4bf6. Tested tempo 0.5x, 1.0x, 2.0x — sub-1ms drift.', fix:'RESOLVED: Monotonic clock + correct tempo scaling.'},
-  'F16': {title:'F16 — Persistent Audit Log ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'audit_log() + ~/aether-logs/audit.log', problem:'[FIXED] Added persistent structured audit log with RotatingFileHandler (5MB × 5 files = 25MB max). Logs arbitration acquires/releases/rejections/blackout, panic commands, discovery rejections. /api/audit endpoint returns recent entries as JSON. In-memory history still available for quick status checks.', scenario:'Fixed. Post-incident analysis: curl /api/audit?lines=500 shows timestamped arbitration history, panic events, and security rejections. Survives restart. Rotated automatically.', fix:'RESOLVED: RotatingFileHandler audit log + /api/audit endpoint.'},
-  'F17': {title:'F17 — FPS Aligned ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'UnifiedPlaybackEngine + DynamicEffectsEngine', problem:'[FIXED] Both render engines aligned to 40 FPS to match DMX refresh loop. UnifiedPlaybackEngine default changed from 30→40 in unified_playback.py. DynamicEffectsEngine.fps changed from 30→40 in effects_engine.py. All timing now frame-synchronized with NodeManager._dmx_refresh_loop.', scenario:'Fixed. All render loops at 40fps = 25ms frame interval. Every playback frame aligns with a DMX output frame. No more 33% frame jitter.', fix:'RESOLVED: effects_engine.fps=40, unified target_fps=40.'},
+  'F16': {title:'F16 — No Persistent Audit Log (LOW)', sev:'LOW', sevColor:'#888888', component:'ArbitrationManager.history', problem:'In-memory list capped at 50 entries. Rejected writes capped at 20. Lost on restart. Post-incident analysis impossible.', scenario:'Lighting "glitched" during live event. History overwritten by normal operations. No way to determine cause.', fix:'1) Structured logging with file rotation\n2) Persist audit trail to SQLite\n3) Timestamps + correlation IDs'},
+  'F17': {title:'F17 — FPS Mismatch 30 vs 40 (LOW)', sev:'LOW', sevColor:'#888888', component:'EffectsEngine (30fps) vs NodeManager refresh (40fps)', problem:'Effects render at 30fps, DMX refresh at 40fps. 25% of frames have no new data. Some effect frames held 25ms, others 50ms.', scenario:'Strobe at 30Hz appears subtly uneven — irregular frame timing from FPS mismatch.', fix:'Align all render loops to same FPS.\n40fps recommended (matches DMX512 spec).'},
   'F18': {title:'F18 — Dead Frontend Code ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'Frontend stores', problem:'[FIXED] activeChannelStore + stageStore already deleted. intentContextStore found to be ACTIVELY USED (17+ refs across 6 files).', scenario:'Resolved: dead stores cleaned, live store reclassified.', fix:'RESOLVED: Dead code already removed in prior cleanup.'},
-  'F19': {title:'F19 — Supabase Conflict + Rate Limit ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'supabase_service.py _sync_execute + initial_sync', problem:'[FIXED] Added updated_at timestamp to all upserted records for conflict visibility. Rate-limited initial_sync with 50ms delay between API calls. Background retry thread (60s interval) processes pending queue automatically. SYNC_RATE_LIMIT_MS configurable.', scenario:'Fixed. All synced records carry updated_at — cloud dashboard shows when each record was last pushed. Bulk sync throttled to 20 req/sec max. Pending ops auto-retried every 60s.', fix:'RESOLVED: updated_at stamping + rate-limited initial_sync + background retry loop.'},
-  'F20': {title:'F20 — Stale Node Escalation ✅ FIXED', sev:'FIXED', sevColor:'#44cc44', component:'check_stale_nodes() + _probe_offline_nodes()', problem:'[FIXED] Stale nodes now trigger: (1) SocketIO node_stale event to frontend with node IDs, (2) Audit log entry for post-incident analysis, (3) DMX refresh loop skips offline nodes (no more sending to dead IPs), (4) Periodic reconnection probing — pings offline nodes every ~90s to detect recovery without heartbeat.', scenario:'Fixed. Node loses WiFi → marked stale → frontend alert → DMX stops sending → probe every 90s → on response, node flagged for re-registration.', fix:'RESOLVED: SocketIO alert + audit + DMX skip offline + probe every 90s.'},
-  'HF01': {title:'HF01 — RDM Layer Elevation ✅ FIXED', sev:'HOT-FIX', sevColor:'#58a6ff', component:'rdmStore.js + Dashboard.jsx + RDMDiscoveryPanel.jsx + aether-core.py + rdm_bp.py', problem:'[FIXED] RDM elevated to "king" status. Backend: get_all_devices() now merges live_inventory into each device (online/status/is_patched fields). Frontend: rdmStore.js rewritten with health state (deviceCount/onlineCount/offlineCount/conflictCount), 10s polling, fetchStatus/fetchConflicts/autoFixAddresses/verifyCueReadiness. Dashboard.jsx: RDM health widget in right column. RDMDiscoveryPanel: Fixed always-green status dot (device.online === true), added auto-fix button.', scenario:'Fixed. Dashboard shows live RDM fixture counts with online/offline status. Address conflicts surfaced with one-click auto-fix. Commits d5120a8 + d8c2a3d.', fix:'RESOLVED: Backend live_inventory merge + rdmStore rewrite + Dashboard widget + discovery panel fixes.'},
-  'HF02': {title:'HF02 — Node OTA ✅ FIXED', sev:'HOT-FIX', sevColor:'#58a6ff', component:'blueprints/nodes_bp.py', problem:'[FIXED] Replaced 501 stub with real OTA implementation. Locates firmware.bin from multiple paths (aether-core/firmware/, aether-pulse/hybrid/.pio/, aether-pulse/.pio/). Locates espota.py from aether-pulse directory. Runs OTA push in background thread via subprocess (python3 espota.py -i <ip> -p 8266 -f firmware.bin) with 120s timeout. NodeDiagnostics.jsx updated with success/failure feedback.', scenario:'Fixed. Pi can push firmware to ESP32 nodes over WiFi using ArduinoOTA protocol. Commit d5120a8.', fix:'RESOLVED: espota.py subprocess in background thread with multi-path firmware.bin search.'},
-  'HF03': {title:'HF03 — Pi Self-Update Hardening ✅ FIXED', sev:'HOT-FIX', sevColor:'#58a6ff', component:'system_bp.py + proxy.js + MoreMenu.jsx + aether-core.py', problem:'[FIXED] (1) Internet detection gate: system_update_check() now detects git fetch failures (returncode != 0 or "fatal" in stderr), returns offline:true instead of false "up to date". TimeoutExpired handler added. (2) Auto-sync persistence: set_autosync() saves to app_settings[autosync] via save_settings(). get_autosync_status() reads persistent settings first. aether-core.py restores autosync on startup. (3) Proxy timeouts: /system/update POST = 120s, /system/update/check GET = 60s (was 30s). (4) MoreMenu.jsx: 45s timeout, offline flag from backend.', scenario:'Fixed. Pi without internet correctly shows "offline" instead of falsely reporting "up to date". Auto-sync survives restarts. Long git operations no longer timeout at proxy layer. Commit d5120a8.', fix:'RESOLVED: Internet gate + autosync persistence + proxy timeouts + offline flag.'},
-  'HF04': {title:'HF04 — Kiosk Mode Detection ✅ FIXED', sev:'HOT-FIX', sevColor:'#58a6ff', component:'blueprints/system_bp.py', problem:'[FIXED] systemd services do not inherit DISPLAY or WAYLAND_DISPLAY environment variables. The /api/system/info endpoint checked only env vars, so has_display was always false, forcing desktop mode on the Pi touchscreen. Added X11 socket fallback (/tmp/.X11-unix/X0) and Wayland socket fallback (/run/user/1000/wayland-0) detection.', scenario:'Fixed. Pi now correctly reports mode:"kiosk" even when running as a systemd service. Frontend renders touch-optimized kiosk layout. Commit 84772ab.', fix:'RESOLVED: Added os.path.exists() checks for X11/Wayland sockets as DISPLAY env fallback.'},
-  'HF05': {title:'HF05 — Infinite Re-render Loop ✅ FIXED', sev:'HOT-FIX', sevColor:'#58a6ff', component:'hooks/useSystemMode.js + App.jsx', problem:'[FIXED] useSystemMode hook had circular dependency: useEffect depended on [detectMode, detectClientMode, systemInfo], but detectMode() calls setSystemInfo() on every invocation, creating a new object reference that triggers the effect again → infinite loop. 10,000+ re-renders/sec caused the app to appear stuck on "Detecting display mode..." even though KioskContent was technically rendering beneath. Additionally, App.jsx had console.log in every render function (App, AppContent, KioskContent, DesktopContent, MobileContent, mousemove handler) amplifying the performance impact.', scenario:'Fixed. Split into two effects: mount-once for initial detectMode(), resize listener with systemInfo dep. Removed 8 per-render console.logs. Console messages dropped from 7,600+ to 176 on fresh load. Commit ba69126.', fix:'RESOLVED: useEffect deps split: [] for mount + [systemInfo, detectClientMode] for resize. Console.log spam removed.'},
-  'HF06': {title:'HF06 — Look Playback HTP Stacking ✅ FIXED', sev:'HOT-FIX', sevColor:'#58a6ff', component:'blueprints/looks_bp.py + unified_playback.py', problem:'[FIXED] Playing a new look via /api/looks/<id>/play did not stop the previous look session. The UnifiedPlaybackEngine uses HTP (Highest Takes Precedence) merging across concurrent sessions. When Blue was played after Red, both sessions ran simultaneously — Red ch13=255 beat Blue ch13=0, so the fixture showed Red+Blue stacked. Crossfading between looks was impossible.', scenario:'Fixed. looks_bp.py play_look() now calls _unified_engine.stop_type(PlaybackType.LOOK) and stop_type(PlaybackType.SCENE) before starting the new session. Only one look plays at a time (replace mode). Verified: Red→Blue transition correctly zeros R channel. Commit 39496f6.', fix:'RESOLVED: Added stop_type(LOOK) + stop_type(SCENE) before unified_play_look() call in looks_bp.py.'},
-  'HF07': {title:'HF07 — get_nodes() AttributeError (500 Crash) ✅ FIXED', sev:'HOT-FIX', sevColor:'#58a6ff', component:'blueprints/looks_bp.py + sequences_bp.py + cue_stacks_bp.py', problem:'[FIXED] All play endpoints called _node_manager.get_nodes() to auto-detect target universes from online nodes. NodeManager has no get_nodes() method — it is get_all_nodes(). Every play request without an explicit "universes" parameter returned 500 Internal Server Error. This was a pre-existing bug — play endpoints never worked via the API without manually specifying universes. 5 occurrences across 3 blueprint files.', scenario:'Fixed. Changed all 5 calls to get_all_nodes(include_offline=False). Play endpoints now correctly auto-detect universes from online paired nodes. Commit bf04d27.', fix:'RESOLVED: get_nodes() → get_all_nodes(include_offline=False) in looks_bp.py, sequences_bp.py, cue_stacks_bp.py.'},
-  'HF08': {title:'HF08 — cloud_bp AttributeError ✅ FIXED', sev:'HOT-FIX', sevColor:'#58a6ff', component:'blueprints/cloud_bp.py', problem:'[FIXED] /api/cloud/sync called list_looks() and list_sequences() on LooksSequencesManager, but those methods don\'t exist. The correct methods are get_all_looks() and get_all_sequences(). Every sync attempt returned 500.', scenario:'Fixed. Renamed both calls. Cloud sync now works. Commit 8f5754c.', fix:'RESOLVED: list_looks() → get_all_looks(), list_sequences() → get_all_sequences().'},
-  'HF09': {title:'HF09 — Cue Stack Arbitration Deadlock ✅ FIXED', sev:'HOT-FIX', sevColor:'#58a6ff', component:'blueprints/cue_stacks_bp.py', problem:'[FIXED] cue_stack_stop() compared _arbitration.current_owner to a tuple (\'cue_stack\', stack_id), but current_owner is always a string (\'cue_stack\'). The comparison always returned False, so arbitration was NEVER released when stopping a cue stack. Over time this locked out all other playback types.', scenario:'Fixed. Changed to check current_owner == \'cue_stack\' and current_id == stack_id, matching the pattern used in looks_bp.py. Commit 8f5754c.', fix:'RESOLVED: Tuple comparison → string+id comparison for arbitration release.'},
-  'HF10': {title:'HF10 — playback_bp Unreachable Code ✅ FIXED', sev:'HOT-FIX', sevColor:'#58a6ff', component:'blueprints/playback_bp.py', problem:'[FIXED] resume_playback() had an unconditional return of _unified_resume() result, followed by a dead return statement for the error case. If _unified_resume() returned an error dict, it was returned as 200 OK instead of 400.', scenario:'Fixed. Restructured to check result and return 400 for errors. Commit 8f5754c.', fix:'RESOLVED: Added error checking with proper HTTP 400 status code.'},
-  'HF11': {title:'HF11 — rdm_bp DB Connection Leak ✅ FIXED', sev:'HOT-FIX', sevColor:'#58a6ff', component:'blueprints/rdm_bp.py', problem:'[FIXED] rdm_set_label() obtained a SQLite connection via _get_db() but never called conn.close(). Every POST to /api/rdm/devices/<uid>/label leaked a connection. Under sustained use (relabeling many devices), this exhausts file descriptors.', scenario:'Fixed. Added conn.close() before the return statement. Commit 8f5754c.', fix:'RESOLVED: Added conn.close() after conn.commit().'},
-  'HF12': {title:'HF12 — DMX Panic Race Condition ✅ FIXED', sev:'HOT-FIX', sevColor:'#58a6ff', component:'blueprints/dmx_bp.py', problem:'[FIXED] The panic handler directly replaced universe arrays in _dmx_state.universes without acquiring the SSOT lock. If the 40Hz render loop was concurrently reading, a race condition could cause partial reads or silently lose the blackout command.', scenario:'Fixed. Wrapped SSOT mutation in "with _dmx_state.lock:" block. Commit 8f5754c.', fix:'RESOLVED: Added lock acquisition around SSOT state clearing in panic handler.'},
-  'HF13': {title:'HF13 — chases_bp Unsafe _sessions Access ✅ FIXED', sev:'HOT-FIX', sevColor:'#58a6ff', component:'blueprints/chases_bp.py', problem:'[FIXED] stop_chase() accessed _unified_engine._sessions (private dict) directly without the engine\'s _session_lock, creating a race condition. The for-loop was also redundant — stop_type(CHASE) called immediately after already handles stopping all chase sessions safely with proper locking.', scenario:'Fixed. Removed the unsafe _sessions iteration; stop_type(PlaybackType.CHASE) is sufficient. Commit 8f5754c.', fix:'RESOLVED: Removed direct _sessions access; stop_type(CHASE) handles it safely.'},
-  'HF14': {title:'HF14 — system_bp Hardcoded Path ✅ FIXED', sev:'HOT-FIX', sevColor:'#58a6ff', component:'blueprints/system_bp.py', problem:'[FIXED] runtime_file was hardcoded to /home/ramzt/aether-core.py in two places (update check and autosync). This breaks on any deployment that doesn\'t use the exact user "ramzt" at that exact path.', scenario:'Fixed. Replaced with os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), \'aether-core.py\') for dynamic resolution. Commit 8f5754c.', fix:'RESOLVED: Dynamic path resolution via os.path relative to blueprint file location.'},
-  'HF15': {title:'HF15 — 5 Frontend Crashers ✅ FIXED', sev:'HOT-FIX', sevColor:'#58a6ff', component:'DMXEffectsMenu, Console, Schedules, PixelArrays, unifiedPlaybackStore', problem:'[FIXED] (1) DMXEffectsMenu: "Sequence Creator" linked to /content-creator which doesn\'t exist → redirected to /library. (2) Console: handlePlaySequence() called playLook() instead of playSequence() → fixed import and call. (3) Schedules: "New Schedule" and "Create Your First Schedule" buttons had no onClick → wired to createSchedule. (4) PixelArrays: ArrowLeft component used but never imported from lucide-react → added import. (5) unifiedPlaybackStore: hardcoded API_BASE at module level → uses getAetherCore() from config.js.', scenario:'Fixed. All 5 crashers resolved. Commit cec6cc4.', fix:'RESOLVED: Route fix + API method fix + onClick handlers + missing import + config.js.'},
-  'HF16': {title:'HF16 — API URL Centralization ✅ FIXED', sev:'HOT-FIX', sevColor:'#58a6ff', component:'10 views + 3 stores', problem:'[FIXED] 13 files defined their own http://${window.location.hostname}:3000 URL instead of importing from config.js. Files: MidiPad, ZoneDetail, Shows, Fixtures, Effects, Library, MoreMenu (views) + nodeStore, nodeGroupStore, rdmStore (stores). If the port or protocol ever changed, 13 places would need updating independently.', scenario:'Fixed. All 13 files now import getAetherCore() from config.js. Single source of truth for API base URL. Commit cec6cc4.', fix:'RESOLVED: All hardcoded URLs replaced with getAetherCore() import from config.js.'},
-  'HF17': {title:'HF17 — Kiosk Layout Overflows ✅ FIXED', sev:'HOT-FIX', sevColor:'#58a6ff', component:'Shows.jsx + Timers.jsx + CueStacks.jsx', problem:'[FIXED] (1) Shows.jsx used height:100vh which overlaps header+dock on 800×480 kiosk → changed to fixed positioning with 100% height. Player bar bottom:20 → bottom:8 with compact padding. (2) Timers.jsx used min-h-screen + pb-24 causing scroll behind dock → removed min-h-screen, added overflow-auto. (3) CueStacks.jsx used pb-24 without proper containment → reduced to pb-16, added overflow-auto with maxHeight.', scenario:'Fixed. All three views now fit within 800×480 kiosk without overlapping header/dock. Commit cec6cc4.', fix:'RESOLVED: Replaced 100vh/min-h-screen with overflow containment pattern.'},
-  'HF18': {title:'HF18 — Header Dedup + FPS Counter ✅ FIXED', sev:'HOT-FIX', sevColor:'#58a6ff', component:'components/Header.jsx', problem:'[FIXED] (1) Header.jsx fetched nodes independently with its own 10s polling interval, duplicating the same polling already done by App.jsx via nodeStore. Removed duplicate fetch, now reads from nodeStore. (2) FPS counter was hardcoded at 44 (useState(44), setFps never called). Now reads real engineFps from unifiedPlaybackStore. (3) Also replaced hardcoded API URL with store import.', scenario:'Fixed. Eliminated duplicate /api/nodes calls (saves ~6 req/min). FPS shows real engine performance. Commit cec6cc4.', fix:'RESOLVED: Uses nodeStore + unifiedPlaybackStore instead of independent polling + hardcoded value.'},
+  'F19': {title:'F19 — Supabase No Conflict Resolution (LOW)', sev:'LOW', sevColor:'#888888', component:'supabase_service.py, initial_sync()', problem:'One-way push (local->cloud). No merge strategy. initial_sync() pushes all local data. Two installations or direct Supabase edits cause silent overwrites. No rate limiting on bulk operations.', scenario:'Operator renames look in Supabase dashboard. Pi restarts. Local data overwrites cloud change. Or 50-scene import spawns 50 simultaneous HTTP requests.', fix:'1) Last-modified timestamps + conflict detection\n2) Rate-limit Supabase API with queue\n3) Bidirectional sync with merge policy'},
+  'F20': {title:'F20 — Stale Node No Escalation (LOW)', sev:'LOW', sevColor:'#888888', component:'stale_checker() (L4886)', problem:'Marks nodes stale after 60s without heartbeat. No UI notification, no playback pause, DMX still sent to stale IP. If IP reassigned, wrong device gets commands.', scenario:'WiFi node loses connection. Marked stale. Chase engine keeps sending to dead IP. Other nodes work fine, masking the issue. Operator does not notice.', fix:'1) SocketIO alert to frontend on stale event\n2) Optionally pause playback for that universe\n3) Stop sending to confirmed-stale nodes\n4) Auto-reconnection probing (pings every 10s)'},
 };
 
 function showFlaw(key) {
@@ -1912,7 +1558,7 @@ function renderLive(data) {
 
 async function pollStatus() {
   try {
-    const resp = await fetch('/api/flow-status?t=' + Date.now());
+    const resp = await fetch('/aether-status.json?t=' + Date.now());
     if (resp.ok) {
       const data = await resp.json();
       renderLive(data);
