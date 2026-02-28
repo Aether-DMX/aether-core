@@ -1,5 +1,5 @@
 {
-  "updated": "2026-02-24T22:00:00Z",
+  "updated": "2026-02-27T12:00:00Z",
   "session": "refactoring",
   "current_task": {
     "flaw_id": "REFACTOR",
@@ -19,9 +19,9 @@
   ],
   "flaws": {
     "F01": "fixed", "F02": "fixed", "F03": "fixed", "F04": "fixed", "F05": "fixed",
-    "F06": "fixed", "F07": "fixed", "F08": "fixed", "F09": "fixed", "F10": "fixed",
-    "F11": "fixed", "F12": "fixed", "F13": "fixed", "F14": "fixed", "F15": "fixed",
-    "F16": "fixed", "F17": "fixed", "F18": "fixed", "F19": "fixed", "F20": "fixed"
+    "F06": "partial — ChaseEngine/ShowEngine still run independent threads", "F07": "fixed", "F08": "partial — set_channels() has no token param", "F09": "fixed", "F10": "fixed",
+    "F11": "fixed", "F12": "fixed", "F13": "partial — context managers exist but unused", "F14": "fixed", "F15": "fixed",
+    "F16": "fixed", "F17": "partial — render_engine.py still 30fps", "F18": "fixed", "F19": "fixed", "F20": "fixed"
   },
   "refactoring": {
     "phase1_dead_code": "complete",
