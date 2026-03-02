@@ -21,6 +21,7 @@ arbitration = None        # ArbitrationManager instance
 chase_engine = None       # ChaseEngine instance
 show_engine = None        # ShowEngine instance
 effects_engine = None     # DynamicEffectsEngine instance (from effects_engine.py)
+unified_engine = None     # UnifiedPlaybackEngine instance (from unified_playback.py)
 
 # ── Infrastructure ──
 socketio = None           # Flask-SocketIO instance

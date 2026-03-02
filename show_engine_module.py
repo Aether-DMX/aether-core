@@ -17,24 +17,21 @@ import core_registry as reg
 from unified_playback import (
     play_look as unified_play_look,
     play_sequence as unified_play_sequence,
+    play_scene as unified_play_scene,  # [R3] Route scenes through unified engine
     stop as unified_stop,
 )
 
 
 class ShowEngine:
-    """Plays back timeline-based shows with timed events.
+    """Timeline scheduler for shows - delegates all DMX output to UnifiedPlaybackEngine.
 
-    # ⚠️ AUTHORITY VIOLATION (TASK-0007) ⚠️
-    # This engine MUST NOT own timing loops.
-    # Playback timing is owned by UnifiedPlaybackEngine.
+    # [R3] AUTHORITY FIX (TASK-0007): This engine is now a SCHEDULER ONLY.
+    # It owns timeline progression (pause, resume, tempo, event dispatch)
+    # but ALL DMX output routes through UnifiedPlaybackEngine via unified_play_scene,
+    # unified_play_look, unified_play_sequence, etc.
     #
-    # This class will be retired in Phase 2. Timeline event scheduling
-    # will be preserved as utilities called BY UnifiedPlaybackEngine.
-    #
-    # DO NOT START SHOWS INDEPENDENTLY - See TASK_LEDGER.md
-
-    RACE CONDITION FIX: Now integrates with merge layer for proper
-    priority-based merging. Direct channel writes route through merge layer.
+    # The independent timing thread (_run_timeline) handles event scheduling only,
+    # NOT DMX frame generation. See TASK_LEDGER.md.
     """
 
     def __init__(self):
@@ -260,21 +257,38 @@ class ShowEngine:
                     all_nodes = reg.node_manager.get_all_nodes(include_offline=False)
                     universes = sorted(set(node.get('universe', 1) for node in all_nodes))
 
-                    # Send offset scenes to each universe
+                    # [R3] Send offset scenes to each universe via unified engine
                     for i, univ in enumerate(universes):
                         if self.stop_flag.is_set():
                             return
                         offset_index = (event_index + i) % len(all_scenes)
                         offset_scene_id = all_scenes[offset_index]
                         if reg.content_manager:
-                            reg.content_manager.play_scene(offset_scene_id, fade_ms=fade_ms, universe=univ, skip_ssot=True)
-                    print(f"  🌈 Distributed at {event.get('time_ms')}ms -> {len(universes)} universes")
+                            scene = reg.content_manager.get_scene(offset_scene_id)
+                            if scene:
+                                channels_to_apply = reg.content_manager.replicate_scene_to_fixtures(scene['channels'])
+                                scene_data = {
+                                    'name': scene.get('name', f'Scene {offset_scene_id}'),
+                                    'channels': {int(k): v for k, v in channels_to_apply.items()},
+                                    'fade_ms': fade_ms
+                                }
+                                unified_play_scene(offset_scene_id, scene_data, universes=[univ], fade_ms=fade_ms)
+                    print(f"  [R3] Distributed scene at {event.get('time_ms')}ms -> {len(universes)} universes (unified)")
                 else:
                     if self.stop_flag.is_set():
                         return
+                    # [R3] Route through unified engine
                     if reg.content_manager:
-                        reg.content_manager.play_scene(scene_id, fade_ms=fade_ms, universe=universe, skip_ssot=True)
-                    print(f"  ▶️ Scene '{scene_id}' at {event.get('time_ms')}ms")
+                        scene = reg.content_manager.get_scene(scene_id)
+                        if scene:
+                            channels_to_apply = reg.content_manager.replicate_scene_to_fixtures(scene['channels'])
+                            scene_data = {
+                                'name': scene.get('name', f'Scene {scene_id}'),
+                                'channels': {int(k): v for k, v in channels_to_apply.items()},
+                                'fade_ms': fade_ms
+                            }
+                            unified_play_scene(scene_id, scene_data, universes=[universe], fade_ms=fade_ms)
+                    print(f"  [R3] Scene '{scene_id}' at {event.get('time_ms')}ms (unified)")
 
             elif event_type == 'chase':
                 if self.stop_flag.is_set():
@@ -379,20 +393,19 @@ class ShowEngine:
                 channels = event.get('channels', {})
                 fade_ms = event.get('fade_ms', 0)
 
-                # MERGE LAYER: Route direct channel writes through merge layer
-                if self._merge_layer and self._merge_source_id:
-                    # Convert channels to int keys for merge layer
-                    parsed_channels = {int(k): int(v) for k, v in channels.items()}
-                    self._merge_layer.set_source_channels(self._merge_source_id, universe, parsed_channels)
-                    # Compute merged output
-                    merged = self._merge_layer.compute_merge(universe)
-                    if merged and reg.content_manager:
-                        reg.content_manager.set_channels(universe, {str(k): v for k, v in merged.items()}, fade_ms)
-                else:
-                    # Fallback: direct write
-                    if reg.content_manager:
-                        reg.content_manager.set_channels(universe, channels, fade_ms)
-                print(f"  🎛️ Channels at {event.get('time_ms')}ms")
+                # [R3] Route direct channel writes through unified engine as ephemeral scene
+                scene_data = {
+                    'name': f'show_channels_{event.get("time_ms", 0)}ms',
+                    'channels': {int(k): int(v) for k, v in channels.items()},
+                    'fade_ms': fade_ms
+                }
+                unified_play_scene(
+                    f"show_ch_{int(time.monotonic() * 1000)}",
+                    scene_data,
+                    universes=[universe],
+                    fade_ms=fade_ms
+                )
+                print(f"  [R3] Channels at {event.get('time_ms')}ms (unified)")
 
         except Exception as e:
             print(f"  ❌ Event error: {e}")

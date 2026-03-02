@@ -47,7 +47,7 @@ class ContentManager:
         self.current_playback = {"type": None, "id": None, "universe": None}
         print("✓ ContentManager initialized with SSOT lock")
 
-    def set_channels(self, universe, channels, fade_ms=0):
+    def set_channels(self, universe, channels, fade_ms=0, token=None):
         """Set DMX channels - builds full 512-channel frame and sends via UDPJSON
 
         SSOT COMPLIANCE:
@@ -57,7 +57,15 @@ class ContentManager:
 
         All nodes receive complete universe data for their slice.
         Missing channels default to their SSOT value (or 0 if never set).
+
+        [F08] If token is provided, validates against arbitration before writing.
+        Stale tokens are rejected to prevent TOCTOU race conditions.
         """
+        # [F08] TOCTOU guard: validate arbitration token if provided
+        if token is not None and reg.arbitration:
+            if not reg.arbitration.validate_token(token):
+                return {'success': False, 'error': 'Stale arbitration token', 'stale': True}
+
         # Update SSOT with the channel changes
         reg.dmx_state.set_channels(universe, channels, fade_ms=fade_ms)
 

@@ -1262,7 +1262,7 @@ class RenderEngine:
     - Arbitration guard (Beta 1 mitigation)
     """
 
-    def __init__(self, target_fps: int = 30):
+    def __init__(self, target_fps: int = 40):  # [F17] Aligned with DMX refresh (was 30)
         self.target_fps = target_fps
         self.frame_interval = 1.0 / target_fps
 
@@ -1668,4 +1668,4 @@ def render_look_frame(
 # Global Engine Instance
 # ============================================================
 
-render_engine = RenderEngine(target_fps=30)
+render_engine = RenderEngine(target_fps=40)  # [F17] Aligned with DMX refresh (was 30)

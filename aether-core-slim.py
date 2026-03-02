@@ -910,6 +910,7 @@ reg.effects_engine = effects_engine
 reg.merge_layer = merge_layer
 reg.channel_classifier = channel_classifier
 reg.render_engine = render_engine
+reg.unified_engine = unified_engine  # [R3] Wire unified engine to registry for content_manager_module
 
 
 # ============================================================
@@ -1340,7 +1341,7 @@ merge_init(merge_layer, content_manager, load_fixtures_into_classifier)
 scenes_init(content_manager)
 chases_init(content_manager, chase_engine, unified_engine)
 pixel_init(_pixel_arrays, content_manager)
-shows_init(get_db, show_engine, cloud_submit, SUPABASE_AVAILABLE, get_supabase_service)
+shows_init(get_db, show_engine, cloud_submit, SUPABASE_AVAILABLE, get_supabase_service, unified_engine)  # [R3]
 schedules_init(get_db, schedule_runner, timer_runner, cloud_submit,
                SUPABASE_AVAILABLE, get_supabase_service, socketio)
 cloud_init(SUPABASE_AVAILABLE, get_supabase_service, get_db, cloud_submit, looks_sequences_manager)

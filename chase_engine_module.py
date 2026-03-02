@@ -47,57 +47,19 @@ class ChaseEngine:
 
     def start_chase(self, chase, universes, fade_ms_override=None):
         """
-        Start a chase on the given universes with optional fade override.
+        DEPRECATED [R3]: Independent chase thread spawning is disabled.
+        All chase playback now routes through content_manager.play_chase() -> UnifiedPlaybackEngine.
+        This method is retained for interface compatibility but refuses to spawn threads.
 
-        # ⚠️ AUTHORITY VIOLATION WARNING ⚠️
-        # This method spawns an independent chase thread, violating
-        # AETHER Hard Rule 1.1. Only UnifiedPlaybackEngine should own timing.
-        # See TASK-0006 in TASK_LEDGER.md
+        # [R3] AUTHORITY FIX (TASK-0006): Independent timing thread permanently disabled.
+        # Chases must route through ContentManager.play_chase() -> UnifiedPlaybackEngine.
         """
-        # PHASE 1 GUARD: Log violation when chase spawns independent thread
+        chase_id = chase.get('chase_id', 'unknown')
         logging.warning(
-            "⚠️ AUTHORITY VIOLATION: ChaseEngine.start_chase() spawning "
-            "independent timing thread. This violates AETHER Hard Rule 1.1 - "
-            "Only UnifiedPlaybackEngine should own playback timing. See TASK-0006"
+            f"[R3] ChaseEngine.start_chase('{chase_id}') called directly - BLOCKED. "
+            "All chase playback must route through content_manager.play_chase() -> unified engine."
         )
-
-        chase_id = chase['chase_id']
-
-        # ARBITRATION: Acquire chase ownership — returns token for TOCTOU safety [F08]
-        if not reg.arbitration:
-            print(f"⚠️ Arbitration not available", flush=True)
-            return False
-
-        arb_token = reg.arbitration.acquire('chase', chase_id)
-        if not arb_token:
-            print(f"⚠️ Cannot start chase - arbitration denied (owner: {reg.arbitration.current_owner})", flush=True)
-            return False
-
-        # Stop any other running chases first
-        self.stop_chase(chase_id)
-
-        # MERGE LAYER: Register as a merge source for proper priority handling
-        if self._merge_layer:
-            source_id = f"chase_{chase_id}"
-            self._merge_layer.register_source(source_id, 'chase', universes)
-            with self.lock:
-                self._merge_sources[chase_id] = source_id
-            print(f"📥 Chase '{chase['name']}' registered as merge source (priority=40)", flush=True)
-
-        # Create stop flag
-        stop_flag = threading.Event()
-        self.stop_flags[chase_id] = stop_flag
-
-        # Start chase thread with fade override and arbitration token [F08]
-        thread = threading.Thread(
-            target=self._run_chase,
-            args=(chase, universes, stop_flag, fade_ms_override, arb_token),
-            daemon=True
-        )
-        self.running_chases[chase_id] = thread
-        thread.start()
-        print(f"🏃 Chase engine started: {chase['name']} (fade_override={fade_ms_override})", flush=True)
-        return True
+        return False
 
     def stop_chase(self, chase_id=None, wait=True):
         """Stop a chase or all chases, optionally waiting for thread to finish"""
@@ -323,7 +285,7 @@ class ChaseEngine:
                 merged = self._merge_layer.compute_merge(universe)
                 if merged and reg.content_manager:
                     # Send merged result to SSOT (content_manager handles node dispatch)
-                    reg.content_manager.set_channels(universe, {str(k): v for k, v in merged.items()}, fade_ms=fade_ms)
+                    reg.content_manager.set_channels(universe, {str(k): v for k, v in merged.items()}, fade_ms=fade_ms, token=arb_token)  # [F08]
                 return
 
         # Fallback: direct write if merge layer not available (legacy behavior)
@@ -337,4 +299,4 @@ class ChaseEngine:
             return
 
         if reg.content_manager:
-            reg.content_manager.set_channels(universe, parsed, fade_ms=fade_ms)
+            reg.content_manager.set_channels(universe, parsed, fade_ms=fade_ms, token=arb_token)  # [F08]

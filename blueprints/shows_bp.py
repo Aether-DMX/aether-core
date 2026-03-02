@@ -17,16 +17,18 @@ _show_engine = None
 _cloud_submit = None
 _supabase_available = False
 _get_supabase_service = None
+_unified_engine = None  # [R3] UnifiedPlaybackEngine for show session cleanup
 
 
-def init_app(get_db, show_engine, cloud_submit, supabase_available, get_supabase_service_fn):
+def init_app(get_db, show_engine, cloud_submit, supabase_available, get_supabase_service_fn, unified_engine=None):
     """Initialize blueprint with required dependencies."""
-    global _get_db, _show_engine, _cloud_submit, _supabase_available, _get_supabase_service
+    global _get_db, _show_engine, _cloud_submit, _supabase_available, _get_supabase_service, _unified_engine
     _get_db = get_db
     _show_engine = show_engine
     _cloud_submit = cloud_submit
     _supabase_available = supabase_available
     _get_supabase_service = get_supabase_service_fn
+    _unified_engine = unified_engine
 
 
 # ─────────────────────────────────────────────────────────
@@ -168,8 +170,12 @@ def play_show(show_id):
 
 @shows_bp.route('/api/shows/stop', methods=['POST'])
 def stop_show():
-    """Stop current show"""
+    """Stop current show and clean up unified engine sessions"""
     _show_engine.stop()
+    # [R3] Also stop unified sessions spawned by show scene/channel events
+    if _unified_engine:
+        from unified_playback import PlaybackType
+        _unified_engine.stop_type(PlaybackType.SCENE)
     return jsonify({'success': True})
 
 
