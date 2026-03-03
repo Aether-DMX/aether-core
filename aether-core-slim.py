@@ -1347,7 +1347,11 @@ schedules_init(get_db, schedule_runner, timer_runner, cloud_submit,
 cloud_init(SUPABASE_AVAILABLE, get_supabase_service, get_db, cloud_submit, looks_sequences_manager)
 session_init(dmx_state, content_manager, get_whisper_model)
 system_init(app_settings, save_settings, AETHER_VERSION, AETHER_COMMIT,
-            AETHER_FILE_PATH, AETHER_START_TIME, get_or_create_device_id, app)
+            AETHER_FILE_PATH, AETHER_START_TIME, get_or_create_device_id, app,
+            get_db=get_db, node_manager=node_manager, unified_engine=unified_engine,
+            dmx_state=dmx_state, show_engine=show_engine, chase_engine=chase_engine,
+            effects_engine=effects_engine, content_manager=content_manager,
+            socketio=socketio)
 groups_init(get_db, SUPABASE_AVAILABLE, get_supabase_service, cloud_submit)
 ai_init(get_ai_advisor, get_render_pipeline, get_db)
 fixtures_init(content_manager, get_db, rdm_manager)

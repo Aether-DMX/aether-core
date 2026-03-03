@@ -24,12 +24,28 @@ _AETHER_START_TIME = None
 _get_or_create_device_id = None
 _app = None  # Flask app reference for autosync state
 
+# Factory reset dependencies (optional, injected via keyword args)
+_get_db = None
+_node_manager = None
+_unified_engine = None
+_dmx_state = None
+_show_engine = None
+_chase_engine = None
+_effects_engine = None
+_content_manager = None
+_socketio = None
+
 
 def init_app(app_settings, save_settings_fn, aether_version, aether_commit,
-             aether_file_path, aether_start_time, get_or_create_device_id_fn, app):
+             aether_file_path, aether_start_time, get_or_create_device_id_fn, app,
+             get_db=None, node_manager=None, unified_engine=None, dmx_state=None,
+             show_engine=None, chase_engine=None, effects_engine=None,
+             content_manager=None, socketio=None):
     """Initialize blueprint with required dependencies."""
     global _app_settings, _save_settings, _AETHER_VERSION, _AETHER_COMMIT
     global _AETHER_FILE_PATH, _AETHER_START_TIME, _get_or_create_device_id, _app
+    global _get_db, _node_manager, _unified_engine, _dmx_state
+    global _show_engine, _chase_engine, _effects_engine, _content_manager, _socketio
     _app_settings = app_settings
     _save_settings = save_settings_fn
     _AETHER_VERSION = aether_version
@@ -38,6 +54,15 @@ def init_app(app_settings, save_settings_fn, aether_version, aether_commit,
     _AETHER_START_TIME = aether_start_time
     _get_or_create_device_id = get_or_create_device_id_fn
     _app = app
+    _get_db = get_db
+    _node_manager = node_manager
+    _unified_engine = unified_engine
+    _dmx_state = dmx_state
+    _show_engine = show_engine
+    _chase_engine = chase_engine
+    _effects_engine = effects_engine
+    _content_manager = content_manager
+    _socketio = socketio
 
 
 @system_bp.route('/api/system/info', methods=['GET'])
@@ -393,3 +418,147 @@ def _start_autosync_thread():
     if not getattr(_app, '_autosync_thread', None) or not _app._autosync_thread.is_alive():
         _app._autosync_thread = threading.Thread(target=autosync_worker, daemon=True)
         _app._autosync_thread.start()
+
+
+# ═══════════════════════════════════════════════════════════════════
+# FACTORY RESET
+# ═══════════════════════════════════════════════════════════════════
+
+@system_bp.route('/api/system/factory-reset', methods=['POST'])
+def factory_reset():
+    """Factory reset: stop playback, unpair nodes, wipe DB, reset settings, re-seed stock content."""
+    import time as _time
+    from copy import deepcopy
+
+    results = {'steps': [], 'success': False}
+
+    if not _get_db:
+        return jsonify({'error': 'Factory reset not available — dependencies not initialized'}), 503
+
+    try:
+        # ── Step 1: Stop all playback ──────────────────────────────────
+        try:
+            if _unified_engine:
+                _unified_engine.stop_all()
+            if _show_engine:
+                _show_engine.stop()
+            if _chase_engine:
+                _chase_engine.stop_all()
+            if _effects_engine:
+                _effects_engine.stop_effect()
+            results['steps'].append({'step': 'stop_playback', 'success': True})
+        except Exception as e:
+            results['steps'].append({'step': 'stop_playback', 'success': False, 'error': str(e)})
+
+        # ── Step 2: Unpair all WiFi nodes ──────────────────────────────
+        unpaired_count = 0
+        try:
+            if _node_manager:
+                all_nodes = _node_manager.get_all_nodes(include_offline=True)
+                for node in all_nodes:
+                    if node.get('type') == 'wifi' and node.get('ip') and not node.get('is_builtin'):
+                        target_ip = node.get('seance_ip') if node.get('via_seance') else node.get('ip')
+                        if target_ip and target_ip != 'localhost':
+                            try:
+                                _node_manager.send_command_to_wifi(target_ip, {'cmd': 'unpair'})
+                                unpaired_count += 1
+                            except Exception:
+                                pass  # Node may be offline
+                            _time.sleep(0.05)
+            results['steps'].append({'step': 'unpair_nodes', 'success': True, 'count': unpaired_count})
+        except Exception as e:
+            results['steps'].append({'step': 'unpair_nodes', 'success': False, 'error': str(e)})
+
+        # ── Step 3: Wipe database tables ───────────────────────────────
+        tables_to_wipe = [
+            'scenes', 'chases', 'shows', 'fixtures', 'groups',
+            'schedules', 'timers', 'rdm_devices', 'rdm_personalities',
+            'node_groups', 'looks', 'sequences', 'cue_stacks',
+            'ai_preferences', 'ai_outcomes', 'ai_audit_log',
+        ]
+        tables_wiped = []
+        try:
+            conn = _get_db()
+            c = conn.cursor()
+
+            # Delete all non-builtin nodes
+            c.execute('DELETE FROM nodes WHERE is_builtin = 0')
+            tables_wiped.append('nodes')
+
+            # Wipe all content tables
+            for table in tables_to_wipe:
+                try:
+                    c.execute(f'DELETE FROM {table}')
+                    tables_wiped.append(table)
+                except Exception:
+                    pass  # Table may not exist yet (lazy-created)
+
+            conn.commit()
+            conn.close()
+            results['steps'].append({'step': 'wipe_database', 'success': True, 'tables': tables_wiped})
+        except Exception as e:
+            results['steps'].append({'step': 'wipe_database', 'success': False, 'error': str(e)})
+
+        # ── Step 4: Reset settings to defaults ─────────────────────────
+        try:
+            default_settings = {
+                "theme": {"mode": "dark", "accentColor": "#3b82f6", "fontSize": "medium"},
+                "background": {"type": "gradient", "gradient": "purple-blue", "bubbles": True,
+                               "bubbleCount": 15, "bubbleSpeed": 1.0},
+                "ai": {"enabled": True, "model": "claude-3-sonnet", "contextLength": 4096,
+                       "temperature": 0.7},
+                "dmx": {"defaultFadeMs": 500, "refreshRate": 40, "maxUniverse": 64},
+                "security": {"pinEnabled": False, "sessionTimeout": 3600},
+                "setup": {"complete": False, "mode": None, "userProfile": {}},
+            }
+            _app_settings.clear()
+            _app_settings.update(deepcopy(default_settings))
+            _save_settings(_app_settings)
+            results['steps'].append({'step': 'reset_settings', 'success': True})
+        except Exception as e:
+            results['steps'].append({'step': 'reset_settings', 'success': False, 'error': str(e)})
+
+        # ── Step 5: Reset DMX state ────────────────────────────────────
+        try:
+            if _dmx_state:
+                with _dmx_state.lock:
+                    _dmx_state.universes.clear()
+                    _dmx_state.targets.clear()
+                    _dmx_state.fade_info.clear()
+                    _dmx_state.master_level = 100
+                    _dmx_state.master_base.clear()
+                    _dmx_state.last_session = None
+                    _dmx_state.last_sessions = []
+                _dmx_state.save_state_now()
+            results['steps'].append({'step': 'reset_dmx_state', 'success': True})
+        except Exception as e:
+            results['steps'].append({'step': 'reset_dmx_state', 'success': False, 'error': str(e)})
+
+        # ── Step 6: Re-seed with stock content ─────────────────────────
+        try:
+            from seed_content import seed_database
+            seed_result = seed_database(_get_db)
+            results['steps'].append({'step': 'seed_content', 'success': True, 'seeded': seed_result})
+        except Exception as e:
+            results['steps'].append({'step': 'seed_content', 'success': False, 'error': str(e)})
+
+        # ── Step 7: Notify frontend ────────────────────────────────────
+        try:
+            if _socketio:
+                _socketio.emit('factory_reset', {'status': 'complete'})
+                _socketio.emit('scenes_update', {})
+                _socketio.emit('chases_update', {})
+                _socketio.emit('nodes_update', {})
+                _socketio.emit('dmx_state', {'universe': 1, 'channels': [0] * 512})
+            results['steps'].append({'step': 'notify_frontend', 'success': True})
+        except Exception as e:
+            results['steps'].append({'step': 'notify_frontend', 'success': False, 'error': str(e)})
+
+        results['success'] = True
+        results['message'] = 'Factory reset complete. System restored to defaults with stock content.'
+        print(f"🏭 FACTORY RESET COMPLETE: {len(tables_wiped)} tables wiped, {unpaired_count} nodes unpaired")
+        return jsonify(results)
+
+    except Exception as e:
+        results['error'] = str(e)
+        return jsonify(results), 500
