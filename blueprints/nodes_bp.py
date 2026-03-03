@@ -34,6 +34,11 @@ def get_nodes():
 def get_online_nodes():
     return jsonify(_node_manager.get_all_nodes(include_offline=False))
 
+@nodes_bp.route('/api/nodes/available', methods=['GET'])
+def get_available_nodes():
+    """Return discovered-but-not-paired nodes available for pairing."""
+    return jsonify(_node_manager.get_pending_nodes())
+
 @nodes_bp.route('/api/nodes/<node_id>', methods=['GET'])
 def get_node(node_id):
     node = _node_manager.get_node(node_id)

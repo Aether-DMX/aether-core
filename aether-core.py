@@ -2189,6 +2189,10 @@ class NodeManager:
         self._udpjson_errors = 0
         self._udpjson_per_universe = {}  # {universe: send_count}
 
+        # Pending nodes: discovered but not yet paired — kept in memory only
+        # {node_id: {node_id, hostname, mac, ip, rssi, firmware, last_seen, ...}}
+        self._pending_nodes = {}
+
         # Diagnostics tracking - UDP config commands
         self._last_udp_send = None
         self._udp_send_count = 0
@@ -2870,6 +2874,10 @@ class NodeManager:
         conn.close()
         return [dict(row) for row in rows]
 
+    def get_pending_nodes(self):
+        """Return list of discovered-but-not-paired nodes (memory only, not in DB)."""
+        return list(self._pending_nodes.values())
+
     def get_node(self, node_id):
         conn = get_db()
         c = conn.cursor()
@@ -2974,18 +2982,23 @@ class NodeManager:
             if via_seance:
                 print(f"📡 Node {node_id} via Seance: {via_seance} @ {seance_ip}")
         else:
-            # Support both legacy (startChannel/channelCount) and new (slice_start/slice_end/slice_mode) fields
-            slice_start = data.get('slice_start') or data.get('startChannel', 1)
-            slice_end = data.get('slice_end') or data.get('channelCount', 512)
-            slice_mode = data.get('slice_mode', 'zero_outside')
-            c.execute('''INSERT INTO nodes (node_id, name, hostname, mac, ip, universe, channel_start, type,
-                channel_end, slice_mode, firmware, status, is_paired, first_seen, last_seen, via_seance, seance_ip)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 'wifi', ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-                (node_id, data.get('hostname', f'Node-{node_id[-4:]}'), data.get('hostname'),
-                 data.get('mac'), original_ip, data.get('universe', 1), slice_start,
-                 slice_end, slice_mode, firmware_str, 'online', False, now, now, via_seance, seance_ip))
-            if via_seance:
-                print(f"📡 New node {node_id} via Seance: {via_seance} @ {seance_ip}")
+            # Unknown node — store in memory as "available to pair", NOT in the DB
+            self._pending_nodes[node_id] = {
+                'node_id': node_id,
+                'hostname': data.get('hostname', f'Node-{node_id[-4:]}'),
+                'mac': data.get('mac'),
+                'ip': original_ip,
+                'universe': data.get('universe', 1),
+                'rssi': data.get('rssi'),
+                'firmware': firmware_str,
+                'uptime': data.get('uptime'),
+                'last_seen': now,
+                'via_seance': via_seance,
+                'seance_ip': seance_ip,
+            }
+            conn.commit()
+            conn.close()
+            return  # Don't proceed to DB commit or broadcast for pending nodes
         conn.commit()
         conn.close()
         # Re-send config to paired WiFi nodes ONLY on reconnect (was offline, now online)
@@ -3017,6 +3030,23 @@ class NodeManager:
         channel_start = config.get('channel_start') or config.get('channelStart', 1)
         channel_end = config.get('channel_end') or config.get('channelEnd', 512)
         slice_mode = config.get('slice_mode', 'zero_outside')
+
+        # If node is pending (discovered but not in DB), insert it first
+        pending = self._pending_nodes.pop(node_id, None)
+        c.execute('SELECT node_id FROM nodes WHERE node_id = ?', (str(node_id),))
+        if not c.fetchone():
+            if pending:
+                now = datetime.now().isoformat()
+                c.execute('''INSERT INTO nodes (node_id, name, hostname, mac, ip, universe, channel_start, type,
+                    channel_end, slice_mode, firmware, status, is_paired, first_seen, last_seen, via_seance, seance_ip)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 'wifi', ?, ?, ?, 'online', 0, ?, ?, ?, ?)''',
+                    (node_id, config.get('name') or pending.get('hostname'), pending.get('hostname'),
+                     pending.get('mac'), pending.get('ip'), config.get('universe', 1), channel_start,
+                     channel_end, slice_mode, pending.get('firmware'), now, now,
+                     pending.get('via_seance'), pending.get('seance_ip')))
+            else:
+                conn.close()
+                return None  # Node not found anywhere
 
         c.execute('''UPDATE nodes SET name = COALESCE(?, name), universe = ?, channel_start = ?,
             channel_end = ?, slice_mode = ?, mode = COALESCE(?, 'output'), is_paired = 1 WHERE node_id = ?''',
