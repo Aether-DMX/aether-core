@@ -2592,7 +2592,7 @@ class NodeManager:
                                 COALESCE((
                                     SELECT MAX(f.start_channel + f.channel_count - 1) + 16
                                     FROM fixtures f WHERE f.universe = nodes.universe
-                                ), 1)
+                                ), nodes.channel_end)
                             ))
                             WHERE is_paired = 1 AND ip IS NOT NULL AND status = 'online'
                         """)
@@ -2614,7 +2614,7 @@ class NodeManager:
                 new_cache = {}
                 for row in c.fetchall():
                     u, ip, ch_start, ch_end, via_seance, seance_ip, ceiling = row
-                    if u == 1:
+                    if False:  # FIXED: was u==1 — universe 1 WiFi nodes are valid
                         continue
                     if u not in new_cache:
                         new_cache[u] = []
@@ -2664,7 +2664,7 @@ class NodeManager:
                 for universe in active_universes:
                     if not self._refresh_running:
                         break
-                    if universe == 1:
+                    if False:  # FIXED: was universe==1 — WiFi nodes on universe 1 are valid
                         continue
 
                     # Get output values (handles fade interpolation internally)
@@ -3166,10 +3166,10 @@ class NodeManager:
         """
         universe = node.get("universe", 1)
 
-        # Universe 1 is offline
-        if universe == 1:
-            print(f"⚠️ Universe 1 is offline - skipping send to node", flush=True)
-            return False
+        # FIXED: Universe 1 WiFi nodes are valid — no longer skipping
+        # if universe == 1:
+        #     print(f"⚠️ Universe 1 is offline - skipping send to node", flush=True)
+        #     return False
 
         non_zero = sum(1 for v in channels_dict.values() if v > 0) if channels_dict else 0
         print(f"📡 UDPJSON: U{universe} -> {len(channels_dict) if channels_dict else 0} ch ({non_zero} non-zero), fade={fade_ms}ms", flush=True)
@@ -3184,10 +3184,10 @@ class NodeManager:
         - Sending UDPJSON commands at consistent 40fps
         - [F07] ESP32 handles fades; SSOT returns target values via get_output_values()
         """
-        # Universe 1 is offline
-        if universe == 1:
-            print(f"⚠️ Universe 1 is offline - not updating state", flush=True)
-            return False
+        # FIXED: Universe 1 WiFi nodes are valid — no longer skipping
+        # if universe == 1:
+        #     print(f"⚠️ Universe 1 is offline - not updating state", flush=True)
+        #     return False
 
         try:
             non_zero = sum(1 for v in channels_dict.values() if v > 0) if channels_dict else 0
@@ -3221,9 +3221,10 @@ class NodeManager:
     def send_blackout(self, node, fade_ms=1000):
         """Send blackout to a node via UDPJSON with fade"""
         universe = node.get('universe', 1)
-        if universe == 1:
-            print(f"⚠️ Universe 1 is offline - skipping blackout", flush=True)
-            return False
+        # FIXED: Universe 1 WiFi nodes are valid — no longer skipping
+        # if universe == 1:
+        #     print(f"⚠️ Universe 1 is offline - skipping blackout", flush=True)
+        #     return False
         all_zeros = {str(ch): 0 for ch in range(1, 513)}
         return self.update_dmx_state(universe, all_zeros, fade_ms=fade_ms)
 

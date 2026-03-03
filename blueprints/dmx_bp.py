@@ -111,9 +111,7 @@ def dmx_set():
     data = request.get_json()
     universe = data.get('universe', 1)
 
-    # Universe 1 is offline - reject
-    if universe == 1:
-        return jsonify({'error': 'Universe 1 is offline. Use universes 2-5.', 'success': False}), 400
+    # Universe 1 is now online via WiFi nodes
 
     fade_ms = data.get('fade_ms', 0)
 
@@ -162,10 +160,8 @@ def dmx_set():
 def dmx_fade():
     """Fade channels over duration - sends UDPJSON fade command"""
     data = request.get_json()
-    universe = data.get('universe', 2)  # Default to 2 (not 1)
-    # Universe 1 is offline - reject
-    if universe == 1:
-        return jsonify({'error': 'Universe 1 is offline. Use universes 2-5.', 'success': False}), 400
+    universe = data.get('universe', 1)
+    # Universe 1 is now online via WiFi nodes
     channels = data.get('channels', {})
     duration_ms = data.get('duration_ms', 1000)
     return jsonify(_content_manager.set_channels(universe, channels, duration_ms))
@@ -174,10 +170,8 @@ def dmx_fade():
 def dmx_blackout():
     data = request.get_json() or {}
     universe = data.get('universe')
-    # Universe 1 is offline - reject if explicitly requested
-    if universe == 1:
-        return jsonify({'error': 'Universe 1 is offline. Use universes 2-5.', 'success': False}), 400
-    # If no universe specified, blackout all online universes (2-5)
+    # Universe 1 is now online via WiFi nodes
+    # If no universe specified, blackout all online universes
     return jsonify(_content_manager.blackout(universe, data.get('fade_ms', 1000)))
 
 
@@ -349,7 +343,7 @@ def dmx_status():
         'online_nodes': [n for n in nodes if n['status'] == 'online'],
         'all_nodes': nodes,
         'universes': universes,
-        'universe_1_note': 'Universe 1 is OFFLINE - use universes 2-5',
+        'universe_1_note': 'Universe 1 is ONLINE via WiFi nodes',
         'stats': {
             'total_sends': _node_manager._udpjson_send_count,
             'errors': _node_manager._udpjson_errors,

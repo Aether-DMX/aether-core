@@ -466,7 +466,7 @@ class NodeManager:
                                 COALESCE((
                                     SELECT MAX(f.start_channel + f.channel_count - 1) + 16
                                     FROM fixtures f WHERE f.universe = nodes.universe
-                                ), 1)
+                                ), nodes.channel_end)
                             ))
                             WHERE is_paired = 1 AND ip IS NOT NULL AND status = 'online'
                         """)
