@@ -328,39 +328,80 @@ def seed_database(get_db):
     c = conn.cursor()
     now = datetime.now().isoformat()
 
+    # ── Detect schema (deployed monolith may have fewer columns) ──
+    c.execute('PRAGMA table_info(scenes)')
+    scene_cols = {row[1] for row in c.fetchall()}
+    has_distribution = 'distribution_mode' in scene_cols
+    has_favorite = 'is_favorite' in scene_cols
+
+    c.execute('PRAGMA table_info(chases)')
+    chase_cols = {row[1] for row in c.fetchall()}
+    chase_has_distribution = 'distribution_mode' in chase_cols
+
+    c.execute('PRAGMA table_info(shows)')
+    show_cols = {row[1] for row in c.fetchall()}
+    show_has_distributed = 'distributed' in show_cols
+
     # ── Scenes ──
     scene_count = 0
     for s in STOCK_SCENES:
-        c.execute('''INSERT OR REPLACE INTO scenes
-            (scene_id, name, description, universe, channels, fade_ms, curve, color, icon,
-             is_favorite, play_count, synced_to_nodes, distribution_mode, created_at, updated_at)
-            VALUES (?, ?, ?, 1, ?, ?, 'linear', ?, ?, 0, 0, 0, 'unified', ?, ?)''',
-            (s['scene_id'], s['name'], s.get('description', ''),
-             json.dumps(s['channels']), s.get('fade_ms', 500),
-             s.get('color', '#3b82f6'), s.get('icon', 'lightbulb'),
-             now, now))
+        if has_favorite and has_distribution:
+            c.execute('''INSERT OR REPLACE INTO scenes
+                (scene_id, name, description, universe, channels, fade_ms, curve, color, icon,
+                 is_favorite, play_count, synced_to_nodes, distribution_mode, created_at, updated_at)
+                VALUES (?, ?, ?, 1, ?, ?, 'linear', ?, ?, 0, 0, 0, 'unified', ?, ?)''',
+                (s['scene_id'], s['name'], s.get('description', ''),
+                 json.dumps(s['channels']), s.get('fade_ms', 500),
+                 s.get('color', '#3b82f6'), s.get('icon', 'lightbulb'),
+                 now, now))
+        else:
+            c.execute('''INSERT OR REPLACE INTO scenes
+                (scene_id, name, description, universe, channels, fade_ms, curve, color, icon,
+                 play_count, synced_to_nodes, created_at, updated_at)
+                VALUES (?, ?, ?, 1, ?, ?, 'linear', ?, ?, 0, 0, ?, ?)''',
+                (s['scene_id'], s['name'], s.get('description', ''),
+                 json.dumps(s['channels']), s.get('fade_ms', 500),
+                 s.get('color', '#3b82f6'), s.get('icon', 'lightbulb'),
+                 now, now))
         scene_count += 1
 
     # ── Chases ──
     chase_count = 0
     for ch in STOCK_CHASES:
-        c.execute('''INSERT OR REPLACE INTO chases
-            (chase_id, name, description, universe, bpm, loop, steps, color, fade_ms,
-             synced_to_nodes, distribution_mode, created_at, updated_at)
-            VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, 0, 'unified', ?, ?)''',
-            (ch['chase_id'], ch['name'], ch.get('description', ''),
-             ch.get('bpm', 120), 1 if ch.get('loop', True) else 0,
-             json.dumps(ch['steps']), ch.get('color', '#10b981'),
-             ch.get('fade_ms', 0), now, now))
+        if chase_has_distribution:
+            c.execute('''INSERT OR REPLACE INTO chases
+                (chase_id, name, description, universe, bpm, loop, steps, color, fade_ms,
+                 synced_to_nodes, distribution_mode, created_at, updated_at)
+                VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, 0, 'unified', ?, ?)''',
+                (ch['chase_id'], ch['name'], ch.get('description', ''),
+                 ch.get('bpm', 120), 1 if ch.get('loop', True) else 0,
+                 json.dumps(ch['steps']), ch.get('color', '#10b981'),
+                 ch.get('fade_ms', 0), now, now))
+        else:
+            c.execute('''INSERT OR REPLACE INTO chases
+                (chase_id, name, description, universe, bpm, loop, steps, color, fade_ms,
+                 synced_to_nodes, created_at, updated_at)
+                VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, 0, ?, ?)''',
+                (ch['chase_id'], ch['name'], ch.get('description', ''),
+                 ch.get('bpm', 120), 1 if ch.get('loop', True) else 0,
+                 json.dumps(ch['steps']), ch.get('color', '#10b981'),
+                 ch.get('fade_ms', 0), now, now))
         chase_count += 1
 
     # ── Demo Show ──
     show = STOCK_SHOW
-    c.execute('''INSERT OR REPLACE INTO shows
-        (show_id, name, description, timeline, duration_ms, distributed, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, 0, ?, ?)''',
-        (show['show_id'], show['name'], show['description'],
-         json.dumps(show['timeline']), show['duration_ms'], now, now))
+    if show_has_distributed:
+        c.execute('''INSERT OR REPLACE INTO shows
+            (show_id, name, description, timeline, duration_ms, distributed, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, 0, ?, ?)''',
+            (show['show_id'], show['name'], show['description'],
+             json.dumps(show['timeline']), show['duration_ms'], now, now))
+    else:
+        c.execute('''INSERT OR REPLACE INTO shows
+            (show_id, name, description, timeline, duration_ms, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)''',
+            (show['show_id'], show['name'], show['description'],
+             json.dumps(show['timeline']), show['duration_ms'], now, now))
 
     conn.commit()
     conn.close()
