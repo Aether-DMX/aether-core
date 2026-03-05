@@ -32,12 +32,17 @@ from pathlib import Path
 from functools import wraps
 
 # Supabase import with graceful fallback
+# Try sync client first (supabase v2.x), then fall back to top-level import
 try:
-    from supabase import create_client, Client
+    from supabase._sync.client import create_client, SyncClient as Client
     SUPABASE_AVAILABLE = True
 except ImportError:
-    SUPABASE_AVAILABLE = False
-    Client = None
+    try:
+        from supabase import create_client, Client
+        SUPABASE_AVAILABLE = True
+    except ImportError:
+        SUPABASE_AVAILABLE = False
+        Client = None
 
 # ============================================================
 # Configuration
@@ -280,8 +285,11 @@ class SupabaseService:
             self._client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
             self._installation_id = get_installation_id()
             self._enabled = True
+
+            # Validate connection with a lightweight query
+            test = self._client.table("installations").select("installation_id").limit(1).execute()
             self._connected = True
-            print(f"☁️ Supabase connected - Installation: {self._installation_id[:8]}...")
+            print(f"☁️ Supabase connected (validated) - Installation: {self._installation_id[:8]}...")
 
             # Register this installation (needed for FK constraints on schedules, groups)
             self.ensure_installation()
@@ -291,6 +299,8 @@ class SupabaseService:
             self._clear_stale_pending()
         except Exception as e:
             print(f"⚠️ Supabase connection failed: {e}")
+            import traceback
+            traceback.print_exc()
             self._enabled = True  # Still enabled, just not connected
             self._connected = False
 
@@ -322,6 +332,35 @@ class SupabaseService:
             "last_sync_at": self._last_sync_at.isoformat() if self._last_sync_at else None,
             "sync_in_progress": self._sync_in_progress
         }
+
+    # ---- Reconnection ----
+
+    def reconnect(self) -> Dict[str, Any]:
+        """
+        Attempt to reconnect to Supabase.
+        Recreates the client, validates, and re-registers installation.
+        """
+        if not SUPABASE_AVAILABLE or not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+            return {"success": False, "error": "Supabase not configured"}
+
+        try:
+            self._client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+            self._installation_id = get_installation_id()
+            self._enabled = True
+
+            # Validate
+            test = self._client.table("installations").select("installation_id").limit(1).execute()
+            self._connected = True
+
+            # Re-register
+            self.ensure_installation()
+
+            print(f"☁️ Supabase reconnected successfully - Installation: {self._installation_id[:8]}...")
+            return {"success": True, "connected": True, "installation_id": self._installation_id}
+        except Exception as e:
+            self._connected = False
+            print(f"⚠️ Supabase reconnection failed: {e}")
+            return {"success": False, "error": str(e)}
 
     # ---- Installation Registration ----
 
@@ -1350,6 +1389,304 @@ class SupabaseService:
         except Exception as e:
             print(f"⚠️ Failed to fetch sequences: {e}")
             return []
+
+    def fetch_scenes(self) -> List[Dict[str, Any]]:
+        """Fetch scenes from Supabase for this installation"""
+        if not self._enabled or not self._client:
+            return []
+
+        try:
+            result = self._client.table("scene_templates").select("*").eq(
+                "mood", "scene"
+            ).execute()
+
+            scenes = []
+            for row in result.data or []:
+                template_data = json.loads(row.get("template_data", "{}"))
+                if template_data.get("installation_id") == self._installation_id:
+                    scenes.append({
+                        "scene_id": row.get("template_id"),
+                        "name": row.get("name"),
+                        "description": row.get("description"),
+                        "channels": template_data.get("channels"),
+                        "universe": template_data.get("universe", 1),
+                        "fade_ms": template_data.get("fade_ms", 500),
+                        "curve": template_data.get("curve", "linear"),
+                        "color": template_data.get("color"),
+                        "icon": template_data.get("icon"),
+                    })
+
+            return scenes
+        except Exception as e:
+            print(f"⚠️ Failed to fetch scenes: {e}")
+            return []
+
+    def fetch_chases(self) -> List[Dict[str, Any]]:
+        """Fetch chases from Supabase for this installation"""
+        if not self._enabled or not self._client:
+            return []
+
+        try:
+            result = self._client.table("scene_templates").select("*").eq(
+                "mood", "chase"
+            ).execute()
+
+            chases = []
+            for row in result.data or []:
+                template_data = json.loads(row.get("template_data", "{}"))
+                if template_data.get("installation_id") == self._installation_id:
+                    chases.append({
+                        "chase_id": row.get("template_id"),
+                        "name": row.get("name"),
+                        "description": row.get("description"),
+                        "steps": template_data.get("steps"),
+                        "bpm": template_data.get("bpm", 120),
+                        "loop": template_data.get("loop", True),
+                        "fade_ms": template_data.get("fade_ms", 0),
+                        "universe": template_data.get("universe", 1),
+                        "color": template_data.get("color"),
+                    })
+
+            return chases
+        except Exception as e:
+            print(f"⚠️ Failed to fetch chases: {e}")
+            return []
+
+    def fetch_shows(self) -> List[Dict[str, Any]]:
+        """Fetch shows from Supabase for this installation"""
+        if not self._enabled or not self._client:
+            return []
+
+        try:
+            result = self._client.table("scene_templates").select("*").eq(
+                "mood", "show"
+            ).execute()
+
+            shows = []
+            for row in result.data or []:
+                template_data = json.loads(row.get("template_data", "{}"))
+                if template_data.get("installation_id") == self._installation_id:
+                    shows.append({
+                        "show_id": row.get("template_id"),
+                        "name": row.get("name"),
+                        "description": row.get("description"),
+                        "timeline": template_data.get("timeline"),
+                        "duration_ms": template_data.get("duration_ms", 0),
+                    })
+
+            return shows
+        except Exception as e:
+            print(f"⚠️ Failed to fetch shows: {e}")
+            return []
+
+    def fetch_nodes(self) -> List[Dict[str, Any]]:
+        """Fetch all devices/nodes from Supabase"""
+        if not self._enabled or not self._client:
+            return []
+
+        try:
+            result = self._client.table("devices").select("*").execute()
+
+            nodes = []
+            for row in result.data or []:
+                settings = {}
+                try:
+                    settings = json.loads(row.get("settings", "{}"))
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+                nodes.append({
+                    "node_id": row.get("hostname") or row.get("device_id"),
+                    "name": row.get("name"),
+                    "hostname": row.get("hostname"),
+                    "mac": row.get("mac_address"),
+                    "ip": row.get("ip_address"),
+                    "firmware": row.get("version"),
+                    "status": "online" if row.get("is_online") else "offline",
+                    "universe": settings.get("universe", 1),
+                    "channel_start": settings.get("channel_start", 1),
+                    "channel_end": settings.get("channel_end", 512),
+                    "slice_mode": settings.get("slice_mode", "zero_outside"),
+                    "mode": settings.get("mode", "output"),
+                    "type": settings.get("type", "wifi"),
+                })
+
+            return nodes
+        except Exception as e:
+            print(f"⚠️ Failed to fetch nodes: {e}")
+            return []
+
+    def fetch_fixtures(self) -> List[Dict[str, Any]]:
+        """Fetch all fixtures from Supabase fixture_library"""
+        if not self._enabled or not self._client:
+            return []
+
+        try:
+            result = self._client.table("fixture_library").select("*").execute()
+
+            fixtures = []
+            for row in result.data or []:
+                modes = {}
+                try:
+                    modes = json.loads(row.get("modes", "{}"))
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+                default_mode = modes.get("default", {})
+                fixtures.append({
+                    "fixture_id": row.get("fixture_id"),
+                    "manufacturer": row.get("manufacturer"),
+                    "name": row.get("model"),
+                    "model": row.get("model"),
+                    "type": row.get("category", "generic"),
+                    "channel_count": default_mode.get("channel_count", 1),
+                    "channel_map": default_mode.get("channel_map"),
+                    "start_channel": default_mode.get("start_channel", 1),
+                    "universe": default_mode.get("universe", 1),
+                })
+
+            return fixtures
+        except Exception as e:
+            print(f"⚠️ Failed to fetch fixtures: {e}")
+            return []
+
+    def fetch_schedules(self) -> List[Dict[str, Any]]:
+        """Fetch schedules from Supabase for this installation"""
+        if not self._enabled or not self._client:
+            return []
+
+        try:
+            result = self._client.table("schedules").select("*").eq(
+                "installation_id", self._installation_id
+            ).execute()
+
+            schedules = []
+            for row in result.data or []:
+                action_params = {}
+                try:
+                    action_params = json.loads(row.get("action_params", "{}"))
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+                schedules.append({
+                    "schedule_id": row.get("schedule_id"),
+                    "name": row.get("name"),
+                    "cron": row.get("cron"),
+                    "action_type": row.get("action_type"),
+                    "action_id": row.get("action_id"),
+                    "action_params": action_params,
+                    "enabled": row.get("enabled", True),
+                    "last_run": row.get("last_run"),
+                    "next_run": row.get("next_run"),
+                })
+
+            return schedules
+        except Exception as e:
+            print(f"⚠️ Failed to fetch schedules: {e}")
+            return []
+
+    def fetch_groups(self) -> List[Dict[str, Any]]:
+        """Fetch groups from Supabase for this installation"""
+        if not self._enabled or not self._client:
+            return []
+
+        try:
+            result = self._client.table("groups").select("*").eq(
+                "installation_id", self._installation_id
+            ).execute()
+
+            groups = []
+            for row in result.data or []:
+                channels = []
+                try:
+                    channels = json.loads(row.get("channels", "[]"))
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+                groups.append({
+                    "group_id": row.get("group_id"),
+                    "name": row.get("name"),
+                    "universe": row.get("universe", 1),
+                    "channels": channels,
+                    "color": row.get("color", "#8b5cf6"),
+                })
+
+            return groups
+        except Exception as e:
+            print(f"⚠️ Failed to fetch groups: {e}")
+            return []
+
+    def fetch_all(self) -> Dict[str, Any]:
+        """
+        Fetch ALL data from Supabase for this installation.
+        Used by the restore endpoint to pull everything from cloud.
+        """
+        if not self._enabled or not self._client:
+            return {"error": "Supabase not enabled or connected"}
+
+        return {
+            "looks": self.fetch_looks(),
+            "sequences": self.fetch_sequences(),
+            "scenes": self.fetch_scenes(),
+            "chases": self.fetch_chases(),
+            "shows": self.fetch_shows(),
+            "nodes": self.fetch_nodes(),
+            "fixtures": self.fetch_fixtures(),
+            "schedules": self.fetch_schedules(),
+            "groups": self.fetch_groups(),
+        }
+
+    # ---- Settings Sync (installation_settings table) ----
+
+    def sync_settings(self, settings_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Push current settings to Supabase installation_settings table.
+        Called after any local settings change.
+        """
+        if not self._enabled or not self._client or not self._installation_id:
+            return None
+
+        record = {
+            "installation_id": self._installation_id,
+            "settings_data": json.dumps(settings_data),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        def upsert():
+            return self._client.table("installation_settings").upsert(
+                record, on_conflict="installation_id"
+            ).execute()
+
+        try:
+            result = upsert()
+            print(f"☁️ Settings synced to cloud")
+            return result
+        except Exception as e:
+            print(f"⚠️ Settings sync failed: {e}")
+            return None
+
+    def fetch_settings(self) -> Optional[Dict[str, Any]]:
+        """
+        Fetch settings from Supabase installation_settings table.
+        Used during restore to recover settings.
+        """
+        if not self._enabled or not self._client or not self._installation_id:
+            return None
+
+        try:
+            result = self._client.table("installation_settings").select("*").eq(
+                "installation_id", self._installation_id
+            ).execute()
+
+            if result.data and len(result.data) > 0:
+                settings_str = result.data[0].get("settings_data", "{}")
+                if isinstance(settings_str, str):
+                    return json.loads(settings_str)
+                return settings_str
+            return None
+        except Exception as e:
+            print(f"⚠️ Failed to fetch settings: {e}")
+            return None
 
 
 # ============================================================

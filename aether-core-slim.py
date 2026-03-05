@@ -1336,7 +1336,7 @@ from blueprints.playback_bp import playback_bp, init_app as playback_init
 
 # Wire dependencies into blueprints that need shared state
 migrate_init(DATABASE, looks_sequences_manager)
-settings_init(app_settings, save_settings, socketio)
+settings_init(app_settings, save_settings, socketio, cloud_submit=cloud_submit, get_supabase_service=get_supabase_service)
 merge_init(merge_layer, content_manager, load_fixtures_into_classifier)
 scenes_init(content_manager)
 chases_init(content_manager, chase_engine, unified_engine)
@@ -1344,7 +1344,9 @@ pixel_init(_pixel_arrays, content_manager)
 shows_init(get_db, show_engine, cloud_submit, SUPABASE_AVAILABLE, get_supabase_service, unified_engine)  # [R3]
 schedules_init(get_db, schedule_runner, timer_runner, cloud_submit,
                SUPABASE_AVAILABLE, get_supabase_service, socketio)
-cloud_init(SUPABASE_AVAILABLE, get_supabase_service, get_db, cloud_submit, looks_sequences_manager)
+cloud_init(SUPABASE_AVAILABLE, get_supabase_service, get_db, cloud_submit, looks_sequences_manager,
+           content_manager=content_manager, app_settings=app_settings,
+           save_settings=save_settings, socketio=socketio)
 session_init(dmx_state, content_manager, get_whisper_model)
 system_init(app_settings, save_settings, AETHER_VERSION, AETHER_COMMIT,
             AETHER_FILE_PATH, AETHER_START_TIME, get_or_create_device_id, app,

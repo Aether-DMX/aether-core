@@ -1,7 +1,7 @@
 """
 AETHER Core — Settings & Screen Context Blueprint
 Routes: /api/settings/*, /api/screen-context
-Dependencies: app_settings dict, save_settings func, socketio
+Dependencies: app_settings dict, save_settings func, socketio, cloud_submit, get_supabase_service
 """
 
 from flask import Blueprint, jsonify, request
@@ -13,14 +13,33 @@ settings_bp = Blueprint('settings', __name__)
 _app_settings = None
 _save_settings = None
 _socketio = None
+_cloud_submit = None
+_get_supabase_service = None
 
 
-def init_app(app_settings, save_settings_func, socketio):
+def init_app(app_settings, save_settings_func, socketio, cloud_submit=None, get_supabase_service=None):
     """Initialize blueprint with required dependencies."""
-    global _app_settings, _save_settings, _socketio
+    global _app_settings, _save_settings, _socketio, _cloud_submit, _get_supabase_service
     _app_settings = app_settings
     _save_settings = save_settings_func
     _socketio = socketio
+    _cloud_submit = cloud_submit
+    _get_supabase_service = get_supabase_service
+
+
+def _sync_settings_to_cloud():
+    """Fire-and-forget settings sync to Supabase"""
+    if not _cloud_submit or not _get_supabase_service:
+        return
+    settings_snapshot = dict(_app_settings) if _app_settings else {}
+    def _do_sync():
+        try:
+            svc = _get_supabase_service()
+            if svc and svc.is_enabled() and svc.is_connected():
+                svc.sync_settings(settings_snapshot)
+        except Exception as e:
+            print(f"⚠️ Settings cloud sync failed: {e}")
+    _cloud_submit(_do_sync)
 
 
 @settings_bp.route('/api/settings/all', methods=['GET'])
@@ -38,6 +57,7 @@ def update_settings_category(category):
         _app_settings[category].update(data)
         _save_settings(_app_settings)
         _socketio.emit('settings_update', {'category': category, 'data': _app_settings[category]})
+        _sync_settings_to_cloud()
         return jsonify({'success': True, category: _app_settings[category]})
     return jsonify({'error': 'Category not found'}), 404
 
@@ -70,6 +90,7 @@ def set_setup_complete():
         _app_settings['setup']['userProfile'].update(data['userProfile'])
     _save_settings(_app_settings)
     _socketio.emit('settings_update', {'category': 'setup', 'data': _app_settings['setup']})
+    _sync_settings_to_cloud()
     return jsonify({'success': True, 'setup': _app_settings['setup']})
 
 @settings_bp.route('/api/settings/setup-reset', methods=['POST'])
