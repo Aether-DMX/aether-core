@@ -576,7 +576,9 @@ class SupabaseService:
             return None
 
         # [F19] Stamp updated_at for conflict visibility
-        if data and op_type == "upsert":
+        # Only for tables that actually have an updated_at column
+        TABLES_WITH_UPDATED_AT = {"installations", "installation_settings"}
+        if data and op_type == "upsert" and table in TABLES_WITH_UPDATED_AT:
             data['updated_at'] = datetime.now(timezone.utc).isoformat()
 
         try:
