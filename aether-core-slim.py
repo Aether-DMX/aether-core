@@ -529,7 +529,8 @@ DEFAULT_SETTINGS = {
     "ai": {"enabled": True, "model": "claude-3-sonnet", "contextLength": 4096, "temperature": 0.7},
     "dmx": {"defaultFadeMs": 500, "refreshRate": 40, "maxUniverse": 64},
     "security": {"pinEnabled": False, "sessionTimeout": 3600},
-    "setup": {"complete": False, "mode": None, "userProfile": {}}
+    "setup": {"complete": False, "mode": None, "userProfile": {}},
+    "features": {"cloudBackup": False}
 }
 
 def load_settings():

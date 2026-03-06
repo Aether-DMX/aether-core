@@ -21,6 +21,13 @@ _save_settings = None
 _socketio = None
 
 
+def _is_cloud_backup_enabled():
+    """Check if the cloudBackup premium feature is enabled in app settings."""
+    if not _app_settings:
+        return False
+    return bool(_app_settings.get('features', {}).get('cloudBackup', False))
+
+
 def init_app(supabase_available, get_supabase_service_fn, get_db_fn, cloud_submit_fn,
              looks_sequences_manager, content_manager=None, app_settings=None,
              save_settings=None, socketio=None):
@@ -40,11 +47,14 @@ def init_app(supabase_available, get_supabase_service_fn, get_db_fn, cloud_submi
 
 @cloud_bp.route('/api/cloud/status', methods=['GET'])
 def get_cloud_status():
-    """Get Supabase cloud sync status"""
+    """Get Supabase cloud sync status (always accessible, includes feature flag)"""
+    feature_enabled = _is_cloud_backup_enabled()
+
     if not _SUPABASE_AVAILABLE:
         return jsonify({
             'enabled': False,
             'connected': False,
+            'featureEnabled': feature_enabled,
             'error': 'Supabase service not available'
         })
 
@@ -53,14 +63,19 @@ def get_cloud_status():
         return jsonify({
             'enabled': False,
             'connected': False,
+            'featureEnabled': feature_enabled,
             'error': 'Supabase service not initialized'
         })
 
-    return jsonify(supabase.get_status())
+    status = supabase.get_status()
+    status['featureEnabled'] = feature_enabled
+    return jsonify(status)
 
 @cloud_bp.route('/api/cloud/sync', methods=['POST'])
 def trigger_cloud_sync():
     """Manually trigger a cloud sync"""
+    if not _is_cloud_backup_enabled():
+        return jsonify({'success': False, 'error': 'Cloud Backup is a premium feature', 'premium_required': True}), 403
     if not _SUPABASE_AVAILABLE:
         return jsonify({'success': False, 'error': 'Supabase not available'}), 503
 
@@ -122,6 +137,8 @@ def trigger_cloud_sync():
 @cloud_bp.route('/api/cloud/retry-pending', methods=['POST'])
 def retry_pending_sync():
     """Retry pending sync operations"""
+    if not _is_cloud_backup_enabled():
+        return jsonify({'success': False, 'error': 'Cloud Backup is a premium feature', 'premium_required': True}), 403
     if not _SUPABASE_AVAILABLE:
         return jsonify({'success': False, 'error': 'Supabase not available'}), 503
 
@@ -139,6 +156,8 @@ def cloud_backup():
     Full backup: push ALL local data + settings → Supabase.
     Gathers from SQLite + in-memory looks/sequences + app settings.
     """
+    if not _is_cloud_backup_enabled():
+        return jsonify({'success': False, 'error': 'Cloud Backup is a premium feature', 'premium_required': True}), 403
     if not _SUPABASE_AVAILABLE:
         return jsonify({'success': False, 'error': 'Supabase not available'}), 503
 
@@ -215,6 +234,8 @@ def cloud_restore():
     Full restore: pull ALL data from Supabase → local SQLite + settings.
     Overwrites local data with cloud data. Emits Socket.IO refresh events.
     """
+    if not _is_cloud_backup_enabled():
+        return jsonify({'success': False, 'error': 'Cloud Backup is a premium feature', 'premium_required': True}), 403
     if not _SUPABASE_AVAILABLE:
         return jsonify({'success': False, 'error': 'Supabase not available'}), 503
 
@@ -359,6 +380,8 @@ def cloud_restore():
 @cloud_bp.route('/api/cloud/reconnect', methods=['POST'])
 def cloud_reconnect():
     """Attempt to reconnect the Supabase client"""
+    if not _is_cloud_backup_enabled():
+        return jsonify({'success': False, 'error': 'Cloud Backup is a premium feature', 'premium_required': True}), 403
     if not _SUPABASE_AVAILABLE:
         return jsonify({'success': False, 'error': 'Supabase not available'}), 503
 
@@ -373,6 +396,8 @@ def cloud_reconnect():
 @cloud_bp.route('/api/cloud/clear-pending', methods=['POST'])
 def cloud_clear_pending():
     """Clear all pending sync operations"""
+    if not _is_cloud_backup_enabled():
+        return jsonify({'success': False, 'error': 'Cloud Backup is a premium feature', 'premium_required': True}), 403
     if not _SUPABASE_AVAILABLE:
         return jsonify({'success': False, 'error': 'Supabase not available'}), 503
 

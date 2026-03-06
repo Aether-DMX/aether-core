@@ -28,8 +28,11 @@ def init_app(app_settings, save_settings_func, socketio, cloud_submit=None, get_
 
 
 def _sync_settings_to_cloud():
-    """Fire-and-forget settings sync to Supabase"""
+    """Fire-and-forget settings sync to Supabase (only if cloudBackup premium feature enabled)"""
     if not _cloud_submit or not _get_supabase_service:
+        return
+    # Gate behind premium feature flag
+    if _app_settings and not _app_settings.get('features', {}).get('cloudBackup', False):
         return
     settings_snapshot = dict(_app_settings) if _app_settings else {}
     def _do_sync():
